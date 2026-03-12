@@ -1,0 +1,2403 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📋 Bewerbungs-Tracker v3</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        :root {
+            --primary: #4F46E5; --primary-light: #818CF8; --primary-dark: #3730A3;
+            --secondary: #10B981; --warning: #F59E0B; --danger: #EF4444;
+            --info: #3B82F6; --bg: #0F172A; --bg-card: #1E293B;
+            --bg-card2: #263548; --text: #E2E8F0; --text-muted: #94A3B8;
+            --border: #334155; --shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+
+        :root[data-scheme="light"] {
+            --primary: #4F46E5; --primary-light: #818CF8; --primary-dark: #3730A3;
+            --secondary: #10B981; --warning: #F59E0B; --danger: #EF4444;
+            --info: #3B82F6; --bg: #F8FAFC; --bg-card: #FFFFFF;
+            --bg-card2: #F1F5F9; --text: #0F172A; --text-muted: #64748B;
+            --border: #E2E8F0; --shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+        /* HEADER */
+        header {
+            background:linear-gradient(135deg,var(--primary-dark),var(--primary));
+            padding:0 2rem; display:flex; align-items:center;
+            justify-content:space-between; height:64px;
+            box-shadow:var(--shadow); position:sticky; top:0; z-index:100;
+        }
+        .logo { display:flex; align-items:center; gap:0.75rem; font-size:1.25rem; font-weight:700; }
+        .header-actions { display:flex; align-items:center; gap:0.75rem; }
+
+        /* LAYOUT */
+        .app-layout { display:grid; grid-template-columns:220px 1fr; height:calc(100vh - 64px); }
+        aside {
+            background:var(--bg-card); border-right:1px solid var(--border);
+            padding:1rem 0.75rem; overflow-y:auto; display:flex; flex-direction:column; gap:0.25rem;
+        }
+        main { overflow-y:auto; padding:2rem; }
+
+        /* NAV */
+        .nav-btn {
+            display:flex; align-items:center; gap:0.6rem; padding:0.65rem 0.9rem;
+            border-radius:8px; border:none; background:transparent; color:var(--text-muted);
+            cursor:pointer; font-size:0.9rem; transition:all 0.2s; width:100%; text-align:left;
+        }
+        .nav-btn:hover { background:var(--bg-card2); color:var(--text); }
+        .nav-btn.active { background:var(--primary); color:white; }
+        .nav-section { font-size:0.7rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; padding:0.75rem 0.9rem 0.25rem; }
+
+        /* VIEWS */
+        .view { display:none; }
+        .view.active { display:block; animation:fadeIn 0.3s ease; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+        /* CARDS */
+        .card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:1.25rem; }
+        .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; }
+        .card-title { font-weight:600; font-size:1rem; }
+
+        /* STATS */
+        .stats-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:1rem; margin-bottom:1.5rem; }
+        .stat-card {
+            background:var(--bg-card); border:1px solid var(--border); border-radius:12px;
+            padding:1.1rem; display:flex; flex-direction:column; gap:0.4rem;
+            transition:transform 0.2s; cursor:default;
+        }
+        .stat-card:hover { transform:translateY(-2px); }
+        .stat-icon { font-size:1.5rem; }
+        .stat-value { font-size:2rem; font-weight:700; }
+        .stat-label { font-size:0.8rem; color:var(--text-muted); }
+        .stat-card.blue { border-left:3px solid var(--info); }
+        .stat-card.green { border-left:3px solid var(--secondary); }
+        .stat-card.yellow { border-left:3px solid var(--warning); }
+        .stat-card.red { border-left:3px solid var(--danger); }
+        .stat-card.purple { border-left:3px solid var(--primary-light); }
+
+        /* BUTTONS */
+        .btn {
+            padding:0.55rem 1.1rem; border-radius:8px; border:none; font-size:0.88rem;
+            font-weight:500; cursor:pointer; transition:all 0.2s; display:inline-flex; align-items:center; gap:0.4rem;
+        }
+        .btn:hover { transform:translateY(-1px); filter:brightness(1.1); }
+        .btn:active { transform:none; }
+        .btn-primary { background:var(--primary); color:white; }
+        .btn-secondary { background:var(--bg-card2); color:var(--text); border:1px solid var(--border); }
+        .btn-success { background:var(--secondary); color:white; }
+        .btn-danger { background:var(--danger); color:white; }
+        .btn-warning { background:var(--warning); color:#1a1a1a; }
+        .btn-info { background:var(--info); color:white; }
+        .btn-sm { padding:0.35rem 0.75rem; font-size:0.8rem; }
+
+        /* FORM */
+        .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+        .form-group { display:flex; flex-direction:column; gap:0.35rem; }
+        .form-group.full { grid-column:1/-1; }
+        label { font-size:0.82rem; font-weight:500; color:var(--text-muted); }
+        input,select,textarea {
+            background:var(--bg-card2); border:1px solid var(--border); color:var(--text);
+            padding:0.55rem 0.75rem; border-radius:8px; font-size:0.9rem; width:100%;
+            transition:border-color 0.2s; font-family:inherit;
+        }
+        input:focus,select:focus,textarea:focus { outline:none; border-color:var(--primary-light); }
+        textarea { resize:vertical; min-height:80px; }
+
+        /* TABLE */
+        .table-wrapper { overflow-x:auto; }
+        table { width:100%; border-collapse:collapse; font-size:0.88rem; }
+        th { text-align:left; padding:0.65rem 0.9rem; color:var(--text-muted); font-weight:600; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.04em; border-bottom:1px solid var(--border); white-space:nowrap; }
+        td { padding:0.75rem 0.9rem; border-bottom:1px solid var(--border); }
+        tr:hover td { background:var(--bg-card2); }
+        tr:last-child td { border-bottom:none; }
+
+        /* BADGES */
+        .badge { display:inline-flex; align-items:center; gap:0.25rem; padding:0.2rem 0.6rem; border-radius:20px; font-size:0.75rem; font-weight:600; white-space:nowrap; }
+        .badge-beworben { background:rgba(59,130,246,0.15); color:#60A5FA; }
+        .badge-antwort { background:rgba(245,158,11,0.15); color:#FCD34D; }
+        .badge-interview { background:rgba(139,92,246,0.15); color:#A78BFA; }
+        .badge-zusage { background:rgba(16,185,129,0.15); color:#34D399; }
+        .badge-absage { background:rgba(239,68,68,0.15); color:#F87171; }
+        .badge-ghosting { background:rgba(148,163,184,0.15); color:#94A3B8; }
+
+        /* CHIPS */
+        .chips { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem; }
+        .chip { padding:0.35rem 0.85rem; border-radius:20px; font-size:0.82rem; cursor:pointer; border:1px solid var(--border); color:var(--text-muted); transition:all 0.2s; }
+        .chip:hover { border-color:var(--primary); color:var(--text); }
+        .chip.active { background:var(--primary); border-color:var(--primary); color:white; }
+
+        /* MODAL */
+        .modal-overlay {
+            display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7);
+            z-index:500; align-items:center; justify-content:center; padding:1rem;
+        }
+        .modal-overlay.open { display:flex; }
+        .modal {
+            background:var(--bg-card); border:1px solid var(--border); border-radius:16px;
+            padding:1.5rem; width:100%; max-width:600px; max-height:90vh; overflow-y:auto;
+            box-shadow:var(--shadow); animation:fadeIn 0.2s ease;
+        }
+        .modal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem; }
+        .modal-title { font-size:1.1rem; font-weight:700; }
+        .modal-close { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.3rem; padding:0.25rem; }
+        .modal-footer { display:flex; gap:0.75rem; justify-content:flex-end; margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--border); flex-wrap:wrap; }
+
+        /* TOAST */
+        .toast-container { position:fixed; bottom:1.5rem; right:1.5rem; display:flex; flex-direction:column; gap:0.5rem; z-index:1000; }
+        .toast {
+            display:flex; align-items:center; gap:0.6rem; padding:0.75rem 1.1rem;
+            background:var(--bg-card2); border:1px solid var(--border); border-radius:10px;
+            font-size:0.88rem; box-shadow:var(--shadow); max-width:320px;
+            animation:slideIn 0.3s ease;
+        }
+        @keyframes slideIn { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
+        .toast.success { border-left:3px solid var(--secondary); }
+        .toast.error { border-left:3px solid var(--danger); }
+        .toast.warning { border-left:3px solid var(--warning); }
+        .toast.info { border-left:3px solid var(--info); }
+
+        /* TOOLBAR */
+        .toolbar { display:flex; gap:0.75rem; margin-bottom:1rem; flex-wrap:wrap; align-items:center; }
+        .search-box { position:relative; flex:1; min-width:200px; }
+        .search-box input { padding-left:2.2rem; }
+        .search-icon { position:absolute; left:0.7rem; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none; }
+
+        /* EMPTY STATE */
+        .empty-state { text-align:center; padding:3rem 1rem; color:var(--text-muted); }
+        .empty-icon { font-size:3rem; margin-bottom:1rem; }
+
+        /* DETAIL GRID */
+        .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.75rem; }
+        .detail-section { background:var(--bg-card2); border-radius:8px; padding:0.75rem; }
+        .detail-label { font-size:0.75rem; color:var(--text-muted); font-weight:600; text-transform:uppercase; margin-bottom:0.25rem; }
+        .detail-value { font-size:0.9rem; }
+
+        /* EMAIL ITEMS */
+        .email-item { border:1px solid var(--border); border-radius:10px; padding:0.9rem; margin-bottom:0.6rem; transition:all 0.2s; }
+        .email-item:hover { border-color:var(--primary); background:var(--bg-card2); }
+        .email-item-header { display:flex; align-items:flex-start; gap:0.75rem; }
+        .email-firma { font-weight:600; font-size:0.95rem; }
+        .email-subject { font-size:0.82rem; color:var(--text-muted); margin-top:0.2rem; }
+
+        /* SPINNER */
+        .spinner { display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,0.3); border-top-color:white; border-radius:50%; animation:spin 0.7s linear infinite; }
+        @keyframes spin { to{transform:rotate(360deg)} }
+
+        /* APPS SCRIPT BOX */
+        .script-box {
+            background:#0a0a0a; border:1px solid #333; border-radius:8px;
+            padding:1rem; font-family:monospace; font-size:0.78rem; color:#7dd3fc;
+            white-space:pre-wrap; overflow-x:auto; max-height:300px; overflow-y:auto;
+            line-height:1.6;
+        }
+        .copy-btn { position:absolute; top:0.5rem; right:0.5rem; }
+        .code-wrapper { position:relative; }
+
+        /* STEPS */
+        .steps { counter-reset:step; }
+        .step { display:flex; gap:1rem; margin-bottom:1.25rem; align-items:flex-start; }
+        .step-num {
+            min-width:28px; height:28px; background:var(--primary); border-radius:50%;
+            display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700; flex-shrink:0;
+        }
+        .step-body { flex:1; }
+        .step-title { font-weight:600; margin-bottom:0.35rem; }
+        .step-desc { font-size:0.85rem; color:var(--text-muted); line-height:1.6; }
+
+        /* KANBAN */
+        .kanban-board { display:flex; gap:1rem; overflow-x:auto; padding-bottom:1rem; }
+        .kanban-col { min-width:200px; flex:1; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+        .kanban-header { padding:0.75rem 1rem; font-weight:600; font-size:0.85rem; display:flex; justify-content:space-between; }
+        .kanban-body { padding:0.5rem; min-height:100px; }
+        .kanban-card { background:var(--bg-card2); border-radius:8px; padding:0.75rem; margin-bottom:0.5rem; cursor:pointer; border:1px solid transparent; transition:all 0.2s; }
+        .kanban-card:hover { border-color:var(--primary); }
+        .kanban-firma { font-weight:600; font-size:0.88rem; }
+        .kanban-position { font-size:0.78rem; color:var(--text-muted); }
+        .kanban-days { font-size:0.75rem; margin-top:0.35rem; }
+
+        /* PROGRESS */
+        .progress-bar { background:var(--bg-card2); border-radius:20px; height:8px; overflow:hidden; }
+        .progress-fill { height:100%; border-radius:20px; transition:width 0.5s; }
+
+        /* HIGHLIGHT VARIANTS */
+        .highlight.error   { background:rgba(239,68,68,0.1);  border-color:rgba(239,68,68,0.3);  }
+        .highlight.success { background:rgba(16,185,129,0.1); border-color:rgba(16,185,129,0.3); }
+
+        /* GOOGLE BTN */
+        .google-btn {
+            display:flex; align-items:center; gap:0.75rem; padding:0.75rem 1.5rem;
+            background:white; color:#374151; border:1px solid #D1D5DB; border-radius:10px;
+            font-size:0.95rem; font-weight:500; cursor:pointer; transition:all 0.2s; width:100%; justify-content:center;
+        }
+        .google-btn:hover { box-shadow:0 4px 12px rgba(0,0,0,0.3); transform:translateY(-1px); }
+        .google-logo { width:20px; height:20px; }
+
+        /* TABS */
+        .tabs { display:flex; gap:0; margin-bottom:1.5rem; border-bottom:2px solid var(--border); }
+        .tab { padding:0.65rem 1.25rem; cursor:pointer; font-size:0.9rem; font-weight:500; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-2px; transition:all 0.2s; }
+        .tab:hover { color:var(--text); }
+        .tab.active { color:var(--primary-light); border-bottom-color:var(--primary-light); }
+        .tab-content { display:none; }
+        .tab-content.active { display:block; animation:fadeIn 0.2s ease; }
+
+        /* HIGHLIGHT */
+        .highlight { background:rgba(79,70,229,0.1); border:1px solid rgba(79,70,229,0.3); border-radius:8px; padding:0.75rem 1rem; font-size:0.85rem; line-height:1.6; }
+
+        @media(max-width:768px) { .app-layout{grid-template-columns:1fr} aside{display:none} .detail-grid{grid-template-columns:1fr} .form-grid{grid-template-columns:1fr} }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo"><span>📋</span> Bewerbungs-Tracker</div>
+    <div class="header-actions">
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.9rem;background:rgba(255,255,255,0.1);border-radius:20px;font-size:0.82rem;border:1px solid rgba(255,255,255,0.2);">
+            <span id="connStatusDot" style="width:8px;height:8px;border-radius:50%;background:#94A3B8;display:inline-block;"></span>
+            <span id="connStatusText">Nicht verbunden</span>
+        </div>
+        <button id="colorSchemeToggle" class="btn btn-secondary btn-sm" onclick="toggleColorScheme()" title="Dark/Light Mode">🌙</button>
+        <button class="btn btn-success btn-sm" onclick="openAddModal()">+ Bewerbung</button>
+    </div>
+</header>
+
+<div class="app-layout">
+<aside>
+    <div class="nav-section">Navigation</div>
+    <button class="nav-btn active" id="nav-dashboard" onclick="showView('dashboard')">📊 Dashboard</button>
+    <button class="nav-btn" id="nav-bewerbungen" onclick="showView('bewerbungen')">📁 Bewerbungen</button>
+    <button class="nav-btn" id="nav-kanban" onclick="showView('kanban')">🗂️ Kanban</button>
+    <div class="nav-section">Email Import</div>
+    <button class="nav-btn" id="nav-gmail" onclick="showView('gmail')">📧 Mail Connector</button>
+    <div class="nav-section">System</div>
+    <button class="nav-btn" id="nav-settings" onclick="showView('settings')">⚙️ Einstellungen</button>
+</aside>
+
+<main>
+
+<!-- ═══ DASHBOARD ═══ -->
+<div class="view active" id="view-dashboard">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.75rem;">
+        <h1 style="font-size:1.5rem;font-weight:700;">📊 Dashboard</h1>
+        <div style="display:flex;gap:0.5rem;">
+            <button class="btn btn-warning btn-sm" onclick="checkGhosting()">👻 Ghosting prüfen</button>
+            <button class="btn btn-info btn-sm" onclick="exportPDF()">📄 PDF Export</button>
+        </div>
+    </div>
+    <div class="stats-grid" id="statsGrid"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;">
+        <div class="card">
+            <div class="card-title" style="margin-bottom:1rem;">📈 Status Verteilung</div>
+            <div id="statusChart"></div>
+        </div>
+        <div class="card">
+            <div class="card-title" style="margin-bottom:1rem;">🔍 Quellen</div>
+            <div id="sourceChart"></div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title" style="margin-bottom:1rem;">🕐 Letzte Aktivitäten</div>
+        <div id="recentList"></div>
+    </div>
+</div>
+
+<!-- ═══ BEWERBUNGEN ═══ -->
+<div class="view" id="view-bewerbungen">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.75rem;">
+        <h1 style="font-size:1.5rem;font-weight:700;">📁 Bewerbungen</h1>
+        <div style="display:flex;gap:0.5rem;">
+            <button class="btn btn-info btn-sm" onclick="exportPDF()">📄 PDF</button>
+            <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Hinzufügen</button>
+        </div>
+    </div>
+    <div class="toolbar">
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" placeholder="Firma, Position suchen..." oninput="renderBewerbungen()">
+        </div>
+        <select id="sortSelect" onchange="renderBewerbungen()">
+            <option value="datum-desc">Datum ↓</option>
+            <option value="datum-asc">Datum ↑</option>
+            <option value="firma">Firma A-Z</option>
+            <option value="status">Status</option>
+        </select>
+        <button class="btn btn-warning btn-sm" onclick="checkGhosting()">👻 Ghosting</button>
+    </div>
+    <div class="chips" id="statusChips">
+        <div class="chip active" onclick="filterByChip(this,'')">Alle</div>
+        <div class="chip" onclick="filterByChip(this,'beworben')">📤 Beworben</div>
+        <div class="chip" onclick="filterByChip(this,'antwort')">📨 Antwort</div>
+        <div class="chip" onclick="filterByChip(this,'interview')">🎤 Interview</div>
+        <div class="chip" onclick="filterByChip(this,'zusage')">✅ Zusage</div>
+        <div class="chip" onclick="filterByChip(this,'absage')">❌ Absage</div>
+        <div class="chip" onclick="filterByChip(this,'ghosting')">👻 Ghosting</div>
+    </div>
+    <div class="card">
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Firma</th><th>Position</th><th>Status</th>
+                        <th>Datum</th><th>Tage</th><th>Quelle</th><th>Aktionen</th>
+                    </tr>
+                </thead>
+                <tbody id="bewerbungenTableBody"></tbody>
+            </table>
+        </div>
+        <div id="bewerbungenEmpty" class="empty-state" style="display:none;">
+            <div class="empty-icon">📭</div>
+            <p>Keine Bewerbungen gefunden.</p>
+            <button class="btn btn-primary" style="margin-top:1rem;" onclick="openAddModal()">+ Erste Bewerbung</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ KANBAN ═══ -->
+<div class="view" id="view-kanban">
+    <h1 style="font-size:1.5rem;font-weight:700;margin-bottom:1.5rem;">🗂️ Kanban Board</h1>
+    <div class="kanban-board" id="kanbanBoard"></div>
+</div>
+
+<!-- ═══ MAIL CONNECTOR ═══ -->
+<div class="view" id="view-gmail">
+    <h1 style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem;">📧 Mail Connector</h1>
+    <p style="color:var(--text-muted);font-size:0.88rem;margin-bottom:1.5rem;">Wähle eine Methode um deine Emails zu importieren – unterstützt Gmail, Outlook, Yahoo und andere IMAP/POP3-Provider.</p>
+
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab(this,'tab-script')">🔧 Apps Script</div>
+        <div class="tab" onclick="switchTab(this,'tab-eml')">📂 EML Import</div>
+        <div class="tab" onclick="switchTab(this,'tab-text')">📋 Text / Paste</div>
+        <div class="tab" onclick="switchTab(this,'tab-imap');checkImapProxy()">📮 IMAP / POP3</div>
+    </div>
+
+    <!-- TAB: APPS SCRIPT -->
+    <div class="tab-content active" id="tab-script">
+        <div class="card" style="margin-bottom:1rem;">
+            <div class="card-title" style="margin-bottom:1rem;">🔧 Google Apps Script Methode</div>
+            <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1.25rem;line-height:1.6;">
+                Erstelle ein kostenloses Google Apps Script das deine Gmail-Emails liest und als JSON-URL bereitstellt.
+                Kein OAuth-Flow, kein externer Server – nur ein Google Script in deinem eigenen Google-Konto.
+            </p>
+
+            <div class="steps">
+                <div class="step">
+                    <div class="step-num">1</div>
+                    <div class="step-body">
+                        <div class="step-title">Google Apps Script öffnen</div>
+                        <div class="step-desc">Gehe zu <a href="https://script.google.com" target="_blank" style="color:var(--primary-light);">script.google.com</a> und klicke auf <strong>"Neues Projekt"</strong></div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">2</div>
+                    <div class="step-body">
+                        <div class="step-title">Code einfügen</div>
+                        <div class="step-desc">Lösche den vorhandenen Code und füge folgenden Code ein:</div>
+                        <div class="code-wrapper" style="margin-top:0.75rem;">
+                            <div class="script-box" id="appsScriptCode"></div>
+                            <button class="btn btn-secondary btn-sm copy-btn" onclick="copyScript()">📋 Kopieren</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">3</div>
+                    <div class="step-body">
+                        <div class="step-title">Als Web-App deployen</div>
+                        <div class="step-desc">
+                            Klicke auf <strong>Bereitstellen → Neue Bereitstellung</strong><br>
+                            Typ: <strong>Web-App</strong><br>
+                            Ausführen als: <strong>Ich</strong><br>
+                            Zugriff: <strong>Jeder</strong> (oder "Jeder, auch anonym")<br>
+                            → Klicke <strong>Bereitstellen</strong> und bestätige die Berechtigungen
+                        </div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">4</div>
+                    <div class="step-body">
+                        <div class="step-title">Web-App URL hier eintragen</div>
+                        <div class="step-desc">Kopiere die URL und füge sie unten ein:</div>
+                        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap;">
+                            <input type="text" id="appsScriptUrl" placeholder="https://script.google.com/macros/s/XXXXX/exec" style="flex:1;">
+                            <button id="fetchBtn" class="btn btn-primary" onclick="saveAndFetchScript()">💾 Speichern & Abrufen</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" id="scriptResultCard" style="display:none;">
+            <div class="card-header">
+                <div class="card-title">📬 Abgerufene Emails (<span id="scriptEmailCount">0</span>)</div>
+                <div style="display:flex;gap:0.5rem;">
+                    <button class="btn btn-success btn-sm" onclick="importAllScriptEmails()">+ Alle importieren</button>
+                    <button class="btn btn-secondary btn-sm" onclick="refreshScriptEmails()">🔄 Aktualisieren</button>
+                </div>
+            </div>
+            <div id="scriptEmailList"></div>
+        </div>
+    </div>
+
+    <!-- TAB: EML IMPORT -->
+    <div class="tab-content" id="tab-eml">
+        <div class="card" style="margin-bottom:1rem;">
+            <div class="card-title" style="margin-bottom:1rem;">📂 EML / MBOX Datei importieren</div>
+            <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1.25rem;line-height:1.6;">
+                Exportiere einzelne Emails aus Gmail als <strong>.eml Datei</strong> und lade sie hier hoch.
+                Die App erkennt automatisch Bewerbungsrelevante Informationen.
+            </p>
+
+            <div class="highlight" style="margin-bottom:1.25rem;">
+                💡 <strong>So geht's:</strong> Gmail → Email öffnen → Drei-Punkte-Menü → <strong>"Nachricht herunterladen"</strong> → .eml Datei speichern
+            </div>
+
+            <div id="emlDropzone" style="
+                border:2px dashed var(--border); border-radius:12px; padding:2.5rem;
+                text-align:center; cursor:pointer; transition:all 0.2s;
+            " onclick="document.getElementById('emlFileInput').click()"
+               ondragover="event.preventDefault();this.style.borderColor='var(--primary)'"
+               ondragleave="this.style.borderColor='var(--border)'"
+               ondrop="handleEmlDrop(event)">
+                <div style="font-size:2.5rem;margin-bottom:0.75rem;">📧</div>
+                <div style="font-weight:600;margin-bottom:0.35rem;">EML Dateien hier ablegen</div>
+                <div style="color:var(--text-muted);font-size:0.85rem;">oder klicken zum Auswählen (mehrere möglich)</div>
+            </div>
+            <input type="file" id="emlFileInput" accept=".eml,.txt" multiple style="display:none;" onchange="handleEmlFiles(event)">
+        </div>
+
+        <div id="emlResultCard" style="display:none;" class="card">
+            <div class="card-header">
+                <div class="card-title">📬 Erkannte Emails (<span id="emlEmailCount">0</span>)</div>
+                <button class="btn btn-success btn-sm" onclick="importAllEmlEmails()">+ Alle importieren</button>
+            </div>
+            <div id="emlEmailList"></div>
+        </div>
+    </div>
+
+    <!-- TAB: IMAP / POP3 -->
+    <div class="tab-content" id="tab-imap">
+
+        <div class="highlight" style="margin-bottom:1rem;display:flex;align-items:flex-start;gap:0.75rem;">
+            🔒
+            <div style="flex:1;">
+                <strong>Sicherheitshinweis:</strong> Dein Passwort wird <strong>niemals gespeichert</strong> – weder lokal noch irgendwo sonst.
+                Der Proxy läuft <strong>ausschließlich lokal</strong> auf diesem Rechner.
+                Für Gmail / Yahoo bitte ein <strong>App-Passwort</strong> verwenden (kein normales Passwort).
+                <span id="imapProxyStatus" style="display:block;margin-top:0.4rem;font-size:0.82rem;color:var(--text-muted);">⏳ Proxy-Status wird geprüft…</span>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:1rem;">
+            <div class="card-title" style="margin-bottom:1rem;">🚀 Einrichtung (einmalig)</div>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-num">1</div>
+                    <div class="step-body">
+                        <div class="step-title">Proxy starten</div>
+                        <div class="step-desc">Terminal öffnen und folgenden Befehl eingeben:</div>
+                        <div class="code-wrapper" style="margin-top:0.5rem;">
+                            <div class="script-box" style="font-size:0.85rem;max-height:60px;">python3 /Library/WebServer/Documents/Bewerbungstracker/imap_proxy.py</div>
+                            <button class="btn btn-secondary btn-sm copy-btn" onclick="copyImapCommand()">📋 Kopieren</button>
+                        </div>
+                        <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.5rem;">Der Proxy läuft solange das Terminal-Fenster geöffnet ist (Port 8765, nur localhost).</div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">2</div>
+                    <div class="step-body">
+                        <div class="step-title">Gmail / Yahoo: App-Passwort erstellen</div>
+                        <div class="step-desc">
+                            Gmail: <a href="https://myaccount.google.com/apppasswords" target="_blank" style="color:var(--primary-light);">myaccount.google.com/apppasswords</a>
+                            (2-Faktor-Auth muss aktiv sein) → App-Passwort für <em>Mail</em> generieren.<br>
+                            Yahoo: Kontoeinstellungen → Sicherheit → App-Passwörter.
+                        </div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">3</div>
+                    <div class="step-body">
+                        <div class="step-title">Verbindung herstellen</div>
+                        <div class="step-desc">Anbieter wählen, Daten eingeben, verbinden.</div>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="checkImapProxy()">🔍 Proxy-Status prüfen</button>
+        </div>
+
+        <div class="card" style="margin-bottom:1rem;">
+            <div class="card-title" style="margin-bottom:1rem;">📮 Verbindungseinstellungen</div>
+
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label>E-Mail Anbieter (Voreinstellung)</label>
+                <select id="imapPreset" onchange="applyImapPreset(this.value)">
+                    <option value="">– Anbieter wählen –</option>
+                    <option value="gmail_imap">Gmail (IMAP) – empfohlen</option>
+                    <option value="gmail_pop3">Gmail (POP3)</option>
+                    <option value="outlook">Outlook / Hotmail / Live</option>
+                    <option value="yahoo">Yahoo Mail</option>
+                    <option value="gmx">GMX</option>
+                    <option value="webde">WEB.DE</option>
+                    <option value="custom">Eigener Server</option>
+                </select>
+            </div>
+
+            <div class="form-grid" style="margin-bottom:1rem;">
+                <div class="form-group">
+                    <label>Server-Adresse</label>
+                    <input type="text" id="imapHost" placeholder="imap.gmail.com">
+                </div>
+                <div class="form-group">
+                    <label>Port</label>
+                    <input type="number" id="imapPort" value="993" min="1" max="65535">
+                </div>
+                <div class="form-group">
+                    <label>Protokoll</label>
+                    <select id="imapProtocol" onchange="updateImapPortDefault()">
+                        <option value="imap">IMAP (empfohlen)</option>
+                        <option value="pop3">POP3</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Ordner <span style="color:var(--text-muted);font-size:0.75rem;">(nur IMAP)</span></label>
+                    <input type="text" id="imapFolder" value="INBOX" placeholder="INBOX">
+                </div>
+            </div>
+            <div id="imapFolderHint" style="display:none;font-size:0.82rem;color:#FCD34D;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:rgba(245,158,11,0.08);border-radius:6px;border-left:3px solid #F59E0B;"></div>
+
+            <div class="form-grid" style="margin-bottom:1rem;">
+                <div class="form-group">
+                    <label>E-Mail-Adresse / Benutzername</label>
+                    <input type="email" id="imapUser" placeholder="dein@beispiel.de" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label>
+                        Passwort / App-Passwort
+                        <span style="background:rgba(239,68,68,0.15);color:#F87171;font-size:0.72rem;padding:0.1rem 0.45rem;border-radius:4px;margin-left:0.35rem;">wird nicht gespeichert</span>
+                    </label>
+                    <div style="display:flex;gap:0.4rem;">
+                        <input type="password" id="imapPass" placeholder="Passwort" autocomplete="current-password" style="flex:1;">
+                        <button type="button" id="imapPwToggle" class="btn btn-secondary btn-sm" onclick="toggleImapPw()" title="Anzeigen/Verbergen">👁</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Max. Emails</label>
+                    <input type="number" id="imapLimit" value="50" min="5" max="200" style="width:120px;">
+                </div>
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-top:1.5rem;">
+                        <input type="checkbox" id="imapNoVerify" style="width:auto;">
+                        <span style="font-size:0.82rem;">Zertifikat nicht prüfen <span style="color:var(--text-muted);">(nur eigene Server!)</span></span>
+                    </label>
+                </div>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+                <button id="imapConnectBtn" class="btn btn-primary" onclick="fetchImapEmails()">🔌 Verbinden & Abrufen</button>
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.85rem;color:var(--text-muted);">
+                    <input type="checkbox" id="imapRemember" checked style="width:auto;">
+                    Server-Einstellungen merken (kein Passwort)
+                </label>
+            </div>
+        </div>
+
+        <div id="imapResultCard" style="display:none;" class="card">
+            <div class="card-header">
+                <div class="card-title">📬 Gefundene Emails (<span id="imapEmailCount">0</span>)</div>
+                <div style="display:flex;gap:0.5rem;">
+                    <button class="btn btn-success btn-sm" onclick="importAllImapEmails()">+ Alle importieren</button>
+                    <button class="btn btn-secondary btn-sm" onclick="fetchImapEmails()">🔄 Aktualisieren</button>
+                </div>
+            </div>
+            <div id="imapDebugInfo" style="display:none;font-size:0.75rem;color:var(--text-muted);padding:0.4rem 0 0.75rem;border-bottom:1px solid var(--border);margin-bottom:0.5rem;"></div>
+
+            <!-- Search & Filter Bar -->
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center;">
+                <input type="text" id="imapSearchBox" placeholder="🔍 Nach Firma, Betreff, Absender suchen..."
+                    style="flex:1;min-width:250px;padding:0.55rem 0.75rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card2);color:var(--text);font-size:0.9rem;"
+                    oninput="debounceImapSearch()">
+                <div style="font-size:0.85rem;color:var(--text-muted);">
+                    <span id="imapFilterCount">0</span> / <span id="imapTotalCount">0</span> Emails
+                </div>
+            </div>
+
+            <div id="imapEmailList"></div>
+        </div>
+    </div>
+
+    <!-- TAB: TEXT PASTE -->
+    <div class="tab-content" id="tab-text">
+        <div class="card">
+            <div class="card-title" style="margin-bottom:1rem;">📋 Email-Text einfügen</div>
+            <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;line-height:1.6;">
+                Kopiere den kompletten Email-Text (inkl. Von, An, Betreff, Datum) aus Gmail und füge ihn hier ein.
+                Die App analysiert den Text und extrahiert Bewerbungsdaten.
+            </p>
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label>Email-Text einfügen (mehrere Emails durch "---" trennen)</label>
+                <textarea id="pasteEmailText" rows="10" placeholder="Von: hr@firma.de&#10;An: mich@gmail.com&#10;Betreff: Ihre Bewerbung als Softwareentwickler&#10;Datum: 15. Januar 2025&#10;&#10;Sehr geehrte Damen und Herren,&#10;vielen Dank für Ihre Bewerbung...&#10;&#10;---&#10;&#10;Weitere Email hier..."></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="analyzeEmailText()">🔍 Analysieren & Importieren</button>
+        </div>
+        <div id="textResultCard" style="display:none;margin-top:1rem;" class="card">
+            <div class="card-header">
+                <div class="card-title">📬 Erkannte Daten (<span id="textEmailCount">0</span>)</div>
+                <button class="btn btn-success btn-sm" onclick="importAllTextEmails()">+ Alle importieren</button>
+            </div>
+            <div id="textEmailList"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ SETTINGS ═══ -->
+<div class="view" id="view-settings">
+    <h1 style="font-size:1.5rem;font-weight:700;margin-bottom:1.5rem;">⚙️ Einstellungen</h1>
+    <div class="card" style="max-width:600px;margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:1rem;">🔍 Bewerbungs-Erkennung</div>
+        <div class="form-group" style="margin-bottom:0.75rem;">
+            <label>Keywords für Email-Erkennung (kommagetrennt)</label>
+            <textarea id="keywordsInput" rows="3" placeholder="Bewerbung, Stelle, Job, Interview..."></textarea>
+        </div>
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label>Ghosting nach X Tagen (ohne Antwort)</label>
+            <input type="number" id="ghostingDaysInput" value="30" min="7" max="90" style="width:120px;">
+        </div>
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label>Email-Import ab Datum (nur neuere Emails)</label>
+            <input type="date" id="emailImportStartDate" style="width:200px;">
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem;">Leer = alle Emails importieren</div>
+        </div>
+        <button class="btn btn-primary" onclick="saveSettings()">💾 Speichern</button>
+    </div>
+    <div class="card" style="max-width:600px;margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:1rem;">📦 Daten & Backup</div>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+            <button class="btn btn-info" onclick="exportJSON()">📥 JSON Backup</button>
+            <button class="btn btn-secondary" onclick="document.getElementById('importInput').click()">📤 JSON Import</button>
+            <button class="btn btn-warning" onclick="exportPDF()">📄 PDF Export</button>
+            <button class="btn btn-danger" onclick="clearAllData()">🗑️ Alles löschen</button>
+        </div>
+    </div>
+    <div class="card" style="max-width:600px;">
+        <div class="card-title" style="margin-bottom:0.5rem;">ℹ️ Info</div>
+        <p style="color:var(--text-muted);font-size:0.85rem;line-height:1.8;">
+            <strong>Bewerbungs-Tracker v3.0</strong><br>
+            Daten lokal im Browser (localStorage).<br>
+            Kein OAuth, kein externer Server nötig.
+        </p>
+    </div>
+</div>
+
+</main>
+</div>
+
+<!-- MODAL: ADD/EDIT -->
+<div class="modal-overlay" id="addModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title" id="modalTitle">📝 Bewerbung hinzufügen</div>
+            <button class="modal-close" onclick="closeModal('addModal')">✕</button>
+        </div>
+        <form id="bewerbungForm" onsubmit="return false">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Firma *</label>
+                    <input type="text" id="f_firma" required placeholder="z.B. Google GmbH">
+                </div>
+                <div class="form-group">
+                    <label>Position</label>
+                    <input type="text" id="f_position" placeholder="z.B. Frontend Developer">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="f_status">
+                        <option value="beworben">📤 Beworben</option>
+                        <option value="antwort">📨 Antwort erhalten</option>
+                        <option value="interview">🎤 Interview</option>
+                        <option value="zusage">✅ Zusage</option>
+                        <option value="absage">❌ Absage</option>
+                        <option value="ghosting">👻 Ghosting</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Beworben am</label>
+                    <input type="date" id="f_datum">
+                </div>
+                <div class="form-group">
+                    <label>Gehalt (erwartet)</label>
+                    <input type="text" id="f_gehalt" placeholder="z.B. 65.000 €">
+                </div>
+                <div class="form-group">
+                    <label>Ort / Remote</label>
+                    <input type="text" id="f_ort" placeholder="Berlin / Remote">
+                </div>
+                <div class="form-group">
+                    <label>Kontakt Email</label>
+                    <input type="email" id="f_email" placeholder="hr@firma.de">
+                </div>
+                <div class="form-group">
+                    <label>Quelle</label>
+                    <select id="f_quelle">
+                        <option value="gmail">📧 Gmail</option>
+                        <option value="imap">📮 IMAP/POP3</option>
+                        <option value="manuell">✏️ Manuell</option>
+                        <option value="linkedin">💼 LinkedIn</option>
+                        <option value="indeed">🔍 Indeed</option>
+                        <option value="xing">📌 XING</option>
+                        <option value="website">🌐 Website</option>
+                        <option value="empfehlung">🤝 Empfehlung</option>
+                    </select>
+                </div>
+                <div class="form-group full">
+                    <label>Stellenlink</label>
+                    <input type="url" id="f_link" placeholder="https://...">
+                </div>
+                <div class="form-group full">
+                    <label>Notizen</label>
+                    <textarea id="f_notizen" rows="3" placeholder="Ansprechpartner, Eindrücke, nächste Schritte..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addModal')">Abbrechen</button>
+                <button type="button" class="btn btn-primary" id="saveBtn" onclick="saveBewerbung()">💾 Speichern</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL: DETAIL -->
+<div class="modal-overlay" id="detailModal">
+    <div class="modal" style="max-width:700px;">
+        <div class="modal-header">
+            <div class="modal-title" id="detailTitle">Detail</div>
+            <button class="modal-close" onclick="closeModal('detailModal')">✕</button>
+        </div>
+        <div id="detailContent"></div>
+        <div class="modal-footer">
+            <button class="btn btn-danger btn-sm" onclick="deleteFromDetail()">🗑️ Löschen</button>
+            <button class="btn btn-secondary" onclick="closeModal('detailModal')">Schließen</button>
+            <button class="btn btn-primary" onclick="editFromDetail()">✏️ Bearbeiten</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+<input type="file" id="importInput" accept=".json" style="display:none;" onchange="handleImport(event)">
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   APPS SCRIPT CODE TEMPLATE
+═══════════════════════════════════════════════════════ */
+const APPS_SCRIPT_CODE = `function doGet(e) {
+  var maxEmails = 100;
+  var keywords = ['Bewerbung','Stelle','Job','Position','Application',
+                  'Interview','Absage','Zusage','Kandidat','Recruiting'];
+  
+  var query = keywords.map(function(k){ return 'subject:' + k; }).join(' OR ');
+  var threads = GmailApp.search(query, 0, maxEmails);
+  var results = [];
+  
+  threads.forEach(function(thread) {
+    var msgs = thread.getMessages();
+    msgs.forEach(function(msg) {
+      results.push({
+        id:      msg.getId(),
+        subject: msg.getSubject(),
+        from:    msg.getFrom(),
+        to:      msg.getTo(),
+        date:    msg.getDate().toISOString(),
+        snippet: msg.getPlainBody().substring(0, 300)
+      });
+    });
+  });
+  
+  // Gesendet auch scannen
+  var sentQuery = 'in:sent ' + keywords.slice(0,3).map(function(k){ return 'subject:' + k; }).join(' OR ');
+  var sentThreads = GmailApp.search(sentQuery, 0, 50);
+  sentThreads.forEach(function(thread) {
+    var msgs = thread.getMessages();
+    msgs.forEach(function(msg) {
+      results.push({
+        id:      msg.getId() + '_sent',
+        subject: msg.getSubject(),
+        from:    msg.getFrom(),
+        to:      msg.getTo(),
+        date:    msg.getDate().toISOString(),
+        snippet: msg.getPlainBody().substring(0, 300),
+        sent:    true
+      });
+    });
+  });
+  
+  var output = ContentService.createTextOutput(JSON.stringify({
+    status: 'ok',
+    count:  results.length,
+    emails: results
+  }));
+  output.setMimeType(ContentService.MimeType.JSON);
+  return output;
+}`;
+
+/* ═══════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════ */
+let state = {
+    bewerbungen: [],
+    settings: {
+        keywords: 'Bewerbung,Stelle,Stellenausschreibung,Application,Job,Position,Kandidat,Recruiting,Interview,Absage,Zusage',
+        ghostingDays: 30,
+        emailImportStartDate: '',
+        appsScriptUrl: '',
+        imapHost: '',
+        imapPort: 993,
+        imapProtocol: 'imap',
+        imapUser: ''
+        // NOTE: imapPass is intentionally never stored here or in localStorage
+    },
+    activeFilter: '',
+    currentEditId: null,
+    currentDetailId: null,
+    scriptEmails: [],
+    emlEmails: [],
+    textEmails: [],
+    imapEmails: []
+};
+
+/* ═══════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════ */
+function init() {
+    loadFromStorage();
+    renderAll();
+    loadSettingsForm();
+    renderAppsScriptCode();
+    updateConnectionStatus();
+
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('f_datum').value = today;
+    setTimeout(checkImapProxy, 600);
+}
+
+function loadFromStorage() {
+    try {
+        const saved = localStorage.getItem('bewerbungsTrackerV3');
+        if (saved) {
+            const data = JSON.parse(saved);
+            state.bewerbungen = data.bewerbungen || [];
+            state.settings = { ...state.settings, ...(data.settings || {}) };
+        }
+    } catch(e) { console.error('Load error:', e); }
+}
+
+function saveToStorage() {
+    try {
+        localStorage.setItem('bewerbungsTrackerV3', JSON.stringify({
+            bewerbungen: state.bewerbungen,
+            settings: state.settings
+        }));
+    } catch(e) { showToast('Speicherfehler!', 'error'); }
+}
+
+function loadSettingsForm() {
+    const kw = document.getElementById('keywordsInput');
+    const gd = document.getElementById('ghostingDaysInput');
+    const ed = document.getElementById('emailImportStartDate');
+    const su = document.getElementById('appsScriptUrl');
+    if (kw) kw.value = state.settings.keywords || '';
+    if (gd) gd.value = state.settings.ghostingDays || 30;
+    if (ed) ed.value = state.settings.emailImportStartDate || '';
+    if (su) su.value = state.settings.appsScriptUrl || '';
+    // IMAP settings (password intentionally excluded)
+    const ih = document.getElementById('imapHost');
+    const ip = document.getElementById('imapPort');
+    const ipr = document.getElementById('imapProtocol');
+    const iu = document.getElementById('imapUser');
+    if (ih)  ih.value  = state.settings.imapHost     || '';
+    if (ip)  ip.value  = state.settings.imapPort      || 993;
+    if (ipr) ipr.value = state.settings.imapProtocol || 'imap';
+    if (iu)  iu.value  = state.settings.imapUser      || '';
+}
+
+function updateConnectionStatus() {
+    const dot = document.getElementById('connStatusDot');
+    const txt = document.getElementById('connStatusText');
+    if (state.settings.appsScriptUrl) {
+        dot.style.background = '#10B981';
+        dot.style.boxShadow = '0 0 6px #10B981';
+        txt.textContent = 'Apps Script verbunden';
+    } else {
+        dot.style.background = '#94A3B8';
+        dot.style.boxShadow = 'none';
+        txt.textContent = 'Nicht verbunden';
+    }
+}
+
+/* ═══════════════════════════════════════════════════════
+   NAVIGATION & TABS
+═══════════════════════════════════════════════════════ */
+function showView(name) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    const view = document.getElementById('view-' + name);
+    const nav = document.getElementById('nav-' + name);
+    if (view) { view.classList.add('active'); }
+    if (nav) nav.classList.add('active');
+    if (name === 'dashboard') renderDashboard();
+    if (name === 'bewerbungen') renderBewerbungen();
+    if (name === 'kanban') renderKanban();
+}
+
+function switchTab(el, tabId) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById(tabId).classList.add('active');
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER DASHBOARD
+═══════════════════════════════════════════════════════ */
+function renderAll() { renderDashboard(); renderBewerbungen(); }
+
+function renderDashboard() {
+    const b = state.bewerbungen;
+    const counts = {
+        total: b.length,
+        beworben: b.filter(x => x.status === 'beworben').length,
+        interview: b.filter(x => x.status === 'interview').length,
+        zusage: b.filter(x => x.status === 'zusage').length,
+        absage: b.filter(x => x.status === 'absage').length,
+        ghosting: b.filter(x => x.status === 'ghosting').length,
+    };
+    const rate = counts.total > 0 ? Math.round((counts.interview + counts.zusage) / counts.total * 100) : 0;
+
+    document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card blue"><div class="stat-icon">📁</div><div class="stat-value">${counts.total}</div><div class="stat-label">Gesamt</div></div>
+        <div class="stat-card yellow"><div class="stat-icon">📤</div><div class="stat-value">${counts.beworben}</div><div class="stat-label">Offen</div></div>
+        <div class="stat-card purple"><div class="stat-icon">🎤</div><div class="stat-value">${counts.interview}</div><div class="stat-label">Interviews</div></div>
+        <div class="stat-card green"><div class="stat-icon">✅</div><div class="stat-value">${counts.zusage}</div><div class="stat-label">Zusagen</div></div>
+        <div class="stat-card red"><div class="stat-icon">❌</div><div class="stat-value">${counts.absage}</div><div class="stat-label">Absagen</div></div>
+        <div class="stat-card blue"><div class="stat-icon">📊</div><div class="stat-value">${rate}%</div><div class="stat-label">Rückmeldung</div></div>
+    `;
+
+    // Status Chart
+    const statuses = [
+        { key:'beworben', label:'Beworben', color:'#3B82F6' },
+        { key:'antwort', label:'Antwort', color:'#F59E0B' },
+        { key:'interview', label:'Interview', color:'#8B5CF6' },
+        { key:'zusage', label:'Zusage', color:'#10B981' },
+        { key:'absage', label:'Absage', color:'#EF4444' },
+        { key:'ghosting', label:'Ghosting', color:'#94A3B8' }
+    ];
+    const maxCount = Math.max(1, ...statuses.map(s => b.filter(x => x.status === s.key).length));
+    document.getElementById('statusChart').innerHTML = statuses.map(s => {
+        const cnt = b.filter(x => x.status === s.key).length;
+        const pct = Math.round(cnt / maxCount * 100);
+        return `
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.6rem;">
+                <div style="width:80px;font-size:0.8rem;color:var(--text-muted);">${s.label}</div>
+                <div style="flex:1;background:var(--bg-card2);border-radius:20px;height:8px;">
+                    <div style="width:${pct}%;background:${s.color};height:100%;border-radius:20px;transition:width 0.5s;"></div>
+                </div>
+                <div style="width:24px;font-size:0.8rem;text-align:right;">${cnt}</div>
+            </div>`;
+    }).join('');
+
+    // Source Chart
+    const sources = {};
+    b.forEach(x => { sources[x.quelle || 'manuell'] = (sources[x.quelle || 'manuell'] || 0) + 1; });
+    const srcMax = Math.max(1, ...Object.values(sources));
+    document.getElementById('sourceChart').innerHTML = Object.entries(sources).length === 0
+        ? '<p style="color:var(--text-muted);font-size:0.85rem;">Noch keine Daten</p>'
+        : Object.entries(sources).sort((a,b) => b[1]-a[1]).map(([src, cnt]) => `
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.6rem;">
+                <div style="width:100px;font-size:0.8rem;color:var(--text-muted);">${getQuelleLabel(src)}</div>
+                <div style="flex:1;background:var(--bg-card2);border-radius:20px;height:8px;">
+                    <div style="width:${Math.round(cnt/srcMax*100)}%;background:var(--primary);height:100%;border-radius:20px;"></div>
+                </div>
+                <div style="width:24px;font-size:0.8rem;text-align:right;">${cnt}</div>
+            </div>`).join('');
+
+    // Recent
+    const recent = [...b].sort((a,x) => new Date(x.updatedAt||x.createdAt||0) - new Date(a.updatedAt||a.createdAt||0)).slice(0,5);
+    document.getElementById('recentList').innerHTML = recent.length === 0
+        ? '<p style="color:var(--text-muted);font-size:0.85rem;">Noch keine Bewerbungen</p>'
+        : recent.map(r => `
+            <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="showDetail('${r.id}')">
+                <div style="flex:1;"><strong>${escHtml(r.firma)}</strong><span style="color:var(--text-muted);font-size:0.8rem;margin-left:0.5rem;">${escHtml(r.position||'')}</span></div>
+                ${getStatusBadge(r.status)}
+                <div style="color:var(--text-muted);font-size:0.8rem;">${formatDate(r.updatedAt||r.createdAt||r.datum)}</div>
+            </div>`).join('');
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER BEWERBUNGEN
+═══════════════════════════════════════════════════════ */
+function renderBewerbungen() {
+    const search = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    const sort = document.getElementById('sortSelect')?.value || 'datum-desc';
+
+    let filtered = state.bewerbungen.filter(b => {
+        const matchFilter = !state.activeFilter || b.status === state.activeFilter;
+        const matchSearch = !search || b.firma.toLowerCase().includes(search) || (b.position||'').toLowerCase().includes(search);
+        return matchFilter && matchSearch;
+    });
+
+    filtered.sort((a, b) => {
+        if (sort === 'firma') return a.firma.localeCompare(b.firma);
+        if (sort === 'status') return a.status.localeCompare(b.status);
+        if (sort === 'datum-asc') return new Date(a.datum) - new Date(b.datum);
+        return new Date(b.datum) - new Date(a.datum);
+    });
+
+    const tbody = document.getElementById('bewerbungenTableBody');
+    const empty = document.getElementById('bewerbungenEmpty');
+
+    if (!filtered.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+    } else {
+        empty.style.display = 'none';
+        tbody.innerHTML = filtered.map(item => `
+            <tr style="cursor:pointer;" onclick="showDetail('${item.id}')">
+                <td><strong>${escHtml(item.firma)}</strong>${item.link ? `<a href="${escHtml(item.link)}" target="_blank" onclick="event.stopPropagation()" style="margin-left:0.4rem;font-size:0.75rem;color:var(--primary-light);">🔗</a>` : ''}</td>
+                <td>${escHtml(item.position||'–')}</td>
+                <td>${getStatusBadge(item.status)}</td>
+                <td>${formatDate(item.datum)}</td>
+                <td><span style="color:${getDaysColor(item.datum)};">${getDaysSince(item.datum)}d</span></td>
+                <td style="color:var(--text-muted);font-size:0.8rem;">${getQuelleLabel(item.quelle)}</td>
+                <td onclick="event.stopPropagation()">
+                    <div style="display:flex;gap:0.3rem;">
+                        <button class="btn btn-secondary btn-sm" onclick="editBewerbung('${item.id}')">✏️</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteBewerbung('${item.id}')">🗑️</button>
+                    </div>
+                </td>
+            </tr>`).join('');
+    }
+}
+
+/* ═══════════════════════════════════════════════════════
+   KANBAN
+═══════════════════════════════════════════════════════ */
+function renderKanban() {
+    const statuses = [
+        { key:'beworben', label:'📤 Beworben', color:'#3B82F6' },
+        { key:'antwort', label:'📨 Antwort', color:'#F59E0B' },
+        { key:'interview', label:'🎤 Interview', color:'#8B5CF6' },
+        { key:'zusage', label:'✅ Zusage', color:'#10B981' },
+        { key:'absage', label:'❌ Absage', color:'#EF4444' },
+        { key:'ghosting', label:'👻 Ghosting', color:'#94A3B8' }
+    ];
+    document.getElementById('kanbanBoard').innerHTML = statuses.map(s => {
+        const items = state.bewerbungen.filter(b => b.status === s.key);
+        return `
+            <div class="kanban-col">
+                <div class="kanban-header" style="background:${s.color}20;border-bottom:1px solid ${s.color}40;">
+                    <span>${s.label}</span>
+                    <span style="background:${s.color};color:white;border-radius:12px;padding:0.1rem 0.5rem;font-size:0.75rem;">${items.length}</span>
+                </div>
+                <div class="kanban-body">
+                    
+                    ${items.map(item => `
+                        <div class="kanban-card" onclick="showDetail('${item.id}')">
+                            <div class="kanban-firma">${escHtml(item.firma)}</div>
+                            <div class="kanban-position">${escHtml(item.position||'–')}</div>
+                            <div class="kanban-days" style="color:${getDaysColor(item.datum)};">⏱ ${getDaysSince(item.datum)}d</div>
+                        </div>`).join('')}
+                </div>
+            </div>`;
+    }).join('');
+}
+
+/* ═══════════════════════════════════════════════════════
+   DETAIL MODAL
+═══════════════════════════════════════════════════════ */
+function showDetail(id) {
+    const b = state.bewerbungen.find(x => x.id === id);
+    if (!b) return;
+    state.currentDetailId = id;
+    document.getElementById('detailTitle').textContent = `${b.firma} – ${b.position||''}`;
+    document.getElementById('detailContent').innerHTML = `
+        <div class="detail-grid" style="margin-bottom:1rem;">
+            <div class="detail-section">
+                <div class="detail-label">Status</div>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    ${getStatusBadge(b.status)}
+                    <select onchange="quickStatusChange('${id}',this.value)" style="font-size:0.8rem;padding:0.25rem 0.5rem;">
+                        <option value="beworben" ${b.status==='beworben'?'selected':''}>📤 Beworben</option>
+                        <option value="antwort" ${b.status==='antwort'?'selected':''}>📨 Antwort</option>
+                        <option value="interview" ${b.status==='interview'?'selected':''}>🎤 Interview</option>
+                        <option value="zusage" ${b.status==='zusage'?'selected':''}>✅ Zusage</option>
+                        <option value="absage" ${b.status==='absage'?'selected':''}>❌ Absage</option>
+                        <option value="ghosting" ${b.status==='ghosting'?'selected':''}>👻 Ghosting</option>
+                    </select>
+                </div>
+            </div>
+            <div class="detail-section">
+                <div class="detail-label">Beworben am</div>
+                <div class="detail-value">${formatDate(b.datum)} <span style="color:var(--text-muted);font-size:0.8rem;">(${getDaysSince(b.datum)} Tage)</span></div>
+            </div>
+            <div class="detail-section">
+                <div class="detail-label">Ort</div>
+                <div class="detail-value">${escHtml(b.ort||'–')}</div>
+            </div>
+            <div class="detail-section">
+                <div class="detail-label">Gehalt</div>
+                <div class="detail-value">${escHtml(b.gehalt||'–')}</div>
+            </div>
+            <div class="detail-section">
+                <div class="detail-label">Kontakt</div>
+                <div class="detail-value">${b.email ? `<a href="mailto:${escHtml(b.email)}" style="color:var(--primary-light);">${escHtml(b.email)}</a>` : '–'}</div>
+            </div>
+            <div class="detail-section">
+                <div class="detail-label">Quelle</div>
+                <div class="detail-value">${getQuelleLabel(b.quelle)}</div>
+            </div>
+            ${b.link ? `
+            <div class="detail-section" style="grid-column:1/-1;">
+                <div class="detail-label">Stellenlink</div>
+                <div class="detail-value"><a href="${escHtml(b.link)}" target="_blank" style="color:var(--primary-light);">🔗 ${escHtml(b.link)}</a></div>
+            </div>` : ''}
+            ${b.notizen ? `
+            <div class="detail-section" style="grid-column:1/-1;">
+                <div class="detail-label">Notizen</div>
+                <div class="detail-value" style="white-space:pre-wrap;">${escHtml(b.notizen)}</div>
+            </div>` : ''}
+        </div>`;
+    openModal('detailModal');
+}
+
+function quickStatusChange(id, newStatus) {
+    const idx = state.bewerbungen.findIndex(x => x.id === id);
+    if (idx === -1) return;
+    state.bewerbungen[idx].status = newStatus;
+    state.bewerbungen[idx].updatedAt = new Date().toISOString();
+    saveToStorage();
+    renderAll();
+    showToast(`Status → ${newStatus}`, 'success');
+}
+
+function deleteFromDetail() {
+    if (state.currentDetailId) {
+        deleteBewerbung(state.currentDetailId);
+        closeModal('detailModal');
+    }
+}
+
+function editFromDetail() {
+    if (state.currentDetailId) {
+        editBewerbung(state.currentDetailId);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════
+   CRUD
+═══════════════════════════════════════════════════════ */
+function openAddModal() {
+    state.currentEditId = null;
+    document.getElementById('modalTitle').textContent = '📝 Bewerbung hinzufügen';
+    document.getElementById('saveBtn').textContent = '💾 Speichern';
+    document.getElementById('bewerbungForm').reset();
+    document.getElementById('f_datum').value = new Date().toISOString().split('T')[0];
+    document.getElementById('f_quelle').value = 'manuell';
+    openModal('addModal');
+}
+
+function editBewerbung(id) {
+    const b = state.bewerbungen.find(x => x.id === id);
+    if (!b) return;
+    state.currentEditId = id;
+    document.getElementById('modalTitle').textContent = '✏️ Bewerbung bearbeiten';
+    document.getElementById('saveBtn').textContent = '💾 Aktualisieren';
+    document.getElementById('f_firma').value = b.firma || '';
+    document.getElementById('f_position').value = b.position || '';
+    document.getElementById('f_status').value = b.status || 'beworben';
+    document.getElementById('f_datum').value = b.datum || '';
+    document.getElementById('f_gehalt').value = b.gehalt || '';
+    document.getElementById('f_ort').value = b.ort || '';
+    document.getElementById('f_email').value = b.email || '';
+    document.getElementById('f_quelle').value = b.quelle || 'manuell';
+    document.getElementById('f_link').value = b.link || '';
+    document.getElementById('f_notizen').value = b.notizen || '';
+    closeModal('detailModal');
+    openModal('addModal');
+}
+
+function saveBewerbung(e) {
+    if (e) e.preventDefault();
+    const firma = document.getElementById('f_firma').value.trim();
+    if (!firma) { showToast('Firma ist erforderlich!', 'error'); return; }
+    const data = {
+        firma,
+        position: document.getElementById('f_position').value.trim(),
+        status:   document.getElementById('f_status').value,
+        datum:    document.getElementById('f_datum').value,
+        gehalt:   document.getElementById('f_gehalt').value.trim(),
+        ort:      document.getElementById('f_ort').value.trim(),
+        email:    document.getElementById('f_email').value.trim(),
+        quelle:   document.getElementById('f_quelle').value,
+        link:     document.getElementById('f_link').value.trim(),
+        notizen:  document.getElementById('f_notizen').value.trim(),
+        updatedAt: new Date().toISOString()
+    };
+    if (state.currentEditId) {
+        const idx = state.bewerbungen.findIndex(x => x.id === state.currentEditId);
+        if (idx !== -1) { state.bewerbungen[idx] = { ...state.bewerbungen[idx], ...data }; }
+        showToast('Bewerbung aktualisiert ✓', 'success');
+    } else {
+        data.id = 'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+        data.createdAt = new Date().toISOString();
+        state.bewerbungen.unshift(data);
+        showToast('Bewerbung hinzugefügt ✓', 'success');
+    }
+    saveToStorage();
+    renderAll();
+    closeModal('addModal');
+}
+
+function deleteBewerbung(id) {
+    if (!confirm('Bewerbung wirklich löschen?')) return;
+    state.bewerbungen = state.bewerbungen.filter(x => x.id !== id);
+    saveToStorage();
+    renderAll();
+    showToast('Gelöscht', 'warning');
+}
+
+/* ═══════════════════════════════════════════════════════
+   GMAIL VIA APPS SCRIPT
+═══════════════════════════════════════════════════════ */
+function renderAppsScriptCode() {
+    const el = document.getElementById('appsScriptCode');
+    if (el) el.textContent = APPS_SCRIPT_CODE;
+}
+
+async function fetchFromAppsScript() {
+    const url = state.settings.appsScriptUrl.trim();
+    if (!url) {
+        showToast('Bitte zuerst die Apps Script URL speichern!', 'error');
+        return;
+    }
+    const btn = document.getElementById('fetchBtn');
+    btn.innerHTML = '<span class="spinner"></span> Lade...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.status !== 'ok') throw new Error('Script Fehler');
+        state.scriptEmails = data.emails || [];
+        renderScriptEmails();
+        showToast(`${data.count} Emails geladen ✓`, 'success');
+    } catch(err) {
+        showToast('Fehler: ' + err.message + ' (CORS? URL korrekt?)', 'error');
+        console.error(err);
+    } finally {
+        btn.innerHTML = '📧 Emails abrufen';
+        btn.disabled = false;
+    }
+}
+
+function renderScriptEmails() {
+    const card = document.getElementById('scriptResultCard');
+    const container = document.getElementById('scriptEmailList');
+    const emails = state.scriptEmails;
+
+    card.style.display = 'block';
+
+    if (!emails.length) {
+        document.getElementById('scriptEmailCount').textContent = '0';
+        container.innerHTML = '<p style="color:var(--text-muted);">Keine Emails gefunden.</p>';
+        return;
+    }
+
+    const relevant = emails.filter(e => isRelevantApplicationEmail(e));
+
+    document.getElementById('scriptEmailCount').textContent = relevant.length;
+
+    container.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">
+            <span style="color:var(--text-muted);font-size:0.85rem;">${relevant.length} relevante Emails von ${emails.length} gesamt</span>
+        </div>
+        ${relevant.map((e, i) => {
+            const parsed = parseEmailToApplication(e);
+            return `
+            <div class="email-item">
+                <div class="email-item-header">
+                    <div style="flex:1;">
+                        <div class="email-firma">${escHtml(parsed.firma)}</div>
+                        <div class="email-subject">${escHtml(e.subject)}</div>
+                        <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.2rem;">
+                            Von: ${escHtml(e.from)} · ${formatDate(e.date)}
+                        </div>
+                        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.35rem;line-height:1.4;">
+                            ${escHtml((e.snippet||'').substring(0,150))}…
+                        </div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:0.35rem;flex-shrink:0;margin-left:0.75rem;">
+                        ${getStatusBadge(parsed.status)}
+                        <button class="btn btn-primary btn-sm" onclick="importScriptEmail(${i})">+ Import</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('')}`;
+}
+
+/* Email filtering helpers for reducing false positives */
+function isEmailWithinDateRange(emailDate) {
+    if (!state.settings.emailImportStartDate) return true;
+    const startDate = new Date(state.settings.emailImportStartDate).getTime();
+    const eDate = new Date(emailDate).getTime();
+    return eDate >= startDate;
+}
+
+function isRelevantApplicationEmail(email) {
+    if (!isEmailWithinDateRange(email.date)) return false;
+
+    const keywords = state.settings.keywords.split(',').map(k => k.trim().toLowerCase());
+    const priorityKeywords = ['bewerbung', 'application', 'stellenausschreibung'];
+
+    const subject = (email.subject || '').toLowerCase();
+    const from = (email.from || '').toLowerCase();
+    const snippet = (email.snippet || '').toLowerCase();
+
+    // Check priority keywords first (higher confidence)
+    const hasPriorityKeyword = priorityKeywords.some(pk =>
+        subject.includes(pk) || from.includes(pk)
+    );
+    if (hasPriorityKeyword) return true;
+
+    // For other keywords, require multiple matches or keyword in subject
+    let keywordMatches = 0;
+    for (let k of keywords) {
+        if (!k || k.length < 3) continue;
+        const keywordRegex = new RegExp('\\b' + k + '\\b', 'i');
+        if (keywordRegex.test(subject) || keywordRegex.test(from)) {
+            keywordMatches += 2; // Higher weight for subject/from matches
+        } else if (keywordRegex.test(snippet)) {
+            keywordMatches += 1;
+        }
+    }
+
+    return keywordMatches >= 2;
+}
+
+function parseEmailToApplication(email) {
+    const subject = (email.subject || '').toLowerCase();
+    const snippet = (email.snippet || '').toLowerCase();
+    const text = subject + ' ' + snippet;
+
+    // Status erkennen
+    let status = 'beworben';
+    if (/absage|leider|nicht.*berücksicht|anderweitig|bedauerlich|abgelehnt|reject/i.test(text)) status = 'absage';
+    else if (/zusage|herzlichen.*glückwunsch|angebot|willkommen|offer|congratulations/i.test(text)) status = 'zusage';
+    else if (/interview|vorstellungsgespräch|gespräch|einladung|einladen|call|telefonat/i.test(text)) status = 'interview';
+    else if (/eingang.*bestätigt|erhalten|confirmation|received|vielen.*dank.*bewerbung/i.test(text)) status = 'antwort';
+
+    // Firma aus Absender extrahieren
+    let firma = '';
+    if (email.from) {
+        const match = email.from.match(/^"?([^<"]+)"?\s*</);
+        if (match) {
+            firma = match[1].trim();
+            // Domain als Fallback
+            if (!firma || firma.includes('@')) {
+                const domainMatch = email.from.match(/@([^>]+)/);
+                if (domainMatch) firma = domainMatch[1].split('.')[0];
+            }
+        } else {
+            const domainMatch = email.from.match(/@([^>]+)/);
+            if (domainMatch) firma = domainMatch[1].split('.')[0];
+        }
+    }
+    if (!firma) firma = 'Unbekannt';
+
+    // Position aus Betreff extrahieren
+    let position = '';
+    const posMatch = email.subject.match(/(?:stelle|position|job|als)\s+(.+?)(?:\s+bei|\s+\(|$)/i);
+    if (posMatch) position = posMatch[1].trim();
+
+    // Email-Adresse extrahieren
+    const emailMatch = (email.from||'').match(/<([^>]+)>/);
+    const contactEmail = emailMatch ? emailMatch[1] : email.from;
+
+    return {
+        firma: firma.charAt(0).toUpperCase() + firma.slice(1),
+        position,
+        status,
+        datum: email.date ? email.date.split('T')[0] : new Date().toISOString().split('T')[0],
+        email: email.sent ? '' : contactEmail,
+        quelle: 'gmail'
+    };
+}
+
+function importScriptEmail(index) {
+    const email = state.scriptEmails[index];
+    const parsed = parseEmailToApplication(email);
+    // Duplikat prüfen
+    const exists = state.bewerbungen.find(b =>
+        b.firma.toLowerCase() === parsed.firma.toLowerCase() &&
+        b.datum === parsed.datum
+    );
+    if (exists) { showToast('Bereits vorhanden: ' + parsed.firma, 'warning'); return; }
+    const newEntry = {
+        ...parsed,
+        id: 'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        notizen: `Importiert aus Gmail\nBetreff: ${email.subject}`
+    };
+    state.bewerbungen.unshift(newEntry);
+    saveToStorage();
+    renderAll();
+    showToast('Importiert: ' + parsed.firma, 'success');
+    renderScriptEmails();
+}
+
+function importAllScriptEmails() {
+    let imported = 0, skipped = 0;
+    state.scriptEmails.forEach(email => {
+        if (!isRelevantApplicationEmail(email)) return;
+        const parsed = parseEmailToApplication(email);
+        const exists = state.bewerbungen.find(b =>
+            b.firma.toLowerCase() === parsed.firma.toLowerCase() && b.datum === parsed.datum
+        );
+        if (exists) { skipped++; return; }
+        state.bewerbungen.unshift({
+            ...parsed,
+            id: 'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            notizen: `Importiert aus Gmail\nBetreff: ${email.subject}`
+        });
+        imported++;
+    });
+    saveToStorage();
+    renderAll();
+    showToast(`${imported} importiert, ${skipped} übersprungen`, 'success');
+    renderScriptEmails();
+}
+
+/* ═══════════════════════════════════════════════════════
+   EML / TEXT IMPORT
+═══════════════════════════════════════════════════════ */
+function handleEmlFiles(event) {
+    const files = Array.from(event.target.files);
+    if (!files.length) return;
+    let parsed = [];
+    let done = 0;
+    files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const content = e.target.result;
+            const emlData = parseEmlContent(content, file.name);
+            if (emlData) parsed.push(emlData);
+            done++;
+            if (done === files.length) {
+                state.emlEmails = parsed;
+                renderEmlResults();
+                showToast(`${parsed.length} EML-Dateien analysiert`, 'info');
+            }
+        };
+        reader.readAsText(file);
+    });
+}
+
+function parseEmlContent(content, filename) {
+    const lines = content.split('\n');
+    let subject = '', from = '', date = '', body = '';
+    let inBody = false;
+    for (const line of lines) {
+        if (!inBody) {
+            if (line.trim() === '') { inBody = true; continue; }
+            if (/^subject:/i.test(line)) subject = line.replace(/^subject:\s*/i, '').trim();
+            else if (/^from:/i.test(line)) from = line.replace(/^from:\s*/i, '').trim();
+            else if (/^date:/i.test(line)) date = line.replace(/^date:\s*/i, '').trim();
+        } else {
+            body += line + '\n';
+            if (body.length > 600) break;
+        }
+    }
+    const emailObj = {
+        subject: subject || filename,
+        from,
+        date: date ? new Date(date).toISOString() : new Date().toISOString(),
+        snippet: body.replace(/[^\x20-\x7E\u00C0-\u017E\n]/g, '').trim().substring(0, 300),
+        source: 'eml'
+    };
+    return { raw: emailObj, parsed: parseEmailToApplication(emailObj) };
+}
+
+function renderEmlResults() {
+    const card = document.getElementById('emlResultCard');
+    const container = document.getElementById('emlEmailList');
+
+    card.style.display = 'block';
+    document.getElementById('emlEmailCount').textContent = state.emlEmails.length;
+
+    if (!state.emlEmails.length) {
+        container.innerHTML = '<p style="color:var(--text-muted);">Keine EML Dateien geladen.</p>';
+        return;
+    }
+    container.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+            <span style="color:var(--text-muted);font-size:0.85rem;">${state.emlEmails.length} Dateien analysiert</span>
+        </div>
+        ${state.emlEmails.map((item, i) => `
+            <div class="email-item">
+                <div class="email-item-header">
+                    <div style="flex:1;">
+                        <div class="email-firma">${escHtml(item.parsed.firma)}</div>
+                        <div class="email-subject">${escHtml(item.raw.subject)}</div>
+                        <div style="font-size:0.78rem;color:var(--text-muted);">Von: ${escHtml(item.raw.from)} · ${formatDate(item.raw.date)}</div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:0.35rem;flex-shrink:0;margin-left:0.75rem;">
+                        ${getStatusBadge(item.parsed.status)}
+                        <button class="btn btn-primary btn-sm" onclick="importEmlItem(${i})">+ Import</button>
+                    </div>
+                </div>
+            </div>`).join('')}`;
+}
+
+function importEmlItem(i) {
+    const item = state.emlEmails[i];
+    const exists = state.bewerbungen.find(b =>
+        b.firma.toLowerCase() === item.parsed.firma.toLowerCase() && b.datum === item.parsed.datum
+    );
+    if (exists) { showToast('Bereits vorhanden', 'warning'); return; }
+    state.bewerbungen.unshift({
+        ...item.parsed,
+        id: 'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        notizen: `Importiert aus EML\nBetreff: ${item.raw.subject}`
+    });
+    saveToStorage();
+    renderAll();
+    showToast('Importiert: ' + item.parsed.firma, 'success');
+}
+
+function importAllEmlEmails() {
+    let imported = 0;
+    state.emlEmails.forEach((item, i) => {
+        const exists = state.bewerbungen.find(b =>
+            b.firma.toLowerCase() === item.parsed.firma.toLowerCase() && b.datum === item.parsed.datum
+        );
+        if (!exists) { importEmlItem(i); imported++; }
+    });
+    showToast(`${imported} importiert`, 'success');
+}
+
+/* ═══════════════════════════════════════════════════════
+   TEXT / PASTE IMPORT
+═══════════════════════════════════════════════════════ */
+function analyzeEmailText() {
+    const text = document.getElementById('pasteEmailText').value.trim();
+    if (!text) { showToast('Bitte Text eingeben!', 'error'); return; }
+
+    const lines = text.split('\n').filter(l => l.trim());
+    const results = [];
+
+    // Einfacher Parser: sucht nach Mustern wie "Firma - Position - Datum"
+    lines.forEach(line => {
+        const parts = line.split(/[-|;,\t]+/).map(p => p.trim()).filter(Boolean);
+        if (parts.length >= 1) {
+            const entry = {
+                firma: parts[0] || 'Unbekannt',
+                position: parts[1] || '',
+                datum: parts[2] ? tryParseDate(parts[2]) : new Date().toISOString().split('T')[0],
+                status: 'beworben',
+                quelle: 'manuell',
+                notizen: 'Manuell importiert: ' + line
+            };
+            results.push(entry);
+        }
+    });
+
+    state.textEmails = results;
+    const card = document.getElementById('textResultCard');
+    const container = document.getElementById('textEmailList');
+    card.style.display = 'block';
+    document.getElementById('textEmailCount').textContent = results.length;
+    container.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+            <span style="color:var(--text-muted);font-size:0.85rem;">${results.length} Einträge erkannt</span>
+        </div>
+        ${results.map((r, i) => `
+            <div class="email-item">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;">
+                    <div>
+                        <div class="email-firma">${escHtml(r.firma)}</div>
+                        <div class="email-subject">${escHtml(r.position||'Keine Position')}</div>
+                        <div style="font-size:0.78rem;color:var(--text-muted);">Datum: ${r.datum}</div>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="importTextItem(${i})">+ Import</button>
+                </div>
+            </div>`).join('')}`;
+}
+
+function importTextItem(i) {
+    const item = state.textEmails[i];
+    state.bewerbungen.unshift({
+        ...item,
+        id: 'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    });
+    saveToStorage();
+    renderAll();
+    showToast('Importiert: ' + item.firma, 'success');
+}
+
+function importAllTextEmails() {
+    state.textEmails.forEach((_, i) => importTextItem(i));
+    showToast('Alle importiert ✓', 'success');
+}
+
+function tryParseDate(str) {
+    const d = new Date(str);
+    if (!isNaN(d)) return d.toISOString().split('T')[0];
+    const match = str.match(/(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})/);
+    if (match) {
+        const year = match[3].length === 2 ? '20' + match[3] : match[3];
+        return `${year}-${match[2].padStart(2,'0')}-${match[1].padStart(2,'0')}`;
+    }
+    return new Date().toISOString().split('T')[0];
+}
+
+/* ═══════════════════════════════════════════════════════
+   GHOSTING CHECK
+═══════════════════════════════════════════════════════ */
+function checkGhosting() {
+    const days = parseInt(state.settings.ghostingDays) || 30;
+    let count = 0;
+    state.bewerbungen.forEach(b => {
+        if (b.status !== 'beworben') return;
+        if (getDaysSince(b.datum) >= days) {
+            b.status = 'ghosting';
+            b.updatedAt = new Date().toISOString();
+            count++;
+        }
+    });
+    if (count > 0) {
+        saveToStorage();
+        renderAll();
+        showToast(`${count} Bewerbung(en) als 👻 Ghosting markiert`, 'warning');
+    } else {
+        showToast('Keine neuen Ghosting-Fälle', 'info');
+    }
+}
+
+/* ═══════════════════════════════════════════════════════
+   SETTINGS
+═══════════════════════════════════════════════════════ */
+function saveSettings() {
+    const url = document.getElementById('appsScriptUrl').value.trim();
+    const kw  = document.getElementById('keywordsInput').value.trim();
+    const gd  = document.getElementById('ghostingDaysInput').value;
+    const ed  = document.getElementById('emailImportStartDate').value.trim();
+    state.settings.appsScriptUrl = url;
+    state.settings.keywords      = kw || state.settings.keywords;
+    state.settings.ghostingDays  = parseInt(gd) || 30;
+    state.settings.emailImportStartDate = ed;
+    saveToStorage();
+    updateConnectionStatus();
+    showToast('Einstellungen gespeichert ✓', 'success');
+}
+
+function copyScript() {
+    navigator.clipboard.writeText(APPS_SCRIPT_CODE)
+        .then(() => showToast('Code kopiert! ✓', 'success'))
+        .catch(() => showToast('Kopieren fehlgeschlagen', 'error'));
+}
+
+function saveAndFetchScript() {
+    const url = document.getElementById('appsScriptUrl').value.trim();
+    if (!url) { showToast('Bitte Apps Script URL eingeben!', 'error'); return; }
+    state.settings.appsScriptUrl = url;
+    saveToStorage();
+    updateConnectionStatus();
+    fetchFromAppsScript();
+}
+
+function refreshScriptEmails() {
+    fetchFromAppsScript();
+}
+
+/* ═══════════════════════════════════════════════════════
+   EXPORT / IMPORT
+═══════════════════════════════════════════════════════ */
+function exportPDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+
+    // Header
+    doc.setFillColor(79, 70, 229);
+    doc.rect(0, 0, 297, 20, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Bewerbungs-Tracker – Übersicht', 14, 13);
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    doc.text('Erstellt: ' + new Date().toLocaleDateString('de-DE'), 250, 13);
+
+    // Stats Row
+    const b = state.bewerbungen;
+    const stats = [
+        ['Gesamt', b.length],
+        ['Beworben', b.filter(x=>x.status==='beworben').length],
+        ['Interview', b.filter(x=>x.status==='interview').length],
+        ['Zusage', b.filter(x=>x.status==='zusage').length],
+        ['Absage', b.filter(x=>x.status==='absage').length],
+        ['Ghosting', b.filter(x=>x.status==='ghosting').length],
+    ];
+    doc.setTextColor(60, 60, 80);
+    doc.setFontSize(8);
+    stats.forEach(([label, val], i) => {
+        const x = 14 + i * 46;
+        doc.setFillColor(240, 240, 250);
+        doc.roundedRect(x, 24, 42, 14, 2, 2, 'F');
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(12);
+        doc.text(String(val), x + 21, 33, {align:'center'});
+        doc.setFontSize(7);
+        doc.setFont(undefined, 'normal');
+        doc.text(label, x + 21, 36, {align:'center'});
+    });
+
+    // Status color map
+    const statusColors = {
+        beworben:  [59, 130, 246],
+        antwort:   [245, 158, 11],
+        interview: [139, 92, 246],
+        zusage:    [16, 185, 129],
+        absage:    [239, 68, 68],
+        ghosting:  [148, 163, 184]
+    };
+
+    // Table with link data
+    const sortedB = b.sort((a,x) => new Date(x.datum) - new Date(a.datum));
+    const rows = sortedB.map(item => [
+        item.firma,
+        item.position || '–',
+        item.status.charAt(0).toUpperCase() + item.status.slice(1),
+        formatDate(item.datum),
+        getDaysSince(item.datum) + 'd',
+        getQuelleLabel(item.quelle).replace(/[^\x20-\x7E]/g, ''),
+        item.ort || '–',
+        item.gehalt || '–'
+    ]);
+
+    doc.autoTable({
+        head: [['Firma', 'Position', 'Status', 'Datum', 'Tage', 'Quelle', 'Ort', 'Gehalt']],
+        body: rows,
+        startY: 42,
+        styles: { fontSize: 8, cellPadding: 2.5, textColor: [30,30,50] },
+        headStyles: { fillColor: [79,70,229], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        alternateRowStyles: { fillColor: [248, 248, 255] },
+        didDrawCell: (data) => {
+            // Add clickable link to company name
+            if (data.column.index === 0 && data.section === 'body') {
+                const item = sortedB[data.row.index];
+                if (item && item.link) {
+                    // Draw link text in blue and underlined
+                    doc.setTextColor(0, 0, 255);
+                    doc.setFont(undefined, 'underline');
+                    doc.textWithLink(item.firma, data.cell.x + 2, data.cell.y + data.cell.height/2 + 1, { pageNumber: undefined, url: item.link });
+                    doc.setTextColor(30,30,50);
+                    doc.setFont(undefined, 'normal');
+                }
+            }
+            // Style status column
+            if (data.column.index === 2 && data.section === 'body') {
+                const statusKey = rows[data.row.index]?.[2]?.toLowerCase();
+                const color = statusColors[statusKey] || [100,100,100];
+                doc.setFillColor(...color);
+                doc.roundedRect(data.cell.x + 1, data.cell.y + 1.5, data.cell.width - 2, data.cell.height - 3, 2, 2, 'F');
+                doc.setTextColor(255,255,255);
+                doc.setFontSize(7);
+                doc.text(data.cell.raw, data.cell.x + data.cell.width/2, data.cell.y + data.cell.height/2 + 1, {align:'center'});
+                doc.setTextColor(30,30,50);
+                doc.setFontSize(8);
+            }
+        },
+        margin: { left: 14, right: 14 }
+    });
+
+    // Footer
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7);
+        doc.setTextColor(150);
+        doc.text(`Seite ${i} von ${pageCount} · Bewerbungs-Tracker`, 148.5, 205, {align:'center'});
+    }
+
+    doc.save(`Bewerbungen_${new Date().toISOString().split('T')[0]}.pdf`);
+    showToast('PDF exportiert ✓', 'success');
+}
+
+function exportJSON() {
+    const json = JSON.stringify({ bewerbungen: state.bewerbungen, settings: state.settings, exportedAt: new Date().toISOString() }, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `bewerbungen_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);   // Pflicht für Safari
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`JSON exportiert ✓ (${state.bewerbungen.length} Einträge)`, 'success');
+}
+
+function handleImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (data.bewerbungen) {
+                const count = data.bewerbungen.length;
+                if (confirm(`${count} Bewerbungen importieren? Bestehende Daten bleiben erhalten.`)) {
+                    data.bewerbungen.forEach(b => {
+                        if (!state.bewerbungen.find(x => x.id === b.id)) {
+                            state.bewerbungen.push(b);
+                        }
+                    });
+                    // Importiere auch Einstellungen
+                    if (data.settings) {
+                        state.settings = { ...state.settings, ...data.settings };
+                    }
+                    saveToStorage();
+                    renderAll();
+                    loadSettingsForm();
+                    showToast(`${count} Bewerbungen + Einstellungen importiert ✓`, 'success');
+                }
+            }
+        } catch(err) { showToast('Ungültige JSON-Datei!', 'error'); }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+}
+
+function clearAllData() {
+    if (!confirm('ALLE Daten löschen? Dies kann nicht rückgängig gemacht werden!')) return;
+    if (!confirm('Wirklich sicher? Alle Bewerbungen werden gelöscht!')) return;
+    state.bewerbungen = [];
+    saveToStorage();
+    renderAll();
+    showToast('Alle Daten gelöscht', 'warning');
+}
+
+/* ═══════════════════════════════════════════════════════
+   FILTER
+═══════════════════════════════════════════════════════ */
+function filterByChip(el, status) {
+    state.activeFilter = status;
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    renderBewerbungen();
+}
+
+/* ═══════════════════════════════════════════════════════
+   MODAL
+═══════════════════════════════════════════════════════ */
+function openModal(id) {
+    document.getElementById(id).classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+function closeModal(id) {
+    document.getElementById(id).classList.remove('open');
+    document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+        document.body.style.overflow = '';
+    }
+});
+
+/* ═══════════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════════ */
+function showToast(msg, type = 'info') {
+    const icons = { success:'✅', error:'❌', warning:'⚠️', info:'ℹ️' };
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `<span>${icons[type]||'ℹ️'}</span><span>${msg}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => { toast.style.opacity='0'; toast.style.transform='translateX(100%)'; toast.style.transition='all 0.3s'; setTimeout(() => toast.remove(), 300); }, 3500);
+}
+
+/* ═══════════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════════ */
+function escHtml(str) {
+    return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatDate(str) {
+    if (!str) return '–';
+    try { return new Date(str).toLocaleDateString('de-DE'); } catch(e) { return str; }
+}
+
+function getDaysSince(datum) {
+    if (!datum) return 0;
+    return Math.floor((Date.now() - new Date(datum)) / 86400000);
+}
+
+function getDaysColor(datum) {
+    const d = getDaysSince(datum);
+    if (d < 14) return '#10B981';
+    if (d < 30) return '#F59E0B';
+    return '#EF4444';
+}
+
+function getStatusBadge(status) {
+    const map = {
+        beworben:  ['📤','badge-beworben','Beworben'],
+        antwort:   ['📨','badge-antwort','Antwort'],
+        interview: ['🎤','badge-interview','Interview'],
+        zusage:    ['✅','badge-zusage','Zusage'],
+        absage:    ['❌','badge-absage','Absage'],
+        ghosting:  ['👻','badge-ghosting','Ghosting']
+    };
+    const [icon, cls, label] = map[status] || ['❓','','Unbekannt'];
+    return `<span class="badge ${cls}">${icon} ${label}</span>`;
+}
+
+function getQuelleLabel(q) {
+    const map = { gmail:'📧 Mail Connector', imap:'📮 IMAP/POP3', manuell:'✏️ Manuell', linkedin:'💼 LinkedIn', indeed:'🔍 Indeed', xing:'📌 XING', website:'🌐 Website', empfehlung:'🤝 Empfehlung' };
+    return map[q] || q || '–';
+}
+
+/* ═══════════════════════════════════════════════════════
+   IMAP / POP3
+═══════════════════════════════════════════════════════ */
+const IMAP_PROXY = 'http://127.0.0.1:8765';
+
+const IMAP_PRESETS = {
+    gmail_imap: { host:'imap.gmail.com',       port:993, protocol:'imap' },
+    gmail_pop3: { host:'pop.gmail.com',         port:995, protocol:'pop3' },
+    outlook:    { host:'imap-mail.outlook.com', port:993, protocol:'imap' },
+    yahoo:      { host:'imap.mail.yahoo.com',   port:993, protocol:'imap' },
+    gmx:        { host:'imap.gmx.net',          port:993, protocol:'imap' },
+    webde:      { host:'imap.web.de',           port:993, protocol:'imap' },
+};
+
+const IMAP_FOLDER_HINTS = {
+    gmail_imap: '💡 Keine Treffer? Archivierte Emails findest du unter <strong>[Gmail]/All Mail</strong> statt INBOX.',
+    gmail_pop3: '💡 POP3: Nur Emails die noch nicht heruntergeladen wurden. IMAP ist zuverlässiger.',
+    outlook:    '💡 Gesendete Emails: Ordner <strong>Sent</strong> oder <strong>Gesendete Elemente</strong>.',
+};
+
+function applyImapPreset(val) {
+    const p = IMAP_PRESETS[val];
+    if (!p) return;
+    document.getElementById('imapHost').value     = p.host;
+    document.getElementById('imapPort').value     = p.port;
+    document.getElementById('imapProtocol').value = p.protocol;
+
+    const hintEl = document.getElementById('imapFolderHint');
+    if (hintEl) {
+        const hint = IMAP_FOLDER_HINTS[val] || '';
+        hintEl.innerHTML  = hint;
+        hintEl.style.display = hint ? 'block' : 'none';
+    }
+}
+
+function updateImapPortDefault() {
+    const proto = document.getElementById('imapProtocol').value;
+    const portEl = document.getElementById('imapPort');
+    if (proto === 'pop3' && portEl.value === '993') portEl.value = '995';
+    if (proto === 'imap' && portEl.value === '995') portEl.value = '993';
+}
+
+function toggleImapPw() {
+    const pw  = document.getElementById('imapPass');
+    const btn = document.getElementById('imapPwToggle');
+    pw.type         = pw.type === 'password' ? 'text' : 'password';
+    btn.textContent = pw.type === 'password' ? '👁' : '🙈';
+}
+
+async function checkImapProxy() {
+    const statusEl = document.getElementById('imapProxyStatus');
+    if (!statusEl) return;
+    statusEl.textContent = '⏳ Prüfe Proxy…';
+    statusEl.style.color = 'var(--text-muted)';
+    try {
+        const res  = await fetch(IMAP_PROXY + '/ping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+            signal: AbortSignal.timeout(3000)
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+            statusEl.textContent = '✅ Proxy aktiv (Port 8765)';
+            statusEl.style.color = '#34D399';
+        } else {
+            throw new Error('unexpected');
+        }
+    } catch {
+        statusEl.textContent = '❌ Proxy nicht erreichbar – bitte imap_proxy.py im Terminal starten';
+        statusEl.style.color = '#F87171';
+    }
+}
+
+async function fetchImapEmails() {
+    const host     = document.getElementById('imapHost').value.trim();
+    const port     = parseInt(document.getElementById('imapPort').value)  || 993;
+    const protocol = document.getElementById('imapProtocol').value;
+    const folder   = document.getElementById('imapFolder').value.trim()   || 'INBOX';
+    const user     = document.getElementById('imapUser').value.trim();
+    const pass     = document.getElementById('imapPass').value;
+    const limit    = parseInt(document.getElementById('imapLimit').value)  || 50;
+    const noVerify = document.getElementById('imapNoVerify').checked;
+    const remember = document.getElementById('imapRemember').checked;
+
+    if (!host || !user || !pass) {
+        showToast('Server-Adresse, E-Mail und Passwort sind erforderlich!', 'error');
+        return;
+    }
+
+    // Persist only non-sensitive settings
+    if (remember) {
+        state.settings.imapHost     = host;
+        state.settings.imapPort     = port;
+        state.settings.imapProtocol = protocol;
+        state.settings.imapUser     = user;
+        saveToStorage();
+    }
+
+    const btn = document.getElementById('imapConnectBtn');
+    btn.innerHTML = '<span class="spinner"></span> Verbinde…';
+    btn.disabled  = true;
+
+    try {
+        const res = await fetch(IMAP_PROXY + '/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host, port, protocol, folder, user, pass, limit, noVerify }),
+            signal: AbortSignal.timeout(35000)
+        });
+
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        // Update proxy status indicator
+        updateProxyStatus(data);
+
+        state.imapEmails = data.emails || [];
+        renderImapResults(data.debug || '');
+        showToast(`${data.count} Email(s) geladen ✓`, 'success');
+
+    } catch(err) {
+        const msg = err.message || '';
+        if (err.name === 'TimeoutError' || msg.includes('fetch') || msg.includes('NetworkError')) {
+            showToast('Proxy nicht erreichbar – bitte imap_proxy.py starten!', 'error');
+        } else {
+            showToast('Fehler: ' + msg, 'error');
+        }
+    } finally {
+        btn.innerHTML = '🔌 Verbinden & Abrufen';
+        btn.disabled  = false;
+    }
+}
+
+function renderImapResults(debugInfo) {
+    const card      = document.getElementById('imapResultCard');
+    const container = document.getElementById('imapEmailList');
+    const emails    = state.imapEmails;
+
+    card.style.display = 'block';
+    document.getElementById('imapEmailCount').textContent = emails.length;
+
+    // Reset search box and update counts
+    const searchBox = document.getElementById('imapSearchBox');
+    if (searchBox) {
+        searchBox.value = '';
+    }
+    imapFilteredEmails = emails;
+    const countEl = document.getElementById('imapFilterCount');
+    const totalEl = document.getElementById('imapTotalCount');
+    if (countEl) countEl.textContent = emails.length;
+    if (totalEl) totalEl.textContent = emails.length;
+
+    // Show debug info line (helps diagnose "0 results")
+    const debugEl = document.getElementById('imapDebugInfo');
+    if (debugEl && debugInfo) {
+        debugEl.textContent = debugInfo;
+        debugEl.style.display = 'block';
+    }
+
+    if (!emails.length) {
+        const folder = document.getElementById('imapFolder')?.value || 'INBOX';
+        const gmailHint = folder === 'INBOX'
+            ? ' Tipp: Gmail-Emails archiviert? Ordner auf <strong>[Gmail]/All Mail</strong> ändern.'
+            : '';
+        container.innerHTML = `<p style="color:var(--text-muted);padding:1rem 0;">Keine relevanten Emails gefunden.${gmailHint}</p>`;
+        return;
+    }
+
+    container.innerHTML = emails.map((e, i) => {
+        const parsed = parseEmailToApplication(e);
+        return `
+            <div class="email-item">
+                <div class="email-item-header">
+                    <div style="flex:1;">
+                        <div class="email-firma">${escHtml(parsed.firma)}</div>
+                        <div class="email-subject">${escHtml(e.subject)}</div>
+                        <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.2rem;">
+                            Von: ${escHtml(e.from)} · ${formatDate(e.date)}
+                        </div>
+                        ${e.snippet ? `<div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.35rem;line-height:1.4;">${escHtml(e.snippet.substring(0,150))}…</div>` : ''}
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:0.35rem;flex-shrink:0;margin-left:0.75rem;">
+                        ${getStatusBadge(parsed.status)}
+                        <button class="btn btn-primary btn-sm" onclick="importImapEmail(${i})">+ Import</button>
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+function importImapEmail(index) {
+    const e      = state.imapEmails[index];
+    if (!isEmailWithinDateRange(e.date)) { showToast('Email ist vor dem eingestellten Start-Datum', 'warning'); return; }
+    const parsed = parseEmailToApplication(e);
+    const exists = state.bewerbungen.find(b =>
+        b.firma.toLowerCase() === parsed.firma.toLowerCase() && b.datum === parsed.datum
+    );
+    if (exists) { showToast('Bereits vorhanden: ' + parsed.firma, 'warning'); return; }
+    state.bewerbungen.unshift({
+        ...parsed,
+        id:        'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        quelle:    'imap',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        notizen:   `Importiert via IMAP/POP3\nBetreff: ${e.subject}`
+    });
+    saveToStorage();
+    renderAll();
+    showToast('Importiert: ' + parsed.firma, 'success');
+    renderImapResults();
+}
+
+function importAllImapEmails() {
+    let imported = 0, skipped = 0;
+    state.imapEmails.forEach((e, i) => {
+        if (!isEmailWithinDateRange(e.date)) { skipped++; return; }
+        const parsed = parseEmailToApplication(e);
+        const exists = state.bewerbungen.find(b =>
+            b.firma.toLowerCase() === parsed.firma.toLowerCase() && b.datum === parsed.datum
+        );
+        if (exists) { skipped++; return; }
+        state.bewerbungen.unshift({
+            ...parsed,
+            id:        'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+            quelle:    'imap',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            notizen:   `Importiert via IMAP/POP3\nBetreff: ${e.subject}`
+        });
+        imported++;
+    });
+    saveToStorage();
+    renderAll();
+    showToast(`${imported} importiert, ${skipped} übersprungen`, 'success');
+    renderImapResults();
+}
+
+function copyImapCommand() {
+    navigator.clipboard.writeText('python3 /Library/WebServer/Documents/Bewerbungstracker/imap_proxy.py')
+        .then(() => showToast('Befehl kopiert! ✓', 'success'))
+        .catch(() => showToast('Kopieren fehlgeschlagen', 'error'));
+}
+
+// ── Dark/Light Mode Toggle ─────────────────────────────────────────────────────
+
+function applyColorScheme(scheme) {
+    const root = document.documentElement;
+    const btn = document.getElementById('colorSchemeToggle');
+
+    if (scheme === 'light') {
+        root.setAttribute('data-scheme', 'light');
+        if (btn) btn.textContent = '☀️';
+        localStorage.setItem('colorScheme', 'light');
+    } else {
+        root.removeAttribute('data-scheme');
+        if (btn) btn.textContent = '🌙';
+        localStorage.setItem('colorScheme', 'dark');
+    }
+}
+
+function toggleColorScheme() {
+    const root = document.documentElement;
+    const currentScheme = root.getAttribute('data-scheme') || 'dark';
+    const newScheme = currentScheme === 'dark' ? 'light' : 'dark';
+    applyColorScheme(newScheme);
+}
+
+function initColorScheme() {
+    const saved = localStorage.getItem('colorScheme') || 'dark';
+    applyColorScheme(saved);
+}
+
+// ── Proxy Status & Cache Tracking ──────────────────────────────────────────────
+
+let proxyStatus = { active: false, cacheHits: 0, lastFetch: null };
+
+function updateProxyStatus(response) {
+    if (!response || response.status !== 'ok') {
+        updateStatusIndicator(false, '❌ Fehler');
+        return;
+    }
+
+    proxyStatus.active = true;
+    proxyStatus.lastFetch = new Date();
+
+    // Check for cache hit in response
+    if (response.debug && response.debug.includes('Cache HIT')) {
+        proxyStatus.cacheHits++;
+        updateStatusIndicator(true, `✅ Aktiv | Cache: ${proxyStatus.cacheHits}`);
+    } else {
+        updateStatusIndicator(true, `✅ Aktiv | Cache: ${proxyStatus.cacheHits}`);
+    }
+}
+
+function updateStatusIndicator(isActive, text) {
+    const dot = document.getElementById('connStatusDot');
+    const txt = document.getElementById('connStatusText');
+
+    if (!dot || !txt) return;
+
+    if (isActive) {
+        dot.style.background = '#10B981';  // Green
+        txt.textContent = text || '✅ Aktiv';
+    } else {
+        dot.style.background = '#EF4444';  // Red
+        txt.textContent = text || '❌ Nicht verbunden';
+    }
+}
+
+// ── Email Search & Filter ─────────────────────────────────────────────────────
+
+let imapSearchTimeout;
+let imapFilteredEmails = [];
+
+function debounceImapSearch() {
+    clearTimeout(imapSearchTimeout);
+    imapSearchTimeout = setTimeout(filterImapResults, 300);
+}
+
+function filterImapResults() {
+    const searchBox = document.getElementById('imapSearchBox');
+    if (!searchBox) return;
+
+    const searchText = searchBox.value.toLowerCase().trim();
+    const emailList = document.getElementById('imapEmailList');
+    if (!emailList) return;
+
+    // Filter emails based on search text
+    if (!searchText) {
+        imapFilteredEmails = state.imapEmails;
+    } else {
+        imapFilteredEmails = state.imapEmails.filter(email => {
+            const firma = (email.firma || '').toLowerCase();
+            const subject = (email.subject || '').toLowerCase();
+            const from = (email.from || '').toLowerCase();
+
+            return firma.includes(searchText) ||
+                   subject.includes(searchText) ||
+                   from.includes(searchText);
+        });
+    }
+
+    // Update counts
+    const countEl = document.getElementById('imapFilterCount');
+    const totalEl = document.getElementById('imapTotalCount');
+    if (countEl) countEl.textContent = imapFilteredEmails.length;
+    if (totalEl) totalEl.textContent = state.imapEmails.length;
+
+    // Re-render with filtered results
+    renderImapResultsFiltered(imapFilteredEmails);
+}
+
+function renderImapResultsFiltered(emailsToRender) {
+    const list = document.getElementById('imapEmailList');
+    if (!list) return;
+
+    if (!emailsToRender || emailsToRender.length === 0) {
+        list.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Keine Emails gefunden</p>';
+        return;
+    }
+
+    // Use existing renderImapResults logic but with filtered emails
+    // Render each email item
+    list.innerHTML = emailsToRender.map((email, idx) => `
+        <div class="email-item" style="margin-bottom:0.75rem;">
+            <div class="email-item-header">
+                <div style="flex:1;">
+                    <div class="email-firma">${email.firma || 'Unbekannt'}</div>
+                    <div style="font-size:0.82rem;color:var(--text-muted);">Von: ${email.from || 'N/A'}</div>
+                </div>
+                <button class="btn btn-success btn-sm" onclick="importSingleImapEmail(${idx})">Importieren</button>
+            </div>
+            <div style="font-size:0.85rem;margin-top:0.35rem;">
+                <strong>${email.subject || '(kein Betreff)'}</strong>
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">
+                ${email.date || 'Kein Datum'}
+            </div>
+        </div>
+    `).join('');
+}
+
+function importSingleImapEmail(idx) {
+    const email = imapFilteredEmails[idx];
+    if (!email) return;
+
+    if (!isEmailWithinDateRange(email.date)) {
+        showToast('Email ist vor dem eingestellten Start-Datum', 'warning');
+        return;
+    }
+
+    const parsed = parseEmailToApplication(email);
+    const exists = state.bewerbungen.find(b =>
+        b.firma.toLowerCase() === parsed.firma.toLowerCase() && b.datum === parsed.datum
+    );
+    if (exists) {
+        showToast('Bereits vorhanden: ' + parsed.firma, 'warning');
+        return;
+    }
+
+    state.bewerbungen.unshift({
+        ...parsed,
+        id:        'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        quelle:    'imap',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        notizen:   `Importiert via IMAP/POP3\nBetreff: ${email.subject}`
+    });
+
+    saveToStorage();
+    renderAll();
+    showToast('Importiert: ' + parsed.firma, 'success');
+    renderImapResults();
+}
+
+/* ═══ START ═══ */
+document.addEventListener('DOMContentLoaded', () => {
+    initColorScheme();
+    init();
+});
+</script>
+</body>
+</html>

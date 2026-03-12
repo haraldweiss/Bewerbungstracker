@@ -1,0 +1,28 @@
+# Environment
+.env
+.env.local
+*.pem
+config.json
+
+# Cache
+.DS_Store
+*.log
+__pycache__/
+*.pyc
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
