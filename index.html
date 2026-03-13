@@ -1733,7 +1733,7 @@ function importScriptEmail(index) {
 function importAllScriptEmails() {
     let imported = 0, skipped = 0;
     state.scriptEmails.forEach(email => {
-        if (!isRelevantApplicationEmail(email)) return;
+        if (!isRelevantApplicationEmail(email)) { skipped++; return; }
         const parsed = parseEmailToApplication(email);
         const exists = state.bewerbungen.find(b =>
             b.firma.toLowerCase() === parsed.firma.toLowerCase() && b.datum === parsed.datum
@@ -1809,17 +1809,29 @@ function renderEmlResults() {
     const container = document.getElementById('emlEmailList');
 
     card.style.display = 'block';
-    document.getElementById('emlEmailCount').textContent = state.emlEmails.length;
 
     if (!state.emlEmails.length) {
         container.innerHTML = '<p style="color:var(--text-muted);">Keine EML Dateien geladen.</p>';
+        document.getElementById('emlEmailCount').textContent = '0';
         return;
     }
+
+    // Filter EML files by relevance (keywords)
+    const relevant = state.emlEmails.filter(item => isRelevantApplicationEmail(item.raw));
+    document.getElementById('emlEmailCount').textContent = relevant.length;
+
+    if (!relevant.length) {
+        container.innerHTML = `<p style="color:var(--text-muted);">Keine relevanten EML Dateien gefunden. Überprüfe die Suchw​örter in den Einstellungen.</p>`;
+        return;
+    }
+
     container.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
-            <span style="color:var(--text-muted);font-size:0.85rem;">${state.emlEmails.length} Dateien analysiert</span>
+            <span style="color:var(--text-muted);font-size:0.85rem;">${relevant.length} relevante von ${state.emlEmails.length} Dateien</span>
         </div>
-        ${state.emlEmails.map((item, i) => `
+        ${relevant.map((item, i) => {
+            const origIndex = state.emlEmails.indexOf(item);
+            return `
             <div class="email-item">
                 <div class="email-item-header">
                     <div style="flex:1;">
@@ -1829,10 +1841,11 @@ function renderEmlResults() {
                     </div>
                     <div style="display:flex;flex-direction:column;gap:0.35rem;flex-shrink:0;margin-left:0.75rem;">
                         ${getStatusBadge(item.parsed.status)}
-                        <button class="btn btn-primary btn-sm" onclick="importEmlItem(${i})">+ Import</button>
+                        <button class="btn btn-primary btn-sm" onclick="importEmlItem(${origIndex})">+ Import</button>
                     </div>
                 </div>
-            </div>`).join('')}`;
+            </div>`;
+        }).join('')}`;
 }
 
 function importEmlItem(i) {
@@ -1978,7 +1991,19 @@ function saveSettings() {
     state.settings.emailImportStartDate = ed;
     saveToStorage();
     updateConnectionStatus();
-    showToast('Einstellungen gespeichert ✓', 'success');
+
+    // Re-render emails with new keywords after saving settings
+    if (state.scriptEmails.length > 0) {
+        renderScriptEmails();
+    }
+    if (state.emlEmails.length > 0) {
+        renderEmlResults();
+    }
+    if (state.imapEmails.length > 0) {
+        filterImapResults();
+    }
+
+    showToast('Einstellungen gespeichert ✓ (Emails neu gefiltert)', 'success');
 }
 
 function saveNotificationSettings() {
@@ -2909,7 +2934,11 @@ function importImapEmail(index) {
 function importAllImapEmails() {
     let imported = 0, skipped = 0;
     state.imapEmails.forEach((e, i) => {
+        // Check date range filter
         if (!isEmailWithinDateRange(e.date)) { skipped++; return; }
+        // Check keyword relevance filter
+        if (!isRelevantApplicationEmail(e)) { skipped++; return; }
+
         const parsed = parseEmailToApplication(e);
         const exists = state.bewerbungen.find(b =>
             b.firma.toLowerCase() === parsed.firma.toLowerCase() && b.datum === parsed.datum
