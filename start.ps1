@@ -81,7 +81,8 @@ Write-Status "Checking port availability..." "Info"
 $Ports = @(
     @{ Port = 8080; Name = "Web Server" },
     @{ Port = 8765; Name = "IMAP Proxy" },
-    @{ Port = 8766; Name = "Email Service" }
+    @{ Port = 8766; Name = "Email Service" },
+    @{ Port = 8767; Name = "Data Service" }
 )
 
 foreach ($PortInfo in $Ports) {
@@ -141,6 +142,24 @@ if (Test-Path "email_service.py") {
 }
 Write-Host ""
 
+# Start Data Service
+if (Test-Path "data_service.py") {
+    Write-Status "Starting Data Service (port 8767)..." "Info"
+    try {
+        Start-Process -FilePath "python" `
+                      -ArgumentList "data_service.py" `
+                      -WindowStyle Normal `
+                      -PassThru | Out-Null
+        Start-Sleep -Seconds 1
+        Write-Status "Data Service started" "Success"
+    } catch {
+        Write-Status "Failed to start Data Service: $_" "Error"
+    }
+} else {
+    Write-Status "data_service.py not found, skipping Data Service" "Warning"
+}
+Write-Host ""
+
 # Summary
 Write-Host "======================================================" -ForegroundColor $Colors.Green
 Write-Status "All services started successfully!" "Success"
@@ -151,6 +170,7 @@ Write-Host "📍 Service URLs:" -ForegroundColor $Colors.Blue
 Write-Host "   🌐 Web App:       http://localhost:8080" -ForegroundColor $Colors.White
 Write-Host "   📧 IMAP Proxy:    http://localhost:8765" -ForegroundColor $Colors.White
 Write-Host "   💌 Email Service: http://localhost:8766" -ForegroundColor $Colors.White
+Write-Host "   💾 Data Service:  http://localhost:8767" -ForegroundColor $Colors.White
 Write-Host ""
 
 Write-Host "💡 Tips:" -ForegroundColor $Colors.Blue

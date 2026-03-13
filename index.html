@@ -1003,8 +1003,8 @@ let state = {
 /* ═══════════════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════════════ */
-function init() {
-    loadFromStorage();
+async function init() {
+    await loadFromStorage();
     renderAll();
     loadSettingsForm();
     renderAppsScriptCode();
@@ -1051,24 +1051,85 @@ function checkIfEmailSummaryShouldBeSent() {
     }
 }
 
-function loadFromStorage() {
+async function loadFromStorage() {
     try {
-        const saved = localStorage.getItem('bewerbungsTrackerV3');
-        if (saved) {
-            const data = JSON.parse(saved);
-            state.bewerbungen = data.bewerbungen || [];
-            state.settings = { ...state.settings, ...(data.settings || {}) };
+        // Try to load from Data Service (SQLite)
+        const response = await fetch('http://localhost:8767/api/applications');
+        if (response.ok) {
+            const data = await response.json();
+            state.bewerbungen = data.applications || [];
         }
-    } catch(e) { console.error('Load error:', e); }
+
+        // Load settings from Data Service
+        const settingsResponse = await fetch('http://localhost:8767/api/settings');
+        if (settingsResponse.ok) {
+            const settingsData = await settingsResponse.json();
+            state.settings = { ...state.settings, ...settingsData.settings };
+        }
+
+        console.log('✅ Data loaded from SQLite (Data Service)');
+    } catch(e) {
+        console.warn('⚠️ Data Service unavailable, loading from localStorage:', e.message);
+        // Fallback to localStorage if Data Service is not available
+        try {
+            const saved = localStorage.getItem('bewerbungsTrackerV3');
+            if (saved) {
+                const data = JSON.parse(saved);
+                state.bewerbungen = data.bewerbungen || [];
+                state.settings = { ...state.settings, ...(data.settings || {}) };
+            }
+        } catch(err) { console.error('Load error:', err); }
+    }
 }
 
-function saveToStorage() {
+async function saveToStorage() {
     try {
-        localStorage.setItem('bewerbungsTrackerV3', JSON.stringify({
-            bewerbungen: state.bewerbungen,
-            settings: state.settings
-        }));
-    } catch(e) { showToast('Speicherfehler!', 'error'); }
+        // Try to save to Data Service (SQLite)
+        const response = await fetch('http://localhost:8767/api/applications');
+
+        if (response.ok) {
+            const currentData = await response.json();
+            const currentApps = currentData.applications || [];
+
+            // Update changed applications
+            for (let app of state.bewerbungen) {
+                const existing = currentApps.find(a => a.id === app.id);
+                if (existing) {
+                    // Update existing
+                    await fetch(`http://localhost:8767/api/applications/${app.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(app)
+                    });
+                } else {
+                    // Create new
+                    await fetch('http://localhost:8767/api/applications', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(app)
+                    });
+                }
+            }
+
+            // Save settings
+            await fetch('http://localhost:8767/api/settings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(state.settings)
+            });
+
+            console.log('✅ Data saved to SQLite (Data Service)');
+        }
+    } catch(e) {
+        console.warn('⚠️ Data Service unavailable, saving to localStorage:', e.message);
+        // Fallback to localStorage
+        try {
+            localStorage.setItem('bewerbungsTrackerV3', JSON.stringify({
+                bewerbungen: state.bewerbungen,
+                settings: state.settings
+            }));
+        } catch(err) { showToast('Speicherfehler!', 'error'); }
+    }
 }
 
 function loadSettingsForm() {

@@ -45,8 +45,8 @@ cd /d "%~dp0"
 
 REM Function to check if a port is in use
 setlocal enabledelayedexpansion
-set ports=8080 8765 8766
-set names=Web_Server IMAP_Proxy Email_Service
+set ports=8080 8765 8766 8767
+set names=Web_Server IMAP_Proxy Email_Service Data_Service
 
 echo Checking port availability...
 for %%p in (%ports%) do (
@@ -86,6 +86,17 @@ if exist "email_service.py" (
 )
 echo.
 
+REM Start Data Service
+if exist "data_service.py" (
+    echo Starting Data Service (port 8767)...
+    start "Bewerbungs-Tracker Data Service" python data_service.py
+    timeout /t 2 /nobreak >nul
+    echo [OK] Data Service started
+) else (
+    echo [WARNING] data_service.py not found, skipping Data Service
+)
+echo.
+
 echo ======================================================
 echo   ALL SERVICES STARTED SUCCESSFULLY!
 echo ======================================================
@@ -95,6 +106,7 @@ echo Service URLs:
 echo   Web App:       http://localhost:8080
 echo   IMAP Proxy:    http://localhost:8765
 echo   Email Service: http://localhost:8766
+echo   Data Service:  http://localhost:8767
 echo.
 
 echo Tips:

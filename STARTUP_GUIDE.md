@@ -1,6 +1,6 @@
 # 🚀 Bewerbungs-Tracker - Startup Guide
 
-Quick start scripts to launch all services (Web Server, IMAP Proxy, Email Service) on macOS, Linux, and Windows.
+Quick start scripts to launch all services (Web Server, IMAP Proxy, Email Service, Data Service) on macOS, Linux, and Windows.
 
 ## Prerequisites
 
@@ -9,9 +9,10 @@ Quick start scripts to launch all services (Web Server, IMAP Proxy, Email Servic
 - **Required modules** (usually included with Python):
   - `imaplib` - IMAP email protocol
   - `smtplib` - SMTP email protocol
-  - `sqlite3` - SQLite database
+  - `sqlite3` - SQLite database (for Data Service)
   - `json` - JSON handling
   - `os` - Operating system utilities
+  - `http.server` - Built-in HTTP server
 
 ### Verify Python Installation
 
@@ -37,15 +38,16 @@ chmod +x start.sh
 The `start.sh` script:
 1. ✅ Checks Python 3 installation
 2. ✅ Verifies all required modules
-3. ✅ Checks port availability (8080, 8765, 8766)
+3. ✅ Checks port availability (8080, 8765, 8766, 8767)
 4. ✅ Starts Web Server (port 8080)
 5. ✅ Starts IMAP Proxy (port 8765)
 6. ✅ Starts Email Service (port 8766)
-7. ✅ Displays service URLs and log locations
+7. ✅ Starts Data Service (port 8767) - SQLite storage
+8. ✅ Displays service URLs and log locations
 
 ### Manual Start (Alternative)
 
-Open three terminal windows:
+Open four terminal windows:
 
 **Window 1 - Web Server:**
 ```bash
@@ -60,6 +62,11 @@ python3 imap_proxy.py
 **Window 3 - Email Service:**
 ```bash
 python3 email_service.py
+```
+
+**Window 4 - Data Service:**
+```bash
+python3 data_service.py
 ```
 
 ### Stop Services
@@ -95,6 +102,7 @@ netstat -an | grep 8080
 tail -f /tmp/webserver.log
 tail -f /tmp/imap_proxy.log
 tail -f /tmp/email_service.log
+tail -f /tmp/data_service.log
 ```
 
 ---
@@ -118,13 +126,13 @@ tail -f /tmp/email_service.log
 The `start.bat` script:
 1. ✅ Checks Python installation
 2. ✅ Verifies all required modules
-3. ✅ Checks port availability (8080, 8765, 8766)
-4. ✅ Starts all three services in separate windows
+3. ✅ Checks port availability (8080, 8765, 8766, 8767)
+4. ✅ Starts all four services in separate windows
 5. ✅ Displays service URLs
 
 ### Manual Start (Alternative)
 
-Open three Command Prompt windows:
+Open four Command Prompt windows:
 
 **Window 1 - Web Server:**
 ```cmd
@@ -139,6 +147,11 @@ python imap_proxy.py
 **Window 3 - Email Service:**
 ```cmd
 python email_service.py
+```
+
+**Window 4 - Data Service:**
+```cmd
+python data_service.py
 ```
 
 ### Stop Services
@@ -164,6 +177,7 @@ taskkill /PID <PID> /F
 netstat -ano | findstr :8080
 netstat -ano | findstr :8765
 netstat -ano | findstr :8766
+netstat -ano | findstr :8767
 ```
 
 ---
@@ -217,6 +231,7 @@ Once all services are running:
 | **Web App** | http://localhost:8080 | Main application interface |
 | **IMAP Proxy** | http://localhost:8765 | Email fetch (backend) |
 | **Email Service** | http://localhost:8766 | Email sending & monitoring |
+| **Data Service** | http://localhost:8767 | SQLite database storage |
 
 ---
 
@@ -228,6 +243,7 @@ Once all services are running:
 curl -s http://localhost:8080 | head -20
 curl -s -X POST http://localhost:8765/api/status -H "Content-Type: application/json" -d '{}'
 curl -s -X POST http://localhost:8766/api/status -H "Content-Type: application/json" -d '{}'
+curl -s http://localhost:8767/api/status
 ```
 
 ### Windows (PowerShell)
@@ -236,6 +252,7 @@ curl -s -X POST http://localhost:8766/api/status -H "Content-Type: application/j
 Invoke-WebRequest http://localhost:8080
 Invoke-WebRequest -Method POST http://localhost:8765/api/status -ContentType "application/json" -Body '{}'
 Invoke-WebRequest -Method POST http://localhost:8766/api/status -ContentType "application/json" -Body '{}'
+Invoke-WebRequest http://localhost:8767/api/status
 ```
 
 ---

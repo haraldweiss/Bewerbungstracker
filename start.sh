@@ -74,8 +74,8 @@ kill_existing_process() {
 
 # Check if ports are available
 echo -e "${BLUE}Checking port availability...${NC}"
-PORTS=(8080 8765 8766)
-NAMES=("Web Server" "IMAP Proxy" "Email Service")
+PORTS=(8080 8765 8766 8767)
+NAMES=("Web Server" "IMAP Proxy" "Email Service" "Data Service")
 
 for i in "${!PORTS[@]}"; do
     if check_port ${PORTS[$i]}; then
@@ -110,23 +110,35 @@ else
     echo -e "${YELLOW}⚠️  email_service.py not found, skipping Email Service${NC}"
 fi
 
+# Start Data Service
+echo -e "${BLUE}Starting Data Service (port 8767)...${NC}"
+if [ -f "data_service.py" ]; then
+    python3 data_service.py > /tmp/data_service.log 2>&1 &
+    DATA_PID=$!
+    echo -e "${GREEN}✅ Data Service started (PID: $DATA_PID)${NC}"
+else
+    echo -e "${YELLOW}⚠️  data_service.py not found, skipping Data Service${NC}"
+fi
+
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}✅ All services started successfully!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "${BLUE}📍 Service URLs:${NC}"
-echo "  🌐 Web App:      ${BLUE}http://localhost:8080${NC}"
-echo "  📧 IMAP Proxy:   ${BLUE}http://localhost:8765${NC}"
-echo "  💌 Email Service: ${BLUE}http://localhost:8766${NC}"
+echo "  🌐 Web App:       ${BLUE}http://localhost:8080${NC}"
+echo "  📧 IMAP Proxy:    ${BLUE}http://localhost:8765${NC}"
+echo "  💌 Email Service:  ${BLUE}http://localhost:8766${NC}"
+echo "  💾 Data Service:   ${BLUE}http://localhost:8767${NC}"
 echo ""
 echo -e "${YELLOW}📝 Log files:${NC}"
 echo "  Web Server: /tmp/webserver.log"
 echo "  IMAP Proxy: /tmp/imap_proxy.log"
 echo "  Email Service: /tmp/email_service.log"
+echo "  Data Service: /tmp/data_service.log"
 echo ""
 echo -e "${YELLOW}🛑 To stop all services, run:${NC}"
-echo "  kill $WEB_PID $IMAP_PID $EMAIL_PID"
+echo "  kill $WEB_PID $IMAP_PID $EMAIL_PID $DATA_PID"
 echo ""
 echo -e "${BLUE}💡 Tips:${NC}"
 echo "  • Open http://localhost:8080 in your browser"
