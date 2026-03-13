@@ -915,15 +915,26 @@
 /* ═══════════════════════════════════════════════════════
    APPS SCRIPT CODE TEMPLATE
 ═══════════════════════════════════════════════════════ */
-const APPS_SCRIPT_CODE = `function doGet(e) {
+// Generate Apps Script code dynamically with current keywords
+function generateAppsScriptCode(keywords) {
+    const keywordArray = keywords
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => k.length > 0)
+        .map(k => `'${k.replace(/'/g, "\\'")}'`);
+
+    if (keywordArray.length === 0) {
+        keywordArray.push("'Bewerbung'", "'Application'", "'Job'");
+    }
+
+    return `function doGet(e) {
   var maxEmails = 100;
-  var keywords = ['Bewerbung','Stelle','Job','Position','Application',
-                  'Interview','Absage','Zusage','Kandidat','Recruiting'];
-  
+  var keywords = [${keywordArray.join(',')}];
+
   var query = keywords.map(function(k){ return 'subject:' + k; }).join(' OR ');
   var threads = GmailApp.search(query, 0, maxEmails);
   var results = [];
-  
+
   threads.forEach(function(thread) {
     var msgs = thread.getMessages();
     msgs.forEach(function(msg) {
@@ -937,7 +948,7 @@ const APPS_SCRIPT_CODE = `function doGet(e) {
       });
     });
   });
-  
+
   // Gesendet auch scannen
   var sentQuery = 'in:sent ' + keywords.slice(0,3).map(function(k){ return 'subject:' + k; }).join(' OR ');
   var sentThreads = GmailApp.search(sentQuery, 0, 50);
@@ -955,7 +966,7 @@ const APPS_SCRIPT_CODE = `function doGet(e) {
       });
     });
   });
-  
+
   var output = ContentService.createTextOutput(JSON.stringify({
     status: 'ok',
     count:  results.length,
@@ -964,6 +975,10 @@ const APPS_SCRIPT_CODE = `function doGet(e) {
   output.setMimeType(ContentService.MimeType.JSON);
   return output;
 }`;
+}
+
+// Default Apps Script Code (with default keywords)
+const APPS_SCRIPT_CODE = generateAppsScriptCode('Bewerbung,Stelle,Stellenausschreibung,Application,Job,Position,Kandidat,Recruiting,Interview,Absage,Zusage');
 
 /* ═══════════════════════════════════════════════════════
    STATE
@@ -1530,7 +1545,11 @@ function deleteBewerbung(id) {
 ═══════════════════════════════════════════════════════ */
 function renderAppsScriptCode() {
     const el = document.getElementById('appsScriptCode');
-    if (el) el.textContent = APPS_SCRIPT_CODE;
+    if (el) {
+        // Generate code with current keywords from settings
+        const currentCode = generateAppsScriptCode(state.settings.keywords);
+        el.textContent = currentCode;
+    }
 }
 
 async function fetchFromAppsScript() {
@@ -2003,7 +2022,10 @@ function saveSettings() {
         filterImapResults();
     }
 
-    showToast('Einstellungen gespeichert ✓ (Emails neu gefiltert)', 'success');
+    // Update Apps Script code with new keywords
+    renderAppsScriptCode();
+
+    showToast('Einstellungen gespeichert ✓ (Emails + Apps Script neu gefiltert)', 'success');
 }
 
 function saveNotificationSettings() {
@@ -2408,8 +2430,10 @@ function exportEmailSummary() {
 }
 
 function copyScript() {
-    navigator.clipboard.writeText(APPS_SCRIPT_CODE)
-        .then(() => showToast('Code kopiert! ✓', 'success'))
+    // Copy current Apps Script code with updated keywords
+    const currentCode = generateAppsScriptCode(state.settings.keywords);
+    navigator.clipboard.writeText(currentCode)
+        .then(() => showToast('Code kopiert! ✓ (mit aktuellen Keywords)', 'success'))
         .catch(() => showToast('Kopieren fehlgeschlagen', 'error'));
 }
 
