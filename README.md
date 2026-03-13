@@ -6,7 +6,7 @@
 
 ## 📋 Bewerbungs-Tracker - Deutsch
 
-Ein leistungsstarkes, datenschutzfreundliches Tool zur Verwaltung von Bewerbungen und Verfolgung deiner Jobsuche. Gebaut mit vanilla JavaScript, Python und jsPDF für ein nahtloses Erlebnis.
+Ein leistungsstarkes, datenschutzfreundliches Tool zur Verwaltung von Bewerbungen und Verfolgung deiner Jobsuche. Mit automatischem Email-Monitor, Push-Benachrichtigungen und Email-Versand. Gebaut mit vanilla JavaScript, Python und jsPDF für ein nahtloses Erlebnis.
 
 ### ✨ Features
 
@@ -16,13 +16,28 @@ Ein leistungsstarkes, datenschutzfreundliches Tool zur Verwaltung von Bewerbunge
 - **Rückmeldungsquote** - Sehe den Prozentsatz der Bewerbungen mit Rückmeldung
 - **Aktivitätszeitleiste** - Überwache letzte Änderungen
 
-#### 📧 Email-Integration
+#### 📧 Email-Integration & Monitoring
 - **Gmail/Outlook/IMAP-Support** - Verbinde mit mehreren Email-Providern über sichere IMAP-Proxy
+- **Automatischer Email-Monitor** - ⭐ NEUE: Prüft automatisch alle 30 Min. auf Antworten
+- **Intelligente Firmenerkennung** - Findet automatisch Antworten basierend auf Firmennamen
 - **Intelligente Email-Erkennung** - Erkennt automatisch bewerbungsrelevante Emails
 - **Reduzierte Falsch-Positive** - Fortgeschrittene Filterung zur Minimierung falscher Treffer
 - **Batch-Import** - Importiere mehrere Emails gleichzeitig
 - **Datum-Filterung** - Setze Startdatum, um nur aktuelle Emails zu importieren
 - **Benutzerdefinierte Keywords** - Füge deine eigenen Keywords hinzu (auch kurze wie "CV", "HR")
+
+#### 📬 Email-Automatisierung
+- **Automatischer SMTP-Versand** - ⭐ NEUE: Versendet Email-Zusammenfassungen automatisch per Email
+- **Email-Zusammenfassungen** - Täglich, wöchentlich oder monatlich automatisch generiert
+- **SMTP-Konfiguration** - Einfach deine Email einrichten (Gmail, Outlook, etc.)
+- **Test-Email-Funktion** - Prüfe dein Setup mit Test-Email
+- **Antwort-Benachrichtigungen** - Erhalte Emails wenn Antworten erkannt werden
+
+#### 🔔 Benachrichtigungen
+- **Push-Benachrichtigungen** - ⭐ NEUE: Echtzeit-Benachrichtigungen auf Handy und Desktop
+- **Selektive Status-Alerts** - Wähle für welche Status du Benachrichtigungen möchtest
+- **Automatische Antwort-Meldung** - Wird benachrichtigt wenn Antwort erkannt wird
+- **Keine Tracking** - Benachrichtigungen nur lokal, kein Cloud-Service
 
 #### 💾 Datenverwaltung
 - **JSON Backup/Wiederherstellung** - Vollständiges Backup aller Bewerbungen und Einstellungen
@@ -45,8 +60,9 @@ Ein leistungsstarkes, datenschutzfreundliches Tool zur Verwaltung von Bewerbunge
 ### 🚀 Schnellstart
 
 #### Voraussetzungen
-- Python 3.7+ (für IMAP-Proxy)
-- Moderner Webbrowser (Chrome, Firefox, Safari, Edge)
+- Python 3.7+ (für IMAP-Proxy, Email-Service)
+- Moderner Webbrowser mit Push-Benachrichtigungen
+- SMTP-Konto für Email-Versand (Gmail, Outlook, etc.)
 
 #### Installation
 
@@ -62,19 +78,26 @@ Ein leistungsstarkes, datenschutzfreundliches Tool zur Verwaltung von Bewerbunge
    ```
    Öffne dann `http://localhost:8080` in deinem Browser
 
-3. **IMAP-Proxy starten** (für Email-Integration)
+3. **IMAP-Proxy starten** (für Email-Integration & Monitoring)
    ```bash
    python3 imap_proxy.py
    ```
    Der Proxy läuft auf `http://localhost:8765` (nur localhost aus Sicherheitsgründen)
 
-#### Mit Launch-Konfiguration
+4. **Email-Service starten** (für SMTP-Versand & Email-Monitor) ⭐ NEU
+   ```bash
+   python3 email_service.py
+   ```
+   Der Service läuft auf `http://localhost:8766`
+
+#### Mit Launch-Konfiguration (einfacher)
 
 Wenn Claude Code installiert ist:
 ```bash
-# Konfiguration ist in .claude/launch.json
+# Alle Server starten (Konfiguration ist in .claude/launch.json)
 preview_start "Web Server"
 preview_start "IMAP Proxy"
+preview_start "Email Service"
 ```
 
 ### 📖 Verwendung
@@ -84,6 +107,52 @@ preview_start "IMAP Proxy"
 2. Fülle Firma, Position, Datum und weitere Details aus
 3. Füge den Job-Link ein
 4. Klicke **"💾 Speichern"**
+
+#### Email-Monitoring aktivieren ⭐ NEU
+
+**Schritt 1: IMAP konfigurieren**
+1. Gehe zu **Mail Connector**
+2. Gib deine Email-Anmeldedaten ein
+3. Teste die Verbindung
+
+**Schritt 2: Email-Monitor aktivieren**
+1. Gehe zu **Einstellungen → Email-Monitoring**
+2. Aktiviere "Email-Monitoring aktivieren"
+3. Optionale: Aktiviere Benachrichtigungen
+4. Klicke "Jetzt prüfen" für sofortiges Checken
+
+**Wie es funktioniert:**
+- Prüft automatisch alle 30 Min. auf neue Emails
+- Vergleicht Absender/Betreff mit deinen Bewerbungsunternehmen
+- Sendet dir Benachrichtigung wenn Antwort erkannt wird
+- Protokolliert alle erkannten Antworten
+
+#### Email-Versand einrichten ⭐ NEU
+
+**SMTP-Konfiguration:**
+1. Gehe zu **Einstellungen → SMTP-Konfiguration**
+2. Aktiviere "SMTP-Email-Versand aktivieren"
+3. Fülle ein:
+   - **SMTP Server**: `smtp.gmail.com` (für Gmail)
+   - **Port**: `587` (Standard)
+   - **Email**: deine.email@gmail.com
+   - **Passwort**: Für Gmail nutze **App-Passwort**, nicht normales Passwort!
+4. Klicke "🧪 Verbindung testen"
+5. Klicke "📧 Test-Email senden"
+
+**Email-Zusammenfassung aktivieren:**
+1. Aktiviere "Email-Zusammenfassung aktivieren"
+2. Gib Email-Empfänger ein
+3. Wähle Häufigkeit (täglich/wöchentlich/monatlich)
+4. Speichern!
+
+#### Push-Benachrichtigungen aktivieren
+
+1. Gehe zu **Einstellungen → Benachrichtigungen**
+2. Aktiviere "Browser Push-Benachrichtigungen aktivieren"
+3. Bestätige Browser-Berechtigung
+4. Wähle für welche Status du Benachrichtigungen möchtest
+5. Speichern!
 
 #### Email verbinden
 
@@ -111,6 +180,7 @@ preview_start "IMAP Proxy"
 - **JSON Backup**: Einstellungen → "📥 JSON Backup" (alle Daten und Einstellungen)
 - **PDF Report**: Einstellungen → "📄 PDF Export" (mit anklickbaren Job-Links)
 - **JSON Import**: Einstellungen → "📤 JSON Import" (aus Backup wiederherstellen)
+- **Email-Zusammenfassung**: Einstellungen → "📧 Zusammenfassung exportieren"
 
 ### 🔒 Sicherheit & Datenschutz
 
@@ -119,17 +189,19 @@ preview_start "IMAP Proxy"
 - **Keine Server-Anmeldung** - Keine Authentifizierung, keine Benutzerkonten
 - **Kein Tracking** - Keine Analytik, keine Datenerfassung
 
-#### IMAP-Proxy Sicherheit
-- **Nur Localhost** - Proxy bindet an 127.0.0.1 (kein Netzwerkzugriff)
+#### IMAP-Proxy & Email-Service Sicherheit
+- **Nur Localhost** - Services binden an 127.0.0.1 (kein Netzwerkzugriff)
 - **Passwort-Schutz** - Passwörter werden nicht geloggt, gecacht oder gespeichert
 - **Nur Lesezugriff** - IMAP im readonly-Modus, POP3 ohne DELETE
 - **SSL/TLS** - Verschlüsselte Verbindungen mit Zertifikatsprüfung
 - **IP-Validierung** - Zusätzliche Sicherheitsprüfung bei jedem Request
+- **SMTP-Sicherheit** - SMTP-Passwörter nur im RAM, nicht auf Festplatte
 
 #### Datenschutz
 - Sensible Daten ausgeschlossen aus localStorage
 - Backups enthalten keine Passwörter
 - App-Passwörter empfohlen statt normaler Passwörter
+- Email-Service speichert Passwörter nicht persistent
 
 ### ⚙️ Konfiguration
 
@@ -145,12 +217,25 @@ Setze Tage ohne Rückmeldung, bevor als Ghosting markiert (Standard: 30 Tage)
 #### Email-Import Datum-Filter
 Setze Startdatum, um Emails nur aus bestimmter Periode zu importieren (optional)
 
+#### Email-Monitoring Intervall
+Der Monitor prüft automatisch alle **30 Minuten** auf neue Antworten. Du kannst jederzeit manuell mit "🔍 Jetzt prüfen" checken.
+
+#### Gmail App-Passwort ⭐ WICHTIG für Email-Versand
+
+Falls du Gmail mit Email-Versand nutzen möchtest:
+1. Aktiviere 2-Faktor-Authentifizierung: https://myaccount.google.com/security
+2. Gehe zu: https://myaccount.google.com/apppasswords
+3. Wähle "Mail" und "Windows-Computer"
+4. Google generiert ein 16-stelliges Passwort
+5. Kopiere das in die SMTP-Passwort-Eingabe
+
 ### 📁 Projektstruktur
 
 ```
 Bewerbungstracker/
 ├── index.html              # Hauptanwendung (HTML + CSS + JavaScript)
 ├── imap_proxy.py          # Python IMAP/POP3 Proxy (Port 8765)
+├── email_service.py       # Python Email-Service (Port 8766) - neu!
 ├── config.json            # Proxy-Konfiguration
 ├── ANLEITUNG_IMAP.md      # IMAP-Dokumentation
 ├── README.md              # Diese Datei
@@ -162,9 +247,11 @@ Bewerbungstracker/
 ### 🛠️ Technologien
 
 - **Frontend**: HTML5, CSS3, JavaScript (Vanilla - keine Frameworks)
-- **Backend**: Python 3 (IMAP/POP3 Proxy)
+- **Backend**: Python 3 (IMAP/POP3 Proxy + Email-Service)
+- **Datenbank**: SQLite (Email-Service Konfiguration)
+- **Email**: SMTP (Gmail, Outlook, etc.), IMAP (Email-Monitoring)
 - **PDF-Generierung**: jsPDF + jsPDF AutoTable
-- **Speicherung**: Browser localStorage (kein Backend)
+- **Speicherung**: Browser localStorage + SQLite
 - **Icons**: Unicode Emojis
 
 ### 📊 Datenformat
@@ -196,7 +283,34 @@ Bewerbungstracker/
 - `absage` - Ablehnung
 - `ghosting` - Keine Rückmeldung (automatisch markiert)
 
+#### Quellen-Werte
+- `gmail` - Gmail
+- `imap` - IMAP/POP3
+- `manuell` - Manuell eingegeben
+- `linkedin` - LinkedIn
+- `indeed` - Indeed
+- `xing` - XING
+- `website` - Unternehmenswebsite
+- `empfehlung` - Empfehlung
+
 ### 🐛 Fehlerbehebung
+
+#### Email-Monitor funktioniert nicht
+1. Überprüfe IMAP-Einstellungen im Mail Connector
+2. Stelle sicher IMAP ist in Email-Einstellungen aktiviert
+3. Prüfe ob Email-Service läuft: `python3 email_service.py`
+4. Versuche manuell mit "🔍 Jetzt prüfen"
+
+#### SMTP/Email-Versand funktioniert nicht
+1. Teste Verbindung mit "🧪 Verbindung testen"
+2. Sende Test-Email mit "📧 Test-Email senden"
+3. Überprüfe ob Email-Service läuft
+4. Bei Gmail: Stelle sicher du nutzt App-Passwort, nicht normales Passwort
+
+#### Push-Benachrichtigungen funktionieren nicht
+1. Überprüfe Browser-Berechtigung für Notifications
+2. Stelle sicher Push-Benachrichtigungen sind in Einstellungen aktiviert
+3. Versuche Browser neu zu laden
 
 #### IMAP-Proxy Verbindungsprobleme
 1. Überprüfe IMAP-Host und Port
@@ -204,22 +318,11 @@ Bewerbungstracker/
 3. Aktiviere "Unsichere Apps" wenn normales Passwort bei Gmail verwendet
 4. Verifiziere Proxy läuft: `python3 imap_proxy.py`
 
-#### Email-Import funktioniert nicht
-1. Überprüfe Email-Anmeldedaten
-2. Stelle sicher IMAP ist in Email-Einstellungen aktiviert
-3. Versuche spezifischen Datumbereich zu importieren
-4. Überprüfe Browser-Konsole auf Fehlermeldungen
-
-#### PDF Export funktioniert nicht
-1. Stelle sicher du hast Bewerbungen zum Exportieren
-2. Überprüfe Browser-Konsole auf JavaScript-Fehler
-3. Versuche mit Browser-Developer-Tools
-
 ---
 
 ## 📋 Application Tracker - English
 
-A powerful, privacy-focused application for managing job applications and tracking your recruitment journey. Built with vanilla JavaScript, Python, and jsPDF for a seamless experience.
+A powerful, privacy-focused application for managing job applications and tracking your recruitment journey. With automatic email monitoring, push notifications, and email dispatch. Built with vanilla JavaScript, Python, and jsPDF for a seamless experience.
 
 ### ✨ Features
 
@@ -229,22 +332,37 @@ A powerful, privacy-focused application for managing job applications and tracki
 - **Response Rate** - See what percentage of applications have received responses
 - **Activity Timeline** - Monitor recent application changes
 
-#### 📧 Email Integration
+#### 📧 Email Integration & Monitoring
 - **Gmail/Outlook/IMAP Support** - Connect to multiple email providers via secure IMAP proxy
-- **Smart Email Detection** - Automatically identifies recruitment-related emails with keyword matching
+- **Automatic Email Monitoring** - ⭐ NEW: Automatically checks every 30 min for responses
+- **Intelligent Company Detection** - Finds responses based on company names
+- **Smart Email Detection** - Automatically identifies recruitment-related emails
 - **False Positive Reduction** - Advanced filtering to minimize incorrect classifications
 - **Batch Import** - Import multiple emails at once
 - **Date Filtering** - Set a start date to only import recent emails
 - **Custom Keywords** - Add your own keywords (even short ones like "CV", "HR")
 
+#### 📬 Email Automation
+- **Automatic SMTP Dispatch** - ⭐ NEW: Sends email summaries automatically
+- **Email Summaries** - Daily, weekly, or monthly automatically generated
+- **SMTP Configuration** - Easy setup with your email provider (Gmail, Outlook, etc.)
+- **Test Email Function** - Verify your setup with test email
+- **Response Notifications** - Get emails when responses are detected
+
+#### 🔔 Notifications
+- **Push Notifications** - ⭐ NEW: Real-time notifications on phone and desktop
+- **Selective Status Alerts** - Choose which status changes trigger notifications
+- **Automatic Response Alert** - Get notified when response is detected
+- **No Tracking** - Notifications local only, no cloud service
+
 #### 💾 Data Management
 - **JSON Backup/Restore** - Full backup of all applications and settings
 - **PDF Export** - Generate professional PDF reports with clickable job links
 - **No Cloud Storage** - All data stored locally in browser (localStorage)
-- **Settings Sync** - Backup and restore all configurations including keywords, email filters, and provider settings
+- **Settings Sync** - Backup and restore all configurations
 
 #### 🎯 Application Tracking
-- **Rich Application Data** - Store company, position, status, date, salary, location, contact email, job link, and notes
+- **Rich Application Data** - Store company, position, status, date, salary, location, contact, link, notes
 - **Quick Status Updates** - Change application status directly from the list
 - **Search & Filter** - Find applications by company, position, or source
 - **Ghosting Detection** - Automatically mark applications as ghosting after X days without response
@@ -258,8 +376,9 @@ A powerful, privacy-focused application for managing job applications and tracki
 ### 🚀 Quick Start
 
 #### Prerequisites
-- Python 3.7+ (for IMAP proxy)
-- Modern web browser (Chrome, Firefox, Safari, Edge)
+- Python 3.7+ (for IMAP proxy, Email Service)
+- Modern web browser with push notification support
+- SMTP account for sending emails (Gmail, Outlook, etc.)
 
 #### Installation
 
@@ -275,19 +394,26 @@ A powerful, privacy-focused application for managing job applications and tracki
    ```
    Then open `http://localhost:8080` in your browser
 
-3. **Start the IMAP Proxy** (for email integration)
+3. **Start the IMAP Proxy** (for email integration & monitoring)
    ```bash
    python3 imap_proxy.py
    ```
    The proxy runs on `http://localhost:8765` (localhost-only for security)
 
-#### Using Launch Configuration
+4. **Start the Email Service** (for SMTP dispatch & email monitoring) ⭐ NEW
+   ```bash
+   python3 email_service.py
+   ```
+   The service runs on `http://localhost:8766`
+
+#### Using Launch Configuration (easier)
 
 If you have Claude Code installed:
 ```bash
-# Configuration is in .claude/launch.json
+# Start all servers (configuration is in .claude/launch.json)
 preview_start "Web Server"
 preview_start "IMAP Proxy"
+preview_start "Email Service"
 ```
 
 ### 📖 Usage
@@ -296,7 +422,53 @@ preview_start "IMAP Proxy"
 1. Click **"+ Bewerbung"** button
 2. Fill in company, position, date, and other details
 3. Paste the job link
-4. Click **"💾 Speichern"** to save
+4. Click **"💾 Speichern"**
+
+#### Setting Up Email Monitoring ⭐ NEW
+
+**Step 1: Configure IMAP**
+1. Go to **Mail Connector**
+2. Enter your email credentials
+3. Test the connection
+
+**Step 2: Enable Email Monitor**
+1. Go to **Settings → Email Monitoring**
+2. Enable "Email-Monitoring aktivieren"
+3. Optional: Enable notifications
+4. Click "Jetzt prüfen" for immediate check
+
+**How it works:**
+- Automatically checks every 30 min for new emails
+- Compares sender/subject with your application companies
+- Sends notification when response is detected
+- Logs all detected responses
+
+#### Setting Up Email Dispatch ⭐ NEW
+
+**SMTP Configuration:**
+1. Go to **Settings → SMTP-Configuration**
+2. Enable "SMTP-Email-Versand aktivieren"
+3. Fill in:
+   - **SMTP Server**: `smtp.gmail.com` (for Gmail)
+   - **Port**: `587` (standard)
+   - **Email**: your.email@gmail.com
+   - **Password**: For Gmail use **App Password**, not regular password!
+4. Click "🧪 Test Connection"
+5. Click "📧 Send Test Email"
+
+**Enable Email Summary:**
+1. Enable "Email-Zusammenfassung aktivieren"
+2. Enter email recipient
+3. Choose frequency (daily/weekly/monthly)
+4. Save!
+
+#### Enabling Push Notifications
+
+1. Go to **Settings → Notifications**
+2. Enable "Browser Push-Benachrichtigungen aktivieren"
+3. Confirm browser permission
+4. Choose which status changes trigger notifications
+5. Save!
 
 #### Connecting Email
 
@@ -315,15 +487,16 @@ preview_start "IMAP Proxy"
 1. Go to **Mail Connector**
 2. Choose import method:
    - **Script Emails**: Via Google Apps Script
-   - **EML Files**: Import from downloaded .eml files
+   - **EML Files**: From downloaded .eml files
    - **IMAP/POP3**: Live connection to email server
 3. Set optional **start date** to avoid importing old emails
 4. Preview and selectively import emails
 
 #### Exporting Data
-- **JSON Backup**: Settings → "📥 JSON Backup" (includes all data and settings)
-- **PDF Report**: Settings → "📄 PDF Export" (clickable links to job postings)
+- **JSON Backup**: Settings → "📥 JSON Backup" (all data and settings)
+- **PDF Report**: Settings → "📄 PDF Export" (with clickable links)
 - **JSON Import**: Settings → "📤 JSON Import" (restore from backup)
+- **Email Summary**: Settings → "📧 Zusammenfassung exportieren"
 
 ### 🔒 Security & Privacy
 
@@ -332,22 +505,24 @@ preview_start "IMAP Proxy"
 - **No Server Login** - No authentication, no user accounts
 - **No Tracking** - No analytics, no data collection
 
-#### IMAP Proxy Security
-- **Localhost-Only** - Proxy binds to 127.0.0.1 (no network access)
+#### IMAP Proxy & Email Service Security
+- **Localhost-Only** - Services bind to 127.0.0.1 (no network access)
 - **Credential Protection** - Passwords never logged, cached, or stored
 - **Read-Only Access** - IMAP in readonly mode, POP3 without DELETE
 - **SSL/TLS** - Encrypted connections with certificate validation
 - **IP Validation** - Extra security check on every request
+- **SMTP Security** - SMTP passwords only in RAM, not on disk
 
 #### Data Protection
 - Sensitive data excluded from localStorage
 - Backups don't include passwords
 - App passwords recommended over regular passwords
+- Email Service doesn't persist passwords
 
 ### ⚙️ Configuration
 
 #### Email Keywords
-Edit keywords used for automatic email detection in **Settings**. Default includes:
+Edit keywords for automatic email detection in **Settings**. Default includes:
 - Bewerbung, Application, Stelle, Interview, Absage, Zusage, Job, Recruiting, Kandidat
 
 You can add your own keywords, including short ones like "CV", "HR", "IT".
@@ -358,12 +533,25 @@ Set days without response before marking as ghosting (default: 30 days)
 #### Email Import Date Filter
 Set a start date to only import emails from specific period (optional)
 
+#### Email Monitoring Interval
+The monitor automatically checks every **30 minutes** for new responses. You can manually check anytime with "🔍 Jetzt prüfen".
+
+#### Gmail App Password ⭐ IMPORTANT for Email Dispatch
+
+If you want to use Gmail with email dispatch:
+1. Enable 2-factor authentication: https://myaccount.google.com/security
+2. Go to: https://myaccount.google.com/apppasswords
+3. Select "Mail" and "Windows Computer"
+4. Google generates a 16-digit password
+5. Copy it into the SMTP password field
+
 ### 📁 Project Structure
 
 ```
 Bewerbungstracker/
 ├── index.html              # Main application (HTML + CSS + JavaScript)
 ├── imap_proxy.py          # Python IMAP/POP3 proxy (port 8765)
+├── email_service.py       # Python Email Service (port 8766) - new!
 ├── config.json            # Proxy configuration
 ├── ANLEITUNG_IMAP.md      # IMAP documentation
 ├── README.md              # This file
@@ -375,68 +563,37 @@ Bewerbungstracker/
 ### 🛠️ Technologies
 
 - **Frontend**: HTML5, CSS3, JavaScript (Vanilla - no frameworks)
-- **Backend**: Python 3 (IMAP/POP3 Proxy)
+- **Backend**: Python 3 (IMAP/POP3 Proxy + Email Service)
+- **Database**: SQLite (Email Service configuration)
+- **Email**: SMTP (Gmail, Outlook, etc.), IMAP (Email Monitoring)
 - **PDF Generation**: jsPDF + jsPDF AutoTable
-- **Storage**: Browser localStorage (no backend database)
+- **Storage**: Browser localStorage + SQLite
 - **Icons**: Unicode Emojis
-
-### 📊 Data Format
-
-#### Application Object
-```json
-{
-  "id": "bew_1234567890_abc123",
-  "firma": "Company GmbH",
-  "position": "Software Engineer",
-  "status": "beworben",
-  "datum": "2024-03-12",
-  "gehalt": "60,000-80,000 EUR",
-  "ort": "Berlin",
-  "email": "hr@company.de",
-  "quelle": "gmail",
-  "link": "https://...",
-  "notizen": "...",
-  "createdAt": "2024-03-12T...",
-  "updatedAt": "2024-03-12T..."
-}
-```
-
-#### Status Values
-- `beworben` - Applied
-- `antwort` - Response received
-- `interview` - Interview scheduled
-- `zusage` - Job offer
-- `absage` - Rejection
-- `ghosting` - No response (auto-marked)
-
-#### Source Values
-- `gmail` - Gmail
-- `imap` - IMAP/POP3
-- `manuell` - Manual entry
-- `linkedin` - LinkedIn
-- `indeed` - Indeed
-- `xing` - XING
-- `website` - Company website
-- `empfehlung` - Referral
 
 ### 🐛 Troubleshooting
 
-#### IMAP Proxy Connection Issues
+#### Email Monitor not working
+1. Check IMAP settings in Mail Connector
+2. Ensure IMAP is enabled in email settings
+3. Verify Email Service is running: `python3 email_service.py`
+4. Try manual check with "🔍 Jetzt prüfen"
+
+#### SMTP/Email dispatch not working
+1. Test connection with "🧪 Test Connection"
+2. Send test email with "📧 Send Test Email"
+3. Verify Email Service is running
+4. For Gmail: Make sure you're using App Password, not regular password
+
+#### Push notifications not working
+1. Check browser permission for Notifications
+2. Verify push notifications enabled in Settings
+3. Try reloading browser
+
+#### IMAP Proxy connection issues
 1. Check IMAP host and port are correct
 2. Use **app password** (not regular password) for Gmail/Yahoo
 3. Enable "Less secure apps" if using Gmail with regular password
 4. Verify proxy is running: `python3 imap_proxy.py`
-
-#### Email Import Not Working
-1. Check email account credentials
-2. Ensure IMAP is enabled in email settings
-3. Try importing a specific date range
-4. Check browser console for error messages
-
-#### PDF Not Exporting
-1. Ensure you have applications to export
-2. Check browser console for JavaScript errors
-3. Try using browser's developer tools if export fails silently
 
 ---
 
