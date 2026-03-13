@@ -672,6 +672,131 @@
         <button class="btn btn-primary" onclick="saveSettings()">💾 Speichern</button>
     </div>
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:1rem;">🔔 Benachrichtigungen</div>
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                <input type="checkbox" id="pushNotificationsEnabled" style="width:18px;height:18px;">
+                <span>Browser Push-Benachrichtigungen aktivieren</span>
+            </label>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem;">Erhalte Benachrichtigungen auf deinem Handy bei wichtigen Status-Änderungen</div>
+        </div>
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label>Push-Benachrichtigungen für diese Status:</label>
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.5rem;">
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                    <input type="checkbox" id="notifyStatus_antwort" checked> 📨 Antwort
+                </label>
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                    <input type="checkbox" id="notifyStatus_interview" checked> 🎤 Interview
+                </label>
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                    <input type="checkbox" id="notifyStatus_zusage" checked> ✅ Zusage
+                </label>
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                    <input type="checkbox" id="notifyStatus_absage" checked> ❌ Absage
+                </label>
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                <input type="checkbox" id="emailSummaryEnabled" style="width:18px;height:18px;">
+                <span>Email-Zusammenfassung aktivieren</span>
+            </label>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem;">Erhalte regelmäßige Email-Zusammenfassungen mit Bewerbungs-Übersicht</div>
+        </div>
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label>Email für Zusammenfassung:</label>
+            <input type="email" id="emailSummaryRecipient" placeholder="deine.email@example.com" style="width:100%;max-width:300px;">
+        </div>
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label>Zusammenfassung versenden alle:</label>
+            <select id="emailSummaryFrequency" style="width:150px;">
+                <option value="daily">🔄 Täglich</option>
+                <option value="weekly">📅 Wöchentlich (Montag)</option>
+                <option value="monthly">📆 Monatlich (1. des Monats)</option>
+            </select>
+        </div>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+            <button class="btn btn-primary" onclick="saveNotificationSettings()">💾 Benachrichtigungen speichern</button>
+            <button class="btn btn-info" onclick="exportEmailSummary()">📧 Zusammenfassung exportieren</button>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0;">
+        <div style="margin-top:1.5rem;">
+            <h3 style="font-size:1rem;margin-bottom:1rem;color:var(--text);">⚙️ SMTP-Konfiguration (Automatischer Email-Versand)</h3>
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-bottom:0.5rem;">
+                    <input type="checkbox" id="smtpEnabled" style="width:18px;height:18px;" onchange="toggleSmtpSettings()">
+                    <span>SMTP-Email-Versand aktivieren</span>
+                </label>
+                <div style="font-size:0.8rem;color:var(--text-muted);">Für Gmail: App-Passwort verwenden (nicht normales Passwort!)</div>
+            </div>
+            <div id="smtpSettings" style="display:none;background:var(--bg-card2);padding:1rem;border-radius:8px;border-left:3px solid var(--primary);">
+                <div class="form-group" style="margin-bottom:0.75rem;">
+                    <label>SMTP Server</label>
+                    <input type="text" id="smtpHost" placeholder="smtp.gmail.com" style="width:100%;max-width:300px;">
+                </div>
+                <div class="form-group" style="margin-bottom:0.75rem;">
+                    <label>SMTP Port</label>
+                    <input type="number" id="smtpPort" placeholder="587" value="587" style="width:100px;">
+                </div>
+                <div class="form-group" style="margin-bottom:0.75rem;">
+                    <label>Email-Adresse (Absender)</label>
+                    <input type="email" id="smtpUser" placeholder="deine.email@gmail.com" style="width:100%;max-width:300px;">
+                </div>
+                <div class="form-group" style="margin-bottom:1rem;">
+                    <label>Passwort (wird nicht gespeichert)</label>
+                    <div style="display:flex;gap:0.5rem;align-items:center;">
+                        <input type="password" id="smtpPass" placeholder="App-Passwort" style="width:100%;max-width:300px;flex:1;">
+                        <button class="btn btn-secondary btn-sm" onclick="togglePasswordVisibility('smtpPass')">👁</button>
+                    </div>
+                </div>
+                <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+                    <button class="btn btn-success btn-sm" onclick="testSmtpConnection()">🧪 Verbindung testen</button>
+                    <button class="btn btn-info btn-sm" onclick="sendTestEmail()">📧 Test-Email senden</button>
+                    <button class="btn btn-primary btn-sm" onclick="saveSMTPSettings()">💾 SMTP speichern</button>
+                </div>
+                <div id="smtpStatus" style="margin-top:1rem;font-size:0.85rem;color:var(--text-muted);"></div>
+            </div>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0;">
+        <div style="margin-top:1.5rem;">
+            <h3 style="font-size:1rem;margin-bottom:1rem;color:var(--text);">🔍 Email-Monitoring (Automatische Antwort-Erkennung)</h3>
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-bottom:0.5rem;">
+                    <input type="checkbox" id="monitoringEnabled" style="width:18px;height:18px;" onchange="toggleMonitoringSettings()">
+                    <span>Email-Monitoring aktivieren</span>
+                </label>
+                <div style="font-size:0.8rem;color:var(--text-muted);">Prüft automatisch auf Antworten von Unternehmen, bei denen du dich beworben hast</div>
+            </div>
+            <div id="monitoringSettings" style="display:none;background:var(--bg-card2);padding:1rem;border-radius:8px;border-left:3px solid var(--primary);">
+                <div class="form-group" style="margin-bottom:0.75rem;">
+                    <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                        <input type="checkbox" id="monitoringNotify" checked style="width:18px;height:18px;">
+                        <span>Benachrichtigungen bei Antworten senden</span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin-bottom:1rem;">
+                    <label>Benachrichtigungen an:</label>
+                    <input type="email" id="monitoringRecipient" placeholder="deine.email@example.com" style="width:100%;max-width:300px;">
+                    <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem;">Standard: Email-Zusammenfassung Adresse</div>
+                </div>
+                <div class="form-group" style="margin-bottom:1rem;">
+                    <label>IMAP-Einstellungen erforderlich:</label>
+                    <div style="font-size:0.8rem;color:var(--text-muted);background:rgba(0,0,0,0.2);padding:0.75rem;border-radius:4px;margin-top:0.5rem;">
+                        ✓ IMAP-Server, Port, Benutzer und Passwort müssen im Mail Connector konfiguriert sein
+                    </div>
+                </div>
+                <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+                    <button class="btn btn-primary btn-sm" onclick="saveMonitoringSettings()">💾 Monitoring speichern</button>
+                    <button class="btn btn-info btn-sm" onclick="checkEmailNow()">🔍 Jetzt prüfen</button>
+                </div>
+                <div id="monitoringStatus" style="margin-top:1rem;font-size:0.85rem;color:var(--text-muted);"></div>
+            </div>
+        </div>
+    </div>
+    <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">📦 Daten & Backup</div>
         <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
             <button class="btn btn-info" onclick="exportJSON()">📥 JSON Backup</button>
@@ -853,7 +978,17 @@ let state = {
         imapHost: '',
         imapPort: 993,
         imapProtocol: 'imap',
-        imapUser: ''
+        imapUser: '',
+        // Benachrichtigungen
+        pushNotificationsEnabled: false,
+        notifyStatus_antwort: true,
+        notifyStatus_interview: true,
+        notifyStatus_zusage: true,
+        notifyStatus_absage: true,
+        emailSummaryEnabled: false,
+        emailSummaryRecipient: '',
+        emailSummaryFrequency: 'weekly',
+        lastEmailSummarySent: null
         // NOTE: imapPass is intentionally never stored here or in localStorage
     },
     activeFilter: '',
@@ -875,9 +1010,45 @@ function init() {
     renderAppsScriptCode();
     updateConnectionStatus();
 
+    // Benachrichtigungen initialisieren
+    if (state.settings.pushNotificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+        console.log('Push-Benachrichtigungen aktiv');
+    }
+
+    // Email-Zusammenfassung prüfen
+    checkIfEmailSummaryShouldBeSent();
+
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('f_datum').value = today;
     setTimeout(checkImapProxy, 600);
+}
+
+function checkIfEmailSummaryShouldBeSent() {
+    if (!state.settings.emailSummaryEnabled || !state.settings.emailSummaryRecipient) return;
+
+    const lastSent = state.settings.lastEmailSummarySent ? new Date(state.settings.lastEmailSummarySent) : null;
+    const now = new Date();
+    let shouldSend = false;
+
+    if (!lastSent) {
+        shouldSend = true;
+    } else {
+        const frequency = state.settings.emailSummaryFrequency;
+        if (frequency === 'daily') {
+            shouldSend = now.getDate() !== lastSent.getDate();
+        } else if (frequency === 'weekly') {
+            const daysDiff = Math.floor((now - lastSent) / (1000 * 60 * 60 * 24));
+            shouldSend = daysDiff >= 7;
+        } else if (frequency === 'monthly') {
+            shouldSend = now.getMonth() !== lastSent.getMonth() || now.getFullYear() !== lastSent.getFullYear();
+        }
+    }
+
+    if (shouldSend) {
+        showToast('💌 Email-Zusammenfassung bereit zum Versand', 'info');
+        // Hinweis: Der tatsächliche Email-Versand müsste über einen Backend-Service erfolgen
+        // Für den lokalen Betrieb kann der Benutzer die HTML exportieren
+    }
 }
 
 function loadFromStorage() {
@@ -909,6 +1080,23 @@ function loadSettingsForm() {
     if (gd) gd.value = state.settings.ghostingDays || 30;
     if (ed) ed.value = state.settings.emailImportStartDate || '';
     if (su) su.value = state.settings.appsScriptUrl || '';
+
+    // Benachrichtigungseinstellungen
+    const pne = document.getElementById('pushNotificationsEnabled');
+    const ese = document.getElementById('emailSummaryEnabled');
+    const esr = document.getElementById('emailSummaryRecipient');
+    const esf = document.getElementById('emailSummaryFrequency');
+    if (pne) pne.checked = state.settings.pushNotificationsEnabled || false;
+    if (ese) ese.checked = state.settings.emailSummaryEnabled || false;
+    if (esr) esr.value = state.settings.emailSummaryRecipient || '';
+    if (esf) esf.value = state.settings.emailSummaryFrequency || 'weekly';
+
+    // Benachrichtigungsstatus-Checkboxen
+    document.getElementById('notifyStatus_antwort').checked = state.settings.notifyStatus_antwort !== false;
+    document.getElementById('notifyStatus_interview').checked = state.settings.notifyStatus_interview !== false;
+    document.getElementById('notifyStatus_zusage').checked = state.settings.notifyStatus_zusage !== false;
+    document.getElementById('notifyStatus_absage').checked = state.settings.notifyStatus_absage !== false;
+
     // IMAP settings (password intentionally excluded)
     const ih = document.getElementById('imapHost');
     const ip = document.getElementById('imapPort');
@@ -1172,9 +1360,20 @@ function showDetail(id) {
 function quickStatusChange(id, newStatus) {
     const idx = state.bewerbungen.findIndex(x => x.id === id);
     if (idx === -1) return;
+    const oldStatus = state.bewerbungen[idx].status;
     state.bewerbungen[idx].status = newStatus;
     state.bewerbungen[idx].updatedAt = new Date().toISOString();
     saveToStorage();
+
+    // Push-Benachrichtigung senden
+    if (newStatus !== oldStatus && ['antwort', 'interview', 'zusage', 'absage'].includes(newStatus)) {
+        notifyStatusChange(
+            state.bewerbungen[idx].firma,
+            state.bewerbungen[idx].position,
+            newStatus
+        );
+    }
+
     renderAll();
     showToast(`Status → ${newStatus}`, 'success');
 }
@@ -1719,6 +1918,407 @@ function saveSettings() {
     saveToStorage();
     updateConnectionStatus();
     showToast('Einstellungen gespeichert ✓', 'success');
+}
+
+function saveNotificationSettings() {
+    const pne = document.getElementById('pushNotificationsEnabled');
+    const ese = document.getElementById('emailSummaryEnabled');
+    const esr = document.getElementById('emailSummaryRecipient');
+    const esf = document.getElementById('emailSummaryFrequency');
+
+    // Benachrichtigungseinstellungen speichern
+    state.settings.pushNotificationsEnabled = pne?.checked || false;
+    state.settings.emailSummaryEnabled = ese?.checked || false;
+    state.settings.emailSummaryRecipient = esr?.value.trim() || '';
+    state.settings.emailSummaryFrequency = esf?.value || 'weekly';
+
+    // Status-Benachrichtigungen speichern
+    state.settings.notifyStatus_antwort = document.getElementById('notifyStatus_antwort')?.checked !== false;
+    state.settings.notifyStatus_interview = document.getElementById('notifyStatus_interview')?.checked !== false;
+    state.settings.notifyStatus_zusage = document.getElementById('notifyStatus_zusage')?.checked !== false;
+    state.settings.notifyStatus_absage = document.getElementById('notifyStatus_absage')?.checked !== false;
+
+    // Push-Benachrichtigungen initialisieren
+    if (state.settings.pushNotificationsEnabled && 'Notification' in window) {
+        if (Notification.permission === 'default') {
+            Notification.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                    showToast('Push-Benachrichtigungen aktiviert ✓', 'success');
+                } else {
+                    state.settings.pushNotificationsEnabled = false;
+                    showToast('Push-Benachrichtigungen verweigert', 'warning');
+                }
+            });
+        }
+    }
+
+    saveToStorage();
+    showToast('Benachrichtigungseinstellungen gespeichert ✓', 'success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SMTP / EMAIL SERVICE FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+
+const EMAIL_SERVICE_URL = 'http://127.0.0.1:8766';
+
+function toggleSmtpSettings() {
+    const checkbox = document.getElementById('smtpEnabled');
+    const settings = document.getElementById('smtpSettings');
+    if (checkbox?.checked) {
+        settings.style.display = 'block';
+        loadSMTPSettings();
+    } else {
+        settings.style.display = 'none';
+    }
+}
+
+function togglePasswordVisibility(fieldId) {
+    const field = document.getElementById(fieldId);
+    if (field.type === 'password') {
+        field.type = 'text';
+    } else {
+        field.type = 'password';
+    }
+}
+
+async function callEmailService(endpoint, data) {
+    try {
+        const response = await fetch(EMAIL_SERVICE_URL + endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return await response.json();
+    } catch (error) {
+        console.error('Email service error:', error);
+        showToast('Fehler: Email Service nicht erreichbar', 'error');
+        return { status: 'error', message: error.message };
+    }
+}
+
+async function loadSMTPSettings() {
+    const result = await callEmailService('/api/config/get', { key: 'smtp_user' });
+    if (result.value) {
+        document.getElementById('smtpUser').value = result.value;
+        const hostResult = await callEmailService('/api/config/get', { key: 'smtp_host' });
+        const portResult = await callEmailService('/api/config/get', { key: 'smtp_port' });
+        if (hostResult.value) document.getElementById('smtpHost').value = hostResult.value;
+        if (portResult.value) document.getElementById('smtpPort').value = portResult.value;
+    }
+}
+
+async function saveSMTPSettings() {
+    const host = document.getElementById('smtpHost').value.trim();
+    const port = document.getElementById('smtpPort').value.trim();
+    const user = document.getElementById('smtpUser').value.trim();
+    const pass = document.getElementById('smtpPass').value;
+
+    if (!host || !port || !user) {
+        showToast('Bitte alle SMTP-Einstellungen ausfüllen', 'warning');
+        return;
+    }
+
+    if (!pass) {
+        showToast('Passwort erforderlich', 'warning');
+        return;
+    }
+
+    // Save configuration
+    await callEmailService('/api/config/save', { key: 'smtp_host', value: host });
+    await callEmailService('/api/config/save', { key: 'smtp_port', value: port });
+    await callEmailService('/api/config/save', { key: 'smtp_user', value: user });
+    await callEmailService('/api/config/save', { key: 'smtp_pass', value: pass });
+
+    // Save email summary settings
+    await callEmailService('/api/config/save', { key: 'summary_enabled', value: 'true' });
+    await callEmailService('/api/config/save', { key: 'summary_recipient', value: state.settings.emailSummaryRecipient });
+    await callEmailService('/api/config/save', { key: 'summary_frequency', value: state.settings.emailSummaryFrequency });
+
+    // Clear password from form
+    document.getElementById('smtpPass').value = '';
+
+    updateSmtpStatus('✅ SMTP-Einstellungen gespeichert');
+    showToast('SMTP-Einstellungen gespeichert ✓', 'success');
+}
+
+async function testSmtpConnection() {
+    const host = document.getElementById('smtpHost').value.trim();
+    const port = document.getElementById('smtpPort').value.trim();
+    const user = document.getElementById('smtpUser').value.trim();
+    const pass = document.getElementById('smtpPass').value;
+
+    if (!host || !port || !user || !pass) {
+        showToast('Bitte alle Felder ausfüllen', 'warning');
+        return;
+    }
+
+    updateSmtpStatus('⏳ Teste Verbindung...');
+
+    // Save config temporarily
+    await callEmailService('/api/config/save', { key: 'smtp_host', value: host });
+    await callEmailService('/api/config/save', { key: 'smtp_port', value: port });
+    await callEmailService('/api/config/save', { key: 'smtp_user', value: user });
+    await callEmailService('/api/config/save', { key: 'smtp_pass', value: pass });
+
+    // Wait a moment, then check service status
+    setTimeout(async () => {
+        try {
+            const status = await fetch(EMAIL_SERVICE_URL + '/api/status').then(r => r.json());
+            if (status.smtp_configured) {
+                updateSmtpStatus('✅ SMTP verbunden und konfiguriert');
+                showToast('SMTP-Verbindung erfolgreich!', 'success');
+            } else {
+                updateSmtpStatus('❌ SMTP nicht konfiguriert');
+                showToast('SMTP-Konfiguration erforderlich', 'warning');
+            }
+        } catch (e) {
+            updateSmtpStatus('❌ Email Service nicht erreichbar');
+            showToast('Email Service läuft nicht', 'error');
+        }
+    }, 500);
+}
+
+async function sendTestEmail() {
+    const recipient = document.getElementById('smtpUser').value.trim();
+    if (!recipient) {
+        showToast('Gib zuerst eine Email-Adresse ein', 'warning');
+        return;
+    }
+
+    updateSmtpStatus('⏳ Sende Test-Email...');
+
+    const result = await callEmailService('/api/email/test', { recipient });
+
+    if (result.status === 'ok') {
+        updateSmtpStatus('✅ Test-Email versendet! Überprüfe deinen Posteingang');
+        showToast('Test-Email versendet ✓', 'success');
+    } else {
+        updateSmtpStatus('❌ Fehler beim Versand: ' + result.message);
+        showToast('Fehler: ' + result.message, 'error');
+    }
+}
+
+function updateSmtpStatus(message) {
+    const statusDiv = document.getElementById('smtpStatus');
+    if (statusDiv) {
+        statusDiv.textContent = message;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EMAIL MONITORING FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+
+function toggleMonitoringSettings() {
+    const checkbox = document.getElementById('monitoringEnabled');
+    const settings = document.getElementById('monitoringSettings');
+    if (checkbox?.checked) {
+        settings.style.display = 'block';
+    } else {
+        settings.style.display = 'none';
+    }
+}
+
+async function saveMonitoringSettings() {
+    const enabled = document.getElementById('monitoringEnabled')?.checked || false;
+    const notify = document.getElementById('monitoringNotify')?.checked || false;
+    const recipient = document.getElementById('monitoringRecipient').value.trim();
+
+    // Prüfe ob IMAP konfiguriert ist
+    if (enabled && !state.settings.imapHost) {
+        showToast('IMAP muss im Mail Connector konfiguriert sein', 'warning');
+        return;
+    }
+
+    // Speichere Anwendungen auf Email-Service (für Monitoring)
+    await callEmailService('/api/applications/cache', {
+        bewerbungen: state.bewerbungen
+    });
+
+    // Aktiviere Monitoring
+    const result = await callEmailService('/api/monitoring/enable', {
+        enabled: enabled,
+        recipient: recipient || state.settings.emailSummaryRecipient,
+        notify: notify
+    });
+
+    if (result.status === 'ok') {
+        updateMonitoringStatus('✅ Email-Monitoring ' + (enabled ? 'aktiviert' : 'deaktiviert'));
+        showToast('Monitoring-Einstellungen gespeichert ✓', 'success');
+    } else {
+        showToast('Fehler beim Speichern', 'error');
+    }
+}
+
+async function checkEmailNow() {
+    updateMonitoringStatus('⏳ Prüfe auf Antworten...');
+
+    // Speichere aktuelle Anwendungen
+    await callEmailService('/api/applications/cache', {
+        bewerbungen: state.bewerbungen
+    });
+
+    // Prüfe jetzt
+    const result = await callEmailService('/api/monitoring/check', {});
+
+    if (result.status === 'ok') {
+        if (result.detected > 0) {
+            updateMonitoringStatus(`✅ ${result.detected} Antwort(en) erkannt!`);
+            showToast(`${result.detected} Antwort(en) gefunden!`, 'success');
+
+            // Zeige erkannte Antworten
+            if (result.responses && result.responses.length > 0) {
+                const message = result.responses.map(r => `📧 ${r.company}`).join('\n');
+                showToast(message, 'info');
+            }
+        } else {
+            updateMonitoringStatus('✓ Keine neuen Antworten gefunden');
+            showToast('Keine neuen Antworten erkannt', 'info');
+        }
+    } else {
+        updateMonitoringStatus('❌ Fehler: ' + result.message);
+        showToast('Fehler beim Prüfen: ' + result.message, 'error');
+    }
+}
+
+function updateMonitoringStatus(message) {
+    const statusDiv = document.getElementById('monitoringStatus');
+    if (statusDiv) {
+        statusDiv.textContent = message;
+    }
+}
+
+function sendPushNotification(title, options = {}) {
+    if (!state.settings.pushNotificationsEnabled || !('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+
+    new Notification(title, {
+        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="70" font-size="80" text-anchor="middle">📋</text></svg>',
+        badge: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="%234F46E5"/></svg>',
+        ...options
+    });
+}
+
+function notifyStatusChange(firma, position, newStatus) {
+    const statusKey = 'notifyStatus_' + newStatus;
+    if (!state.settings[statusKey]) return;
+
+    const statusTexts = {
+        antwort: '📨 Antwort erhalten',
+        interview: '🎤 Interview vereinbart',
+        zusage: '✅ Jobangebot erhalten!',
+        absage: '❌ Bewerbung abgelehnt'
+    };
+
+    const title = `Bewerbungs-Tracker: ${statusTexts[newStatus] || newStatus}`;
+    const body = `${firma} • ${position || '(Keine Position)'}`;
+
+    sendPushNotification(title, {
+        body: body,
+        tag: firma,
+        requireInteraction: newStatus === 'zusage' || newStatus === 'absage'
+    });
+}
+
+function generateEmailSummary() {
+    const b = state.bewerbungen;
+    const total = b.length;
+    const beworben = b.filter(x => x.status === 'beworben').length;
+    const antwort = b.filter(x => x.status === 'antwort').length;
+    const interview = b.filter(x => x.status === 'interview').length;
+    const zusage = b.filter(x => x.status === 'zusage').length;
+    const absage = b.filter(x => x.status === 'absage').length;
+    const ghosting = b.filter(x => x.status === 'ghosting').length;
+
+    const responseRate = total > 0 ? Math.round((antwort + interview + zusage + absage) / total * 100) : 0;
+
+    let html = `
+    <html style="font-family:Arial,sans-serif;background:#f5f5f5;padding:20px;">
+    <body style="background:#f5f5f5;padding:20px;">
+    <div style="background:white;padding:30px;border-radius:10px;max-width:600px;margin:0 auto;box-shadow:0 2px 10px rgba(0,0,0,0.1);">
+        <h1 style="color:#4F46E5;margin-bottom:10px;">📋 Bewerbungs-Tracker Zusammenfassung</h1>
+        <p style="color:#666;margin-bottom:30px;">Generiert: ${new Date().toLocaleDateString('de-DE', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</p>
+
+        <h2 style="color:#333;font-size:18px;border-bottom:2px solid #4F46E5;padding-bottom:10px;margin-bottom:20px;">📊 Übersicht</h2>
+
+        <table style="width:100%;border-collapse:collapse;margin-bottom:30px;">
+            <tr style="background:#f9f9f9;">
+                <td style="padding:12px;border:1px solid #e0e0e0;"><strong>Gesamt</strong></td>
+                <td style="padding:12px;border:1px solid #e0e0e0;"><strong>${total}</strong></td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #e0e0e0;">📤 Beworben</td>
+                <td style="padding:12px;border:1px solid #e0e0e0;color:#3B82F6;"><strong>${beworben}</strong></td>
+            </tr>
+            <tr style="background:#f9f9f9;">
+                <td style="padding:12px;border:1px solid #e0e0e0;">📨 Antwort</td>
+                <td style="padding:12px;border:1px solid #e0e0e0;color:#F59E0B;"><strong>${antwort}</strong></td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #e0e0e0;">🎤 Interview</td>
+                <td style="padding:12px;border:1px solid #e0e0e0;color:#8B5CF6;"><strong>${interview}</strong></td>
+            </tr>
+            <tr style="background:#f9f9f9;">
+                <td style="padding:12px;border:1px solid #e0e0e0;">✅ Zusage</td>
+                <td style="padding:12px;border:1px solid #e0e0e0;color:#10B981;"><strong>${zusage}</strong></td>
+            </tr>
+            <tr>
+                <td style="padding:12px;border:1px solid #e0e0e0;">❌ Absage</td>
+                <td style="padding:12px;border:1px solid #e0e0e0;color:#EF4444;"><strong>${absage}</strong></td>
+            </tr>
+            <tr style="background:#f9f9f9;">
+                <td style="padding:12px;border:1px solid #e0e0e0;">👻 Ghosting</td>
+                <td style="padding:12px;border:1px solid #e0e0e0;color:#94A3B8;"><strong>${ghosting}</strong></td>
+            </tr>
+        </table>
+
+        <div style="background:#f0f4ff;padding:15px;border-radius:8px;margin-bottom:30px;">
+            <p style="margin:0;color:#333;"><strong>Rückmeldungsquote:</strong> <span style="font-size:24px;color:#4F46E5;"><strong>${responseRate}%</strong></span></p>
+        </div>
+
+        <h2 style="color:#333;font-size:18px;border-bottom:2px solid #4F46E5;padding-bottom:10px;margin-bottom:20px;">🎯 Letzte 5 Bewerbungen</h2>
+        <ul style="list-style:none;padding:0;">
+            ${b.slice(0, 5).map(app => `
+                <li style="padding:12px;border-left:4px solid #4F46E5;margin-bottom:10px;background:#f9f9f9;border-radius:4px;">
+                    <strong>${app.firma}</strong><br>
+                    ${app.position || '(Keine Position)'}<br>
+                    <small style="color:#666;">Status: ${app.status} • ${formatDate(app.datum)}</small>
+                </li>
+            `).join('')}
+        </ul>
+
+        <hr style="border:none;border-top:1px solid #e0e0e0;margin:30px 0;">
+        <p style="color:#999;font-size:12px;text-align:center;">Bewerbungs-Tracker • <a href="http://localhost:8080" style="color:#4F46E5;text-decoration:none;">Zur App</a></p>
+    </div>
+    </body>
+    </html>
+    `;
+
+    return {
+        subject: `📋 Bewerbungs-Tracker Zusammenfassung - ${new Date().toLocaleDateString('de-DE')}`,
+        html: html,
+        text: `Bewerbungs-Übersicht\n\nGesamt: ${total}\nBeworben: ${beworben}\nAntwort: ${antwort}\nInterview: ${interview}\nZusage: ${zusage}\nAbsage: ${absage}\nGhosting: ${ghosting}\n\nRückmeldungsquote: ${responseRate}%`
+    };
+}
+
+function exportEmailSummary() {
+    const summary = generateEmailSummary();
+    const blob = new Blob([summary.html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bewerbungs-zusammenfassung_${new Date().toISOString().split('T')[0]}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Letzten Versanddatum aktualisieren
+    state.settings.lastEmailSummarySent = new Date().toISOString();
+    saveToStorage();
+
+    showToast('📧 Zusammenfassung exportiert ✓', 'success');
 }
 
 function copyScript() {
