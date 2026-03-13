@@ -797,6 +797,17 @@
         </div>
     </div>
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:1rem;">⚙️ Konfiguration Backups</div>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Automatische Backups bei jeder Änderung. Max. 10 Backups lokal gespeichert.</p>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <button class="btn btn-success btn-sm" onclick="downloadConfigBackups()">⬇️ Alle Config-Backups herunterladen</button>
+            <button class="btn btn-info btn-sm" onclick="showConfigBackups()">📋 Backups anzeigen</button>
+        </div>
+        <div id="configBackupsList" style="display:none;max-height:300px;overflow-y:auto;background:var(--bg-card2);border-radius:8px;padding:1rem;margin-top:1rem;">
+        </div>
+    </div>
+
+    <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">📦 Daten & Backup</div>
         <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
             <button class="btn btn-info" onclick="exportJSON()">📥 JSON Backup</button>
@@ -1097,6 +1108,143 @@ async function loadFromStorage() {
     }
 }
 
+// Create automatic config backup with timestamp
+function createConfigBackup() {
+    try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const backupKey = `bewerbungsTrackerConfig_${timestamp}`;
+        const backup = {
+            settings: state.settings,
+            timestamp: new Date().toISOString(),
+            version: '3.0'
+        };
+
+        localStorage.setItem(backupKey, JSON.stringify(backup));
+
+        // Keep only last 10 config backups (cleanup old ones)
+        const allKeys = Object.keys(localStorage).filter(k => k.startsWith('bewerbungsTrackerConfig_'));
+        if (allKeys.length > 10) {
+            allKeys.sort().slice(0, allKeys.length - 10).forEach(key => {
+                localStorage.removeItem(key);
+            });
+        }
+
+        console.log(`✅ Config backup created: ${backupKey}`);
+        return backupKey;
+    } catch(e) {
+        console.warn('⚠️ Config backup failed:', e.message);
+    }
+}
+
+// Get all available config backups
+function getAvailableConfigBackups() {
+    return Object.keys(localStorage)
+        .filter(k => k.startsWith('bewerbungsTrackerConfig_'))
+        .sort()
+        .reverse()
+        .map(k => ({
+            key: k,
+            data: JSON.parse(localStorage.getItem(k))
+        }));
+}
+
+// Restore config from backup
+function restoreConfigBackup(backupKey) {
+    try {
+        const backup = localStorage.getItem(backupKey);
+        if (!backup) {
+            showToast('Backup nicht gefunden!', 'error');
+            return false;
+        }
+
+        const data = JSON.parse(backup);
+        state.settings = { ...state.settings, ...data.settings };
+        saveToStorage();
+        loadSettingsForm();
+        renderAppsScriptCode();
+
+        showToast(`Konfiguration wiederhergestellt von ${data.timestamp.split('T')[0]}`, 'success');
+        return true;
+    } catch(e) {
+        showToast('Fehler beim Wiederherstellen: ' + e.message, 'error');
+        return false;
+    }
+}
+
+// Show available config backups in UI
+function showConfigBackups() {
+    const backups = getAvailableConfigBackups();
+    const container = document.getElementById('configBackupsList');
+
+    if (!backups.length) {
+        container.style.display = 'block';
+        container.innerHTML = '<p style="color:var(--text-muted);">Noch keine Backups erstellt.</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+            ${backups.map(b => {
+                const date = new Date(b.data.timestamp);
+                const dateStr = date.toLocaleDateString('de-DE') + ' ' + date.toLocaleTimeString('de-DE');
+                return `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem;background:var(--bg-card);border-radius:6px;border-left:3px solid var(--primary);">
+                    <div>
+                        <div style="font-size:0.9rem;font-weight:500;">${dateStr}</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);">${Object.keys(b.data.settings).length} Einstellungen</div>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button class="btn btn-success btn-sm" onclick="restoreConfigBackup('${b.key}');showConfigBackups();">↩️ Wiederherstellen</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteConfigBackup('${b.key}');showConfigBackups();">🗑️</button>
+                    </div>
+                </div>`;
+            }).join('')}
+        </div>
+    `;
+    container.style.display = 'block';
+}
+
+// Delete a backup
+function deleteConfigBackup(backupKey) {
+    if (confirm('Dieses Backup wirklich löschen?')) {
+        localStorage.removeItem(backupKey);
+        showToast('Backup gelöscht', 'success');
+    }
+}
+
+// Download all config backups as JSON file
+function downloadConfigBackups() {
+    const backups = getAvailableConfigBackups();
+
+    if (!backups.length) {
+        showToast('Keine Backups zum Herunterladen', 'warning');
+        return;
+    }
+
+    const data = {
+        type: 'Bewerbungs-Tracker Config Backups',
+        exportedAt: new Date().toISOString(),
+        backups: backups.map(b => ({
+            key: b.key,
+            timestamp: b.data.timestamp,
+            settings: b.data.settings
+        }))
+    };
+
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `config_backups_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast(`${backups.length} Config-Backups heruntergeladen ✓`, 'success');
+}
+
 async function saveToStorage() {
     try {
         // Try to save to Data Service (SQLite)
@@ -1145,6 +1293,9 @@ async function saveToStorage() {
             }));
         } catch(err) { showToast('Speicherfehler!', 'error'); }
     }
+
+    // Create automatic config backup after successful save
+    createConfigBackup();
 }
 
 function loadSettingsForm() {
@@ -2146,6 +2297,9 @@ async function saveSMTPSettings() {
     // Clear password from form
     document.getElementById('smtpPass').value = '';
 
+    // Create config backup
+    createConfigBackup();
+
     updateSmtpStatus('✅ SMTP-Einstellungen gespeichert');
     showToast('SMTP-Einstellungen gespeichert ✓', 'success');
 }
@@ -2252,6 +2406,9 @@ async function saveMonitoringSettings() {
     });
 
     if (result.status === 'ok') {
+        // Create config backup
+        createConfigBackup();
+
         updateMonitoringStatus('✅ Email-Monitoring ' + (enabled ? 'aktiviert' : 'deaktiviert'));
         showToast('Monitoring-Einstellungen gespeichert ✓', 'success');
     } else {
