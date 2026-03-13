@@ -1356,28 +1356,42 @@ function isEmailWithinDateRange(emailDate) {
 function isRelevantApplicationEmail(email) {
     if (!isEmailWithinDateRange(email.date)) return false;
 
-    const keywords = state.settings.keywords.split(',').map(k => k.trim().toLowerCase());
+    const keywords = state.settings.keywords.split(',').map(k => k.trim()).filter(k => k.length > 0);
     const priorityKeywords = ['bewerbung', 'application', 'stellenausschreibung'];
 
     const subject = (email.subject || '').toLowerCase();
     const from = (email.from || '').toLowerCase();
     const snippet = (email.snippet || '').toLowerCase();
+    const text = subject + ' ' + from + ' ' + snippet;
 
     // Check priority keywords first (higher confidence)
-    const hasPriorityKeyword = priorityKeywords.some(pk =>
-        subject.includes(pk) || from.includes(pk)
-    );
+    const hasPriorityKeyword = priorityKeywords.some(pk => text.includes(pk.toLowerCase()));
     if (hasPriorityKeyword) return true;
 
-    // For other keywords, require multiple matches or keyword in subject
+    // Check user-provided keywords with proper word boundary matching
     let keywordMatches = 0;
     for (let k of keywords) {
-        if (!k || k.length < 3) continue;
-        const keywordRegex = new RegExp('\\b' + k + '\\b', 'i');
-        if (keywordRegex.test(subject) || keywordRegex.test(from)) {
-            keywordMatches += 2; // Higher weight for subject/from matches
-        } else if (keywordRegex.test(snippet)) {
-            keywordMatches += 1;
+        const kLower = k.toLowerCase();
+        // Use word boundary for keywords 3+ chars, simple includes for shorter ones
+        let matches = false;
+        if (kLower.length >= 3) {
+            const keywordRegex = new RegExp('\\b' + kLower + '\\b', 'i');
+            if (keywordRegex.test(subject) || keywordRegex.test(from)) {
+                keywordMatches += 2; // Higher weight for subject/from matches
+                matches = true;
+            } else if (keywordRegex.test(snippet)) {
+                keywordMatches += 1;
+                matches = true;
+            }
+        } else {
+            // For short keywords, use simple includes() but require them in subject or from
+            if (subject.includes(kLower) || from.includes(kLower)) {
+                keywordMatches += 2;
+                matches = true;
+            } else if (snippet.includes(kLower)) {
+                keywordMatches += 1;
+                matches = true;
+            }
         }
     }
 
