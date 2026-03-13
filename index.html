@@ -2475,25 +2475,66 @@ function handleImport(event) {
     reader.onload = (e) => {
         try {
             const data = JSON.parse(e.target.result);
-            if (data.bewerbungen) {
-                const count = data.bewerbungen.length;
-                if (confirm(`${count} Bewerbungen importieren? Bestehende Daten bleiben erhalten.`)) {
+            if (data.bewerbungen && Array.isArray(data.bewerbungen)) {
+                const importCount = data.bewerbungen.length;
+                const duplicateCount = data.bewerbungen.filter(b => state.bewerbungen.some(x => x.id === b.id)).length;
+                const newCount = importCount - duplicateCount;
+
+                const msg = duplicateCount > 0
+                    ? `${importCount} Bewerbungen (${newCount} neu, ${duplicateCount} Duplikate). Bestehende Daten + Status bleiben erhalten.`
+                    : `${importCount} Bewerbungen importieren? Alle Status und Einstellungen werden übernommen.`;
+
+                if (confirm(msg)) {
+                    // Import applications with full state preservation (status, dates, all properties)
+                    let importedCount = 0;
                     data.bewerbungen.forEach(b => {
-                        if (!state.bewerbungen.find(x => x.id === b.id)) {
-                            state.bewerbungen.push(b);
+                        // Ensure the object has required properties
+                        if (b.id && b.firma) {
+                            const existing = state.bewerbungen.find(x => x.id === b.id);
+                            if (!existing) {
+                                // New application: preserve all properties including status, dates, notes
+                                const importedApp = {
+                                    id: b.id,
+                                    firma: b.firma,
+                                    position: b.position || '',
+                                    status: b.status || 'beworben',  // Preserve application status
+                                    datum: b.datum || '',            // Preserve application date
+                                    gehalt: b.gehalt || '',
+                                    ort: b.ort || '',
+                                    email: b.email || '',
+                                    quelle: b.quelle || 'import',
+                                    link: b.link || '',
+                                    notizen: b.notizen || '',        // Preserve notes
+                                    createdAt: b.createdAt || new Date().toISOString(),  // Preserve creation date
+                                    updatedAt: b.updatedAt || new Date().toISOString()   // Preserve update date
+                                };
+                                state.bewerbungen.push(importedApp);
+                                importedCount++;
+                            }
                         }
                     });
-                    // Importiere auch Einstellungen
-                    if (data.settings) {
+
+                    // Import settings with full preservation
+                    if (data.settings && typeof data.settings === 'object') {
                         state.settings = { ...state.settings, ...data.settings };
                     }
+
                     saveToStorage();
                     renderAll();
                     loadSettingsForm();
-                    showToast(`${count} Bewerbungen + Einstellungen importiert ✓`, 'success');
+
+                    const message = importedCount > 0
+                        ? `${importedCount} neue Bewerbung(en) mit vollständigem Status importiert ✓`
+                        : `Alle ${importCount} Bewerbung(en) waren bereits vorhanden (Status unverändert) ✓`;
+                    showToast(message, 'success');
                 }
+            } else {
+                showToast('Keine Bewerbungen in der Datei gefunden!', 'error');
             }
-        } catch(err) { showToast('Ungültige JSON-Datei!', 'error'); }
+        } catch(err) {
+            console.error('Import error:', err);
+            showToast('Ungültige JSON-Datei oder Fehler beim Importieren!', 'error');
+        }
     };
     reader.readAsText(file);
     event.target.value = '';
