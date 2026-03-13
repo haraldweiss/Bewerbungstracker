@@ -30,3 +30,4 @@ build/
 # Runtime generated files
 email_config.db
 applications_cache.json
+bewerbungen.db
