@@ -26,3 +26,7 @@ venv/
 dist/
 build/
 *.egg-info/
+
+# Runtime generated files
+email_config.db
+applications_cache.json
