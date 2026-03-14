@@ -390,17 +390,37 @@ def notify_monitoring_results(responses):
 
 # ── HTTP Handler ───────────────────────────────────────────────────────
 
-class EmailServiceHandler(BaseHTTPRequestHandler):
+class JSONHandler(BaseHTTPRequestHandler):
+    """Base HTTP handler with JSON response helpers"""
+
+    def send_json(self, status_code, data):
+        """Send JSON response with standard headers"""
+        self.send_response(status_code)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
+    def send_json_ok(self, data, status_code=200):
+        """Send success response (auto-wraps with 'status': 'ok')"""
+        response = {'status': 'ok'}
+        if isinstance(data, dict):
+            response.update(data)
+        else:
+            response['data'] = data
+        self.send_json(status_code, response)
+
+    def send_json_error(self, message, status_code=400):
+        """Send error response"""
+        self.send_json(status_code, {'status': 'error', 'message': message})
+
+class EmailServiceHandler(JSONHandler):
     def _check_origin(self):
         """Verify request origin (CSRF protection - localhost only)"""
         origin = self.headers.get('Origin', '')
 
         # Allow localhost/127.0.0.1 only
         if origin and 'localhost' not in origin and '127.0.0.1' not in origin:
-            self.send_response(403)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'status': 'error', 'message': 'CORS policy violation'}).encode())
+            self.send_json_error('CORS policy violation', 403)
             return False
 
         return True
@@ -415,10 +435,7 @@ class EmailServiceHandler(BaseHTTPRequestHandler):
 
         # Security: Limit request body size (max 1MB)
         if content_length > MAX_REQUEST_SIZE_BYTES:
-            self.send_response(413)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'status': 'error', 'message': 'Request body too large'}).encode())
+            self.send_json_error('Request body too large', 413)
             return
 
         body = self.rfile.read(content_length).decode('utf-8')
@@ -426,10 +443,7 @@ class EmailServiceHandler(BaseHTTPRequestHandler):
         try:
             data = json.loads(body)
         except (json.JSONDecodeError, ValueError):
-            self.send_response(400)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "error", "message": "Invalid JSON"}).encode())
+            self.send_json_error('Invalid JSON', 400)
             return
 
         # Route based on path
@@ -459,37 +473,25 @@ class EmailServiceHandler(BaseHTTPRequestHandler):
         value = data.get('value')
 
         if not key:
-            self.send_error(400, "Missing key")
+            self.send_json_error('Missing key', 400)
             return
 
         success = set_config(key, str(value))
-
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({
-            "status": "ok" if success else "error",
-            "message": "Config saved" if success else "Error saving config"
-        }).encode())
+        if success:
+            self.send_json_ok({'message': 'Config saved'})
+        else:
+            self.send_json_error('Error saving config', 500)
 
     def handle_get_config(self, data):
         """Get configuration"""
         key = data.get('key')
 
         if not key:
-            self.send_error(400, "Missing key")
+            self.send_json_error('Missing key', 400)
             return
 
         value = get_config(key)
-
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({
-            "status": "ok",
-            "key": key,
-            "value": value
-        }).encode())
+        self.send_json_ok({'key': key, 'value': value})
 
     def handle_send_email(self, data):
         """Send email immediately"""
@@ -499,25 +501,21 @@ class EmailServiceHandler(BaseHTTPRequestHandler):
         text_body = data.get('text', '')
 
         if not all([recipient, subject, html_body]):
-            self.send_error(400, "Missing required fields")
+            self.send_json_error('Missing required fields', 400)
             return
 
         success = send_email(recipient, subject, html_body, text_body)
-
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({
-            "status": "ok" if success else "error",
-            "message": "Email sent" if success else "Error sending email"
-        }).encode())
+        if success:
+            self.send_json_ok({'message': 'Email sent'})
+        else:
+            self.send_json_error('Error sending email', 500)
 
     def handle_test_email(self, data):
         """Send test email"""
         recipient = data.get('recipient') or get_config('summary_recipient')
 
         if not recipient:
-            self.send_error(400, "No recipient provided")
+            self.send_json_error('No recipient provided', 400)
             return
 
         test_html = """
@@ -535,23 +533,14 @@ class EmailServiceHandler(BaseHTTPRequestHandler):
         """
 
         success = send_email(recipient, "✅ Bewerbungs-Tracker Test Email", test_html)
-
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({
-            "status": "ok" if success else "error",
-            "message": "Test email sent" if success else "Error sending test email"
-        }).encode())
+        if success:
+            self.send_json_ok({'message': 'Test email sent'})
+        else:
+            self.send_json_error('Error sending test email', 500)
 
     def handle_status(self):
         """Get service status"""
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-
-        status = {
-            "status": "ok",
+        status_data = {
             "service": "Bewerbungs-Tracker Email Service",
             "smtp_configured": bool(get_config('smtp_user')),
             "summary_enabled": get_config('summary_enabled') == 'true',
@@ -561,8 +550,7 @@ class EmailServiceHandler(BaseHTTPRequestHandler):
             "monitoring_enabled": get_config('email_monitoring_enabled') == 'true',
             "imap_configured": bool(get_config('imap_host'))
         }
-
-        self.wfile.write(json.dumps(status).encode())
+        self.send_json_ok(status_data)
 
     def handle_enable_monitoring(self, data):
         """Enable/disable email monitoring"""
@@ -571,26 +559,12 @@ class EmailServiceHandler(BaseHTTPRequestHandler):
         set_config('monitoring_recipient', data.get('recipient', ''))
         set_config('monitoring_notify', 'true' if data.get('notify', False) else 'false')
 
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({
-            "status": "ok",
-            "message": "Monitoring " + ("enabled" if enabled else "disabled")
-        }).encode())
+        self.send_json_ok({'message': 'Monitoring ' + ('enabled' if enabled else 'disabled')})
 
     def handle_check_monitoring(self, data):
         """Check for application responses now"""
         responses = check_and_monitor_emails()
-
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({
-            "status": "ok",
-            "detected": len(responses),
-            "responses": responses
-        }).encode())
+        self.send_json_ok({'detected': len(responses), 'responses': responses})
 
     def handle_save_applications(self, data):
         """Save applications list for monitoring"""
@@ -598,21 +572,10 @@ class EmailServiceHandler(BaseHTTPRequestHandler):
             with open('applications_cache.json', 'w') as f:
                 json.dump(data, f)
 
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "status": "ok",
-                "message": f"Cached {len(data.get('bewerbungen', []))} applications"
-            }).encode())
+            app_count = len(data.get('bewerbungen', []))
+            self.send_json_ok({'message': f'Cached {app_count} applications'})
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "status": "error",
-                "message": str(e)
-            }).encode())
+            self.send_json_error(str(e), 500)
 
     def log_message(self, format, *args):
         """Suppress default logging"""
