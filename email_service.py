@@ -27,6 +27,7 @@ import ssl
 HOST = '127.0.0.1'
 PORT = 8766
 DB_FILE = 'email_config.db'
+MAX_REQUEST_SIZE_BYTES = 1024 * 1024  # 1MB
 
 # ── Database ───────────────────────────────────────────────────────────
 
@@ -391,9 +392,8 @@ def notify_monitoring_results(responses):
 
 class EmailServiceHandler(BaseHTTPRequestHandler):
     def _check_origin(self):
-        """Verify request origin (CSRF protection)"""
+        """Verify request origin (CSRF protection - localhost only)"""
         origin = self.headers.get('Origin', '')
-        host = self.headers.get('Host', '')
 
         # Allow localhost/127.0.0.1 only
         if origin and 'localhost' not in origin and '127.0.0.1' not in origin:
@@ -414,7 +414,7 @@ class EmailServiceHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get('Content-Length', 0))
 
         # Security: Limit request body size (max 1MB)
-        if content_length > 1024 * 1024:
+        if content_length > MAX_REQUEST_SIZE_BYTES:
             self.send_response(413)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -425,7 +425,7 @@ class EmailServiceHandler(BaseHTTPRequestHandler):
 
         try:
             data = json.loads(body)
-        except:
+        except (json.JSONDecodeError, ValueError):
             self.send_response(400)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()

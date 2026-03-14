@@ -21,8 +21,9 @@ DB_FILE = 'bewerbungen.db'
 MAX_STRING_LENGTH = 10000
 MAX_ID_LENGTH = 100
 MAX_LIMIT = 10000
-ALLOWED_STATUSES = ['beworben', 'interview', 'zusage', 'absage', 'ghosting', 'antwort']
-ALLOWED_QUELLEN = ['gmail', 'imap', 'manuell', 'linkedin', 'indeed', 'xing', 'website', 'empfehlung']
+MAX_REQUEST_SIZE_BYTES = 1024 * 1024  # 1MB
+ALLOWED_STATUSES = {'beworben', 'interview', 'zusage', 'absage', 'ghosting', 'antwort'}
+ALLOWED_QUELLEN = {'gmail', 'imap', 'manuell', 'linkedin', 'indeed', 'xing', 'website', 'empfehlung'}
 
 @contextmanager
 def db_connection():
@@ -43,21 +44,19 @@ class DataService:
         self.init_db()
 
     def validate_id(self, id_val):
-        """Validate application ID"""
+        """Validate application ID. Raises ValueError if invalid."""
         if not id_val or not isinstance(id_val, str):
             raise ValueError('Invalid ID: must be non-empty string')
         if len(id_val) > MAX_ID_LENGTH:
             raise ValueError(f'Invalid ID: max {MAX_ID_LENGTH} chars')
-        return True
 
     def validate_string(self, value, field_name):
-        """Validate string fields"""
+        """Validate string fields. Raises ValueError if too long."""
         if value is not None and len(str(value)) > MAX_STRING_LENGTH:
             raise ValueError(f'{field_name} too long: max {MAX_STRING_LENGTH} chars')
-        return True
 
     def validate_bewerbung(self, data):
-        """Validate application data"""
+        """Validate application data. Raises ValueError if invalid."""
         if not data.get('firma'):
             raise ValueError('firma is required')
         self.validate_string(data.get('firma'), 'firma')
@@ -68,8 +67,6 @@ class DataService:
             raise ValueError(f'Invalid status: {data.get("status")}')
         if data.get('quelle') and data.get('quelle') not in ALLOWED_QUELLEN:
             raise ValueError(f'Invalid quelle: {data.get("quelle")}')
-
-        return True
 
     def validate_pagination(self, limit, offset):
         """Validate pagination parameters"""

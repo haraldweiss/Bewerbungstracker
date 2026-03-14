@@ -1144,6 +1144,7 @@ const encryption = new PasswordEncryption();
    INIT
 ═══════════════════════════════════════════════════════ */
 // Session timeout for encryption key (5 minutes of inactivity)
+const ENCRYPTION_SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 let encryptionSessionTimer = null;
 function startEncryptionSessionTimeout() {
     clearTimeout(encryptionSessionTimer);
@@ -1153,16 +1154,35 @@ function startEncryptionSessionTimeout() {
             updateEncryptionStatus();
             showToast('🔐 Session timeout - Master-Passwort erforderlich', 'warning');
         }
-    }, 5 * 60 * 1000); // 5 minutes
+    }, ENCRYPTION_SESSION_TIMEOUT_MS);
 }
+
+// Cached regexes for password validation (performance optimization)
+const PASSWORD_VALIDATION = {
+    minLength: 12,
+    regexes: {
+        uppercase: /[A-Z]/,
+        lowercase: /[a-z]/,
+        numbers: /[0-9]/
+    },
+    errors: {
+        uppercase: 'Großbuchstaben erforderlich',
+        lowercase: 'Kleinbuchstaben erforderlich',
+        numbers: 'Zahlen erforderlich'
+    }
+};
 
 // Validate master password strength
 function validateMasterPassword(password) {
     if (!password) return { valid: false, error: 'Passwort erforderlich' };
-    if (password.length < 12) return { valid: false, error: 'Min. 12 Zeichen erforderlich' };
-    if (!/[A-Z]/.test(password)) return { valid: false, error: 'Großbuchstaben erforderlich' };
-    if (!/[a-z]/.test(password)) return { valid: false, error: 'Kleinbuchstaben erforderlich' };
-    if (!/[0-9]/.test(password)) return { valid: false, error: 'Zahlen erforderlich' };
+    if (password.length < PASSWORD_VALIDATION.minLength)
+        return { valid: false, error: `Min. ${PASSWORD_VALIDATION.minLength} Zeichen erforderlich` };
+    if (!PASSWORD_VALIDATION.regexes.uppercase.test(password))
+        return { valid: false, error: PASSWORD_VALIDATION.errors.uppercase };
+    if (!PASSWORD_VALIDATION.regexes.lowercase.test(password))
+        return { valid: false, error: PASSWORD_VALIDATION.errors.lowercase };
+    if (!PASSWORD_VALIDATION.regexes.numbers.test(password))
+        return { valid: false, error: PASSWORD_VALIDATION.errors.numbers };
     return { valid: true };
 }
 
