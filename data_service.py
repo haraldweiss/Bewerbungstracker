@@ -85,65 +85,57 @@ class DataService:
 
     def init_db(self):
         """Initialize SQLite database with required tables"""
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        
-        # Applications table
-        c.execute('''CREATE TABLE IF NOT EXISTS bewerbungen (
-            id TEXT PRIMARY KEY,
-            firma TEXT NOT NULL,
-            position TEXT,
-            status TEXT,
-            datum TEXT,
-            gehalt TEXT,
-            ort TEXT,
-            email TEXT,
-            quelle TEXT,
-            link TEXT,
-            notizen TEXT,
-            createdAt TEXT,
-            updatedAt TEXT
-        )''')
-        
-        # Settings table (key-value pairs)
-        c.execute('''CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )''')
-        
-        # Create indices for performance
-        c.execute('CREATE INDEX IF NOT EXISTS idx_status ON bewerbungen(status)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_firma ON bewerbungen(firma)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_createdAt ON bewerbungen(createdAt)')
-        
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+
+            # Applications table
+            c.execute('''CREATE TABLE IF NOT EXISTS bewerbungen (
+                id TEXT PRIMARY KEY,
+                firma TEXT NOT NULL,
+                position TEXT,
+                status TEXT,
+                datum TEXT,
+                gehalt TEXT,
+                ort TEXT,
+                email TEXT,
+                quelle TEXT,
+                link TEXT,
+                notizen TEXT,
+                createdAt TEXT,
+                updatedAt TEXT
+            )''')
+
+            # Settings table (key-value pairs)
+            c.execute('''CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )''')
+
+            # Create indices for performance
+            c.execute('CREATE INDEX IF NOT EXISTS idx_status ON bewerbungen(status)')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_firma ON bewerbungen(firma)')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_createdAt ON bewerbungen(createdAt)')
+
+            conn.commit()
 
     def get_all_bewerbungen(self):
         """Fetch all applications, ordered by createdAt DESC"""
-        conn = sqlite3.connect(self.db_file)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute('SELECT * FROM bewerbungen ORDER BY createdAt DESC')
-        rows = [dict(row) for row in c.fetchall()]
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT * FROM bewerbungen ORDER BY createdAt DESC')
+            rows = [dict(row) for row in c.fetchall()]
         return rows
 
     def get_bewerbung(self, id):
         """Fetch single application by ID"""
-        conn = sqlite3.connect(self.db_file)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute('SELECT * FROM bewerbungen WHERE id = ?', (id,))
-        row = c.fetchone()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT * FROM bewerbungen WHERE id = ?', (id,))
+            row = c.fetchone()
         return dict(row) if row else None
 
     def create_bewerbung(self, data):
         """Create new application"""
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        
         bewerbung = {
             'id': data.get('id'),
             'firma': data.get('firma', ''),
@@ -159,110 +151,106 @@ class DataService:
             'createdAt': data.get('createdAt', datetime.now().isoformat()),
             'updatedAt': data.get('updatedAt', datetime.now().isoformat())
         }
-        
-        c.execute('''INSERT INTO bewerbungen 
-            (id, firma, position, status, datum, gehalt, ort, email, quelle, link, notizen, createdAt, updatedAt)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-            tuple(bewerbung.values()))
-        
-        conn.commit()
-        conn.close()
+
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute('''INSERT INTO bewerbungen
+                (id, firma, position, status, datum, gehalt, ort, email, quelle, link, notizen, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                tuple(bewerbung.values()))
+            conn.commit()
+
         return bewerbung
 
     def update_bewerbung(self, id, data):
         """Update existing application"""
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        
-        # Get current values
-        c.execute('SELECT * FROM bewerbungen WHERE id = ?', (id,))
-        current = dict(c.fetchone() or {})
-        
-        # Merge with updates
-        updated = {**current}
-        updated.update(data)
-        updated['updatedAt'] = datetime.now().isoformat()
-        
-        c.execute('''UPDATE bewerbungen SET 
-            firma=?, position=?, status=?, datum=?, gehalt=?, ort=?, 
-            email=?, quelle=?, link=?, notizen=?, updatedAt=?
-            WHERE id=?''',
-            (updated['firma'], updated['position'], updated['status'], updated['datum'],
-             updated['gehalt'], updated['ort'], updated['email'], updated['quelle'],
-             updated['link'], updated['notizen'], updated['updatedAt'], id))
-        
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+
+            # Get current values
+            c.execute('SELECT * FROM bewerbungen WHERE id = ?', (id,))
+            current = dict(c.fetchone() or {})
+
+            # Merge with updates
+            updated = {**current}
+            updated.update(data)
+            updated['updatedAt'] = datetime.now().isoformat()
+
+            c.execute('''UPDATE bewerbungen SET
+                firma=?, position=?, status=?, datum=?, gehalt=?, ort=?,
+                email=?, quelle=?, link=?, notizen=?, updatedAt=?
+                WHERE id=?''',
+                (updated['firma'], updated['position'], updated['status'], updated['datum'],
+                 updated['gehalt'], updated['ort'], updated['email'], updated['quelle'],
+                 updated['link'], updated['notizen'], updated['updatedAt'], id))
+
+            conn.commit()
+
         return updated
 
     def delete_bewerbung(self, id):
         """Delete application"""
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        c.execute('DELETE FROM bewerbungen WHERE id = ?', (id,))
-        conn.commit()
-        affected = c.rowcount
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute('DELETE FROM bewerbungen WHERE id = ?', (id,))
+            conn.commit()
+            affected = c.rowcount
         return affected > 0
 
     def get_settings(self):
         """Get all settings as dict"""
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        c.execute('SELECT key, value FROM settings')
-        settings = {}
-        for key, value in c.fetchall():
-            try:
-                settings[key] = json.loads(value)
-            except:
-                settings[key] = value
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT key, value FROM settings')
+            settings = {}
+            for key, value in c.fetchall():
+                try:
+                    settings[key] = json.loads(value)
+                except (json.JSONDecodeError, ValueError):
+                    settings[key] = value
         return settings
 
     def set_setting(self, key, value):
         """Set single setting (upsert)"""
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        value_json = json.dumps(value) if not isinstance(value, str) else value
-        c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-                  (key, value_json))
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            value_json = json.dumps(value) if not isinstance(value, str) else value
+            c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+                      (key, value_json))
+            conn.commit()
 
     def set_settings_bulk(self, settings_dict):
         """Set multiple settings at once"""
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        for key, value in settings_dict.items():
-            value_json = json.dumps(value) if not isinstance(value, str) else value
-            c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-                      (key, value_json))
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            for key, value in settings_dict.items():
+                value_json = json.dumps(value) if not isinstance(value, str) else value
+                c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+                          (key, value_json))
+            conn.commit()
 
     def import_data(self, bewerbungen, settings):
         """Import applications and settings (bulk operation)"""
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        
-        # Import bewerbungen
-        for b in bewerbungen:
-            c.execute('''INSERT OR REPLACE INTO bewerbungen 
-                (id, firma, position, status, datum, gehalt, ort, email, quelle, link, notizen, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                (b.get('id'), b.get('firma'), b.get('position'), b.get('status'),
-                 b.get('datum'), b.get('gehalt'), b.get('ort'), b.get('email'),
-                 b.get('quelle'), b.get('link'), b.get('notizen'),
-                 b.get('createdAt'), b.get('updatedAt')))
-        
-        # Import settings
-        for key, value in settings.items():
-            value_json = json.dumps(value) if not isinstance(value, str) else value
-            c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-                      (key, value_json))
-        
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+
+            # Import bewerbungen
+            for b in bewerbungen:
+                c.execute('''INSERT OR REPLACE INTO bewerbungen
+                    (id, firma, position, status, datum, gehalt, ort, email, quelle, link, notizen, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (b.get('id'), b.get('firma'), b.get('position'), b.get('status'),
+                     b.get('datum'), b.get('gehalt'), b.get('ort'), b.get('email'),
+                     b.get('quelle'), b.get('link'), b.get('notizen'),
+                     b.get('createdAt'), b.get('updatedAt')))
+
+            # Import settings
+            for key, value in settings.items():
+                value_json = json.dumps(value) if not isinstance(value, str) else value
+                c.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+                          (key, value_json))
+
+            conn.commit()
 
     def export_data(self):
         """Export all data for backup"""
@@ -274,213 +262,166 @@ class DataService:
 
     def clear_all(self):
         """Clear all data (careful!)"""
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        c.execute('DELETE FROM bewerbungen')
-        c.execute('DELETE FROM settings')
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute('DELETE FROM bewerbungen')
+            c.execute('DELETE FROM settings')
+            conn.commit()
 
 # Global instance
 service = DataService()
 
-class RequestHandler(BaseHTTPRequestHandler):
+class JSONHandler(BaseHTTPRequestHandler):
+    """Base HTTP handler with JSON response helpers"""
+
+    def send_json(self, status_code, data):
+        """Send JSON response with standard headers"""
+        self.send_response(status_code)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
+    def send_json_ok(self, data, status_code=200):
+        """Send success response (auto-wraps with 'status': 'ok')"""
+        response = {'status': 'ok'}
+        if isinstance(data, dict):
+            response.update(data)
+        else:
+            response['data'] = data
+        self.send_json(status_code, response)
+
+    def send_json_error(self, message, status_code=400):
+        """Send error response"""
+        self.send_json(status_code, {'status': 'error', 'message': message})
+
+class RequestHandler(JSONHandler):
     def do_GET(self):
         """Handle GET requests"""
         parsed = urlparse(self.path)
         path = parsed.path
-        
+
         try:
             if path == '/api/applications':
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
                 data = service.get_all_bewerbungen()
-                self.wfile.write(json.dumps({'status': 'ok', 'count': len(data), 'applications': data}).encode())
-            
+                self.send_json_ok({'count': len(data), 'applications': data})
+
             elif path.startswith('/api/applications/'):
                 app_id = path.split('/')[-1]
                 app = service.get_bewerbung(app_id)
                 if app:
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({'status': 'ok', 'application': app}).encode())
+                    self.send_json_ok({'application': app})
                 else:
-                    self.send_response(404)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({'status': 'error', 'message': 'Not found'}).encode())
-            
+                    self.send_json_error('Not found', 404)
+
             elif path == '/api/settings':
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
                 settings = service.get_settings()
-                self.wfile.write(json.dumps({'status': 'ok', 'settings': settings}).encode())
-            
+                self.send_json_ok({'settings': settings})
+
             elif path == '/api/export':
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
                 data = service.export_data()
-                self.wfile.write(json.dumps(data).encode())
-            
+                self.send_json_ok(data)
+
             elif path == '/api/status':
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'ok', 'service': 'Bewerbungs-Tracker Data Service'}).encode())
-            
+                self.send_json_ok({'service': 'Bewerbungs-Tracker Data Service'})
+
             else:
-                self.send_response(404)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'error', 'message': 'Not found'}).encode())
-        
+                self.send_json_error('Not found', 404)
+
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+            self.send_json_error(str(e), 500)
 
     def do_POST(self):
         """Handle POST requests"""
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length).decode('utf-8')
-        
+
         try:
             data = json.loads(body) if body else {}
-        except:
+        except (json.JSONDecodeError, ValueError):
             data = {}
-        
+
         parsed = urlparse(self.path)
         path = parsed.path
-        
+
         try:
             if path == '/api/applications':
                 # Create new application
                 if 'id' not in data:
-                    self.send_response(400)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({'status': 'error', 'message': 'id is required'}).encode())
+                    self.send_json_error('id is required', 400)
                     return
-                
+
                 app = service.create_bewerbung(data)
-                self.send_response(201)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'ok', 'application': app}).encode())
-            
+                self.send_json_ok({'application': app}, 201)
+
             elif path == '/api/import':
                 # Import data (backup restore)
                 bewerbungen = data.get('bewerbungen', [])
                 settings = data.get('settings', {})
                 service.import_data(bewerbungen, settings)
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'ok', 'message': f'Imported {len(bewerbungen)} applications'}).encode())
-            
+                self.send_json_ok({'message': f'Imported {len(bewerbungen)} applications'})
+
             elif path == '/api/clear':
                 # Clear all data (requires confirmation)
                 if data.get('confirm') == 'DELETE_ALL':
                     service.clear_all()
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({'status': 'ok', 'message': 'All data cleared'}).encode())
+                    self.send_json_ok({'message': 'All data cleared'})
                 else:
-                    self.send_response(400)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({'status': 'error', 'message': 'Confirmation required'}).encode())
-            
+                    self.send_json_error('Confirmation required', 400)
+
             else:
-                self.send_response(404)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'error', 'message': 'Not found'}).encode())
-        
+                self.send_json_error('Not found', 404)
+
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+            self.send_json_error(str(e), 500)
 
     def do_PUT(self):
         """Handle PUT requests (updates)"""
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length).decode('utf-8')
-        
+
         try:
             data = json.loads(body) if body else {}
-        except:
+        except (json.JSONDecodeError, ValueError):
             data = {}
-        
+
         parsed = urlparse(self.path)
         path = parsed.path
-        
+
         try:
             if path.startswith('/api/applications/'):
                 app_id = path.split('/')[-1]
                 updated = service.update_bewerbung(app_id, data)
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'ok', 'application': updated}).encode())
-            
+                self.send_json_ok({'application': updated})
+
             elif path == '/api/settings':
                 # Bulk update settings
                 service.set_settings_bulk(data)
                 settings = service.get_settings()
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'ok', 'settings': settings}).encode())
-            
+                self.send_json_ok({'settings': settings})
+
             else:
-                self.send_response(404)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'error', 'message': 'Not found'}).encode())
-        
+                self.send_json_error('Not found', 404)
+
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+            self.send_json_error(str(e), 500)
 
     def do_DELETE(self):
         """Handle DELETE requests"""
         parsed = urlparse(self.path)
         path = parsed.path
-        
+
         try:
             if path.startswith('/api/applications/'):
                 app_id = path.split('/')[-1]
                 if service.delete_bewerbung(app_id):
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({'status': 'ok', 'message': 'Deleted'}).encode())
+                    self.send_json_ok({'message': 'Deleted'})
                 else:
-                    self.send_response(404)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps({'status': 'error', 'message': 'Not found'}).encode())
+                    self.send_json_error('Not found', 404)
             else:
-                self.send_response(404)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'status': 'error', 'message': 'Not found'}).encode())
-        
+                self.send_json_error('Not found', 404)
+
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'status': 'error', 'message': str(e)}).encode())
+            self.send_json_error(str(e), 500)
 
     def log_message(self, format, *args):
         """Custom logging"""
