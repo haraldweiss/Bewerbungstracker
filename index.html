@@ -2535,13 +2535,19 @@ function loadEncryptedCredentials(type) {
 }
 
 async function loadSMTPSettings() {
-    const result = await callEmailService('/api/config/get', { key: 'smtp_user' });
-    if (result.value) {
-        document.getElementById('smtpUser').value = result.value;
-        const hostResult = await callEmailService('/api/config/get', { key: 'smtp_host' });
-        const portResult = await callEmailService('/api/config/get', { key: 'smtp_port' });
-        if (hostResult.value) document.getElementById('smtpHost').value = hostResult.value;
-        if (portResult.value) document.getElementById('smtpPort').value = portResult.value;
+    // Load all SMTP settings in parallel (N+1 problem eliminated)
+    try {
+        const [userResult, hostResult, portResult] = await Promise.all([
+            callEmailService('/api/config/get', { key: 'smtp_user' }),
+            callEmailService('/api/config/get', { key: 'smtp_host' }),
+            callEmailService('/api/config/get', { key: 'smtp_port' })
+        ]);
+
+        if (userResult?.value) document.getElementById('smtpUser').value = userResult.value;
+        if (hostResult?.value) document.getElementById('smtpHost').value = hostResult.value;
+        if (portResult?.value) document.getElementById('smtpPort').value = portResult.value;
+    } catch (error) {
+        console.error('Error loading SMTP settings:', error);
     }
 }
 
