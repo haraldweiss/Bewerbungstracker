@@ -12,14 +12,79 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 from pathlib import Path
+from contextlib import contextmanager
 
 # Database file in current directory
 DB_FILE = 'bewerbungen.db'
+
+# Input validation constants
+MAX_STRING_LENGTH = 10000
+MAX_ID_LENGTH = 100
+MAX_LIMIT = 10000
+ALLOWED_STATUSES = ['beworben', 'interview', 'zusage', 'absage', 'ghosting', 'antwort']
+ALLOWED_QUELLEN = ['gmail', 'imap', 'manuell', 'linkedin', 'indeed', 'xing', 'website', 'empfehlung']
+
+@contextmanager
+def db_connection():
+    """Context manager for database connections"""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 class DataService:
     def __init__(self):
         self.db_file = DB_FILE
         self.init_db()
+
+    def validate_id(self, id_val):
+        """Validate application ID"""
+        if not id_val or not isinstance(id_val, str):
+            raise ValueError('Invalid ID: must be non-empty string')
+        if len(id_val) > MAX_ID_LENGTH:
+            raise ValueError(f'Invalid ID: max {MAX_ID_LENGTH} chars')
+        return True
+
+    def validate_string(self, value, field_name):
+        """Validate string fields"""
+        if value is not None and len(str(value)) > MAX_STRING_LENGTH:
+            raise ValueError(f'{field_name} too long: max {MAX_STRING_LENGTH} chars')
+        return True
+
+    def validate_bewerbung(self, data):
+        """Validate application data"""
+        if not data.get('firma'):
+            raise ValueError('firma is required')
+        self.validate_string(data.get('firma'), 'firma')
+        self.validate_string(data.get('position'), 'position')
+        self.validate_string(data.get('notizen'), 'notizen')
+
+        if data.get('status') and data.get('status') not in ALLOWED_STATUSES:
+            raise ValueError(f'Invalid status: {data.get("status")}')
+        if data.get('quelle') and data.get('quelle') not in ALLOWED_QUELLEN:
+            raise ValueError(f'Invalid quelle: {data.get("quelle")}')
+
+        return True
+
+    def validate_pagination(self, limit, offset):
+        """Validate pagination parameters"""
+        try:
+            limit = int(limit) if limit else 1000
+            offset = int(offset) if offset else 0
+
+            if limit < 0 or limit > MAX_LIMIT:
+                raise ValueError(f'Limit must be 0-{MAX_LIMIT}')
+            if offset < 0:
+                raise ValueError('Offset must be >= 0')
+
+            return limit, offset
+        except (TypeError, ValueError) as e:
+            raise ValueError(f'Invalid pagination: {str(e)}')
 
     def init_db(self):
         """Initialize SQLite database with required tables"""

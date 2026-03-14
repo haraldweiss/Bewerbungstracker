@@ -1143,6 +1143,29 @@ const encryption = new PasswordEncryption();
 /* ═══════════════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════════════ */
+// Session timeout for encryption key (5 minutes of inactivity)
+let encryptionSessionTimer = null;
+function startEncryptionSessionTimeout() {
+    clearTimeout(encryptionSessionTimer);
+    encryptionSessionTimer = setTimeout(() => {
+        if (encryption.masterPasswordSet) {
+            encryption.clearKey();
+            updateEncryptionStatus();
+            showToast('🔐 Session timeout - Master-Passwort erforderlich', 'warning');
+        }
+    }, 5 * 60 * 1000); // 5 minutes
+}
+
+// Validate master password strength
+function validateMasterPassword(password) {
+    if (!password) return { valid: false, error: 'Passwort erforderlich' };
+    if (password.length < 12) return { valid: false, error: 'Min. 12 Zeichen erforderlich' };
+    if (!/[A-Z]/.test(password)) return { valid: false, error: 'Großbuchstaben erforderlich' };
+    if (!/[a-z]/.test(password)) return { valid: false, error: 'Kleinbuchstaben erforderlich' };
+    if (!/[0-9]/.test(password)) return { valid: false, error: 'Zahlen erforderlich' };
+    return { valid: true };
+}
+
 async function init() {
     // Request master password first if email settings are configured
     const hasEmailSettings = localStorage.getItem('bewerbungsTrackerV3')?.includes('smtp') ||
@@ -1151,18 +1174,33 @@ async function init() {
     if (hasEmailSettings && !encryption.masterPasswordSet && encryption.isMasterPasswordSet()) {
         const password = prompt('🔐 Master-Passwort eingeben (für Email-Einstellungen):');
         if (password) {
-            await encryption.setMasterPassword(password);
+            const validation = validateMasterPassword(password);
+            if (validation.valid) {
+                await encryption.setMasterPassword(password);
+                startEncryptionSessionTimeout();
+            } else {
+                showToast('❌ ' + validation.error, 'error');
+            }
         } else {
             showToast('Warnung: Email-Einstellungen sind verschlüsselt und werden nicht verfügbar sein', 'warning');
         }
     } else if (!encryption.masterPasswordSet && !encryption.isMasterPasswordSet()) {
-        // First time: set master password
-        const password = prompt('🔐 Master-Passwort für Email-Sicherheit setzen:\n(Dieses Passwort schützt deine SMTP/IMAP Passwörter)');
-        if (password && password.length >= 6) {
-            await encryption.setMasterPassword(password);
-            showToast('Master-Passwort gespeichert ✓', 'success');
-        } else if (password) {
-            showToast('Passwort zu kurz (min. 6 Zeichen)', 'warning');
+        // First time: set master password with strong validation
+        let validPassword = false;
+        while (!validPassword) {
+            const password = prompt('🔐 Master-Passwort für Email-Sicherheit:\n\nAnforderungen:\n• Min. 12 Zeichen\n• Groß- und Kleinbuchstaben\n• Zahlen\n\n(Dieses Passwort schützt deine SMTP/IMAP Passwörter)');
+
+            if (!password) break; // User cancelled
+
+            const validation = validateMasterPassword(password);
+            if (validation.valid) {
+                await encryption.setMasterPassword(password);
+                startEncryptionSessionTimeout();
+                showToast('🔐 Master-Passwort mit hoher Komplexität gespeichert ✓', 'success');
+                validPassword = true;
+            } else {
+                showToast('❌ ' + validation.error, 'error');
+            }
         }
     }
 
@@ -2382,6 +2420,11 @@ function togglePasswordVisibility(fieldId) {
 
 async function callEmailService(endpoint, data) {
     try {
+        // Reset session timeout on API call
+        if (encryption.masterPasswordSet) {
+            startEncryptionSessionTimeout();
+        }
+
         const response = await fetch(EMAIL_SERVICE_URL + endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

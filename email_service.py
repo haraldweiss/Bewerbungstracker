@@ -390,15 +390,44 @@ def notify_monitoring_results(responses):
 # ── HTTP Handler ───────────────────────────────────────────────────────
 
 class EmailServiceHandler(BaseHTTPRequestHandler):
+    def _check_origin(self):
+        """Verify request origin (CSRF protection)"""
+        origin = self.headers.get('Origin', '')
+        host = self.headers.get('Host', '')
+
+        # Allow localhost/127.0.0.1 only
+        if origin and 'localhost' not in origin and '127.0.0.1' not in origin:
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'error', 'message': 'CORS policy violation'}).encode())
+            return False
+
+        return True
+
     def do_POST(self):
         """Handle POST requests"""
+        # CSRF Protection: Check origin
+        if not self._check_origin():
+            return
+
         content_length = int(self.headers.get('Content-Length', 0))
+
+        # Security: Limit request body size (max 1MB)
+        if content_length > 1024 * 1024:
+            self.send_response(413)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'error', 'message': 'Request body too large'}).encode())
+            return
+
         body = self.rfile.read(content_length).decode('utf-8')
 
         try:
             data = json.loads(body)
         except:
             self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({"status": "error", "message": "Invalid JSON"}).encode())
             return
