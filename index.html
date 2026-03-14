@@ -429,6 +429,32 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="step" style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);">
+                    <div class="step-num">⚙️</div>
+                    <div class="step-body">
+                        <div class="step-title">Automatisches Monitoring aktivieren</div>
+                        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">
+                            Lasse die App regelmäßig dein Apps Script prüfen und erkenne automatisch Antworten:
+                        </p>
+                        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;">
+                            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                                <input type="checkbox" id="appsScriptMonitoringEnabled"
+                                    onchange="toggleAppsScriptMonitoring(this.checked)">
+                                <span>🔄 Automatisches Monitoring aktivieren</span>
+                            </label>
+                        </div>
+                        <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center;">
+                            <label for="appsScriptMonitoringInterval" style="color:var(--text-muted);font-size:0.85rem;">Prüfe alle:</label>
+                            <input type="number" id="appsScriptMonitoringInterval" min="5" max="1440" value="30"
+                                style="width:70px;padding:0.3rem;border-radius:4px;border:1px solid var(--border);">
+                            <span style="color:var(--text-muted);font-size:0.85rem;">Minuten</span>
+                        </div>
+                        <p style="color:var(--text-muted);font-size:0.8rem;margin-top:0.75rem;">
+                            ℹ️ Die App prüft im Hintergrund regelmäßig auf neue Antworten und aktualisiert automatisch den Status.
+                        </p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1015,6 +1041,8 @@ let state = {
         ghostingDays: 30,
         emailImportStartDate: '',
         appsScriptUrl: '',
+        appsScriptMonitoringEnabled: false,
+        appsScriptMonitoringInterval: 30, // minutes
         imapHost: '',
         imapPort: 993,
         imapProtocol: 'imap',
@@ -1031,6 +1059,8 @@ let state = {
         lastEmailSummarySent: null
         // NOTE: imapPass is intentionally never stored here or in localStorage
     },
+    appsScriptMonitoringActive: false,
+    appsScriptLastCheck: null
     activeFilter: '',
     currentEditId: null,
     currentDetailId: null,
@@ -1237,6 +1267,11 @@ async function init() {
 
     // Email-Zusammenfassung prüfen
     checkIfEmailSummaryShouldBeSent();
+
+    // Start Apps Script monitoring if enabled
+    if (state.settings.appsScriptMonitoringEnabled && state.settings.appsScriptUrl) {
+        startAppsScriptMonitoring();
+    }
 
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('f_datum').value = today;
@@ -1501,6 +1536,12 @@ function loadSettingsForm() {
     if (gd) gd.value = state.settings.ghostingDays || 30;
     if (ed) ed.value = state.settings.emailImportStartDate || '';
     if (su) su.value = state.settings.appsScriptUrl || '';
+
+    // Apps Script Monitoring-Einstellungen
+    const asme = document.getElementById('appsScriptMonitoringEnabled');
+    const asmi = document.getElementById('appsScriptMonitoringInterval');
+    if (asme) asme.checked = state.settings.appsScriptMonitoringEnabled || false;
+    if (asmi) asmi.value = state.settings.appsScriptMonitoringInterval || 30;
 
     // Benachrichtigungseinstellungen
     const pne = document.getElementById('pushNotificationsEnabled');
@@ -2023,6 +2064,140 @@ function isRelevantApplicationEmail(email) {
     }
 
     return keywordMatches >= 2;
+}
+
+/* ═══════════════════════════════════════════════════════
+   GOOGLE APPS SCRIPT MONITORING
+═══════════════════════════════════════════════════════ */
+let appsScriptMonitoringInterval = null;
+
+function startAppsScriptMonitoring() {
+    if (state.appsScriptMonitoringActive) {
+        console.log('✅ Apps Script Monitoring bereits aktiv');
+        return;
+    }
+
+    state.appsScriptMonitoringActive = true;
+    const interval = Math.max(5, state.settings.appsScriptMonitoringInterval || 30) * 60 * 1000; // Convert minutes to ms
+
+    console.log(`🚀 Google Apps Script Monitoring gestartet (${state.settings.appsScriptMonitoringInterval} min Intervall)`);
+
+    // Erste Prüfung sofort
+    checkAppsScriptForAnswers();
+
+    // Regelmäßige Prüfungen
+    appsScriptMonitoringInterval = setInterval(() => {
+        if (state.settings.appsScriptMonitoringEnabled) {
+            checkAppsScriptForAnswers();
+        }
+    }, interval);
+}
+
+function stopAppsScriptMonitoring() {
+    if (appsScriptMonitoringInterval) {
+        clearInterval(appsScriptMonitoringInterval);
+        appsScriptMonitoringInterval = null;
+        state.appsScriptMonitoringActive = false;
+        console.log('⏹️ Apps Script Monitoring gestoppt');
+    }
+}
+
+function toggleAppsScriptMonitoring(enabled) {
+    state.settings.appsScriptMonitoringEnabled = enabled;
+
+    const intervalEl = document.getElementById('appsScriptMonitoringInterval');
+    if (intervalEl) {
+        state.settings.appsScriptMonitoringInterval = parseInt(intervalEl.value) || 30;
+    }
+
+    if (enabled && state.settings.appsScriptUrl) {
+        startAppsScriptMonitoring();
+        showToast('✅ Apps Script Monitoring aktiviert', 'success');
+    } else {
+        stopAppsScriptMonitoring();
+        showToast('⏹️ Apps Script Monitoring deaktiviert', 'info');
+    }
+
+    saveToStorage();
+}
+
+async function checkAppsScriptForAnswers() {
+    if (!state.settings.appsScriptUrl) return;
+
+    try {
+        const res = await fetch(state.settings.appsScriptUrl);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.status !== 'ok') throw new Error('Script error');
+
+        const emails = data.emails || [];
+        const relevantEmails = emails.filter(e => isRelevantApplicationEmail(e));
+
+        if (relevantEmails.length === 0) return;
+
+        // Check for new answers
+        const newAnswers = [];
+        for (let email of relevantEmails) {
+            const parsed = parseEmailToApplication(email);
+
+            // Check if this is a response to an existing application
+            const existingApp = state.bewerbungen.find(a =>
+                a.firma.toLowerCase() === parsed.firma.toLowerCase()
+            );
+
+            if (!existingApp) continue; // Application not tracked
+
+            // Check if email indicates a response
+            if (['antwort', 'interview', 'zusage', 'absage'].includes(parsed.status)) {
+                // Check if we already have this info
+                if (existingApp.status !== parsed.status) {
+                    newAnswers.push({
+                        existingApp,
+                        email,
+                        parsed,
+                        oldStatus: existingApp.status
+                    });
+                }
+            }
+        }
+
+        if (newAnswers.length > 0) {
+            await handleAppsScriptAnswers(newAnswers);
+        }
+
+        state.appsScriptLastCheck = new Date().toISOString();
+    } catch (err) {
+        console.error('❌ Apps Script Monitoring Fehler:', err);
+    }
+}
+
+async function handleAppsScriptAnswers(answers) {
+    for (let item of answers) {
+        const { existingApp, parsed, oldStatus } = item;
+
+        // Auto-update status
+        existingApp.status = parsed.status;
+        existingApp.updatedAt = new Date().toISOString();
+
+        console.log(`📬 Antwort erkannt: ${existingApp.firma} (${oldStatus} → ${parsed.status})`);
+
+        // Send notification
+        const notificationKey = `notifyStatus_${parsed.status}`;
+        if (state.settings[notificationKey] && state.settings.pushNotificationsEnabled) {
+            sendNotification(
+                `✅ ${existingApp.firma}`,
+                `Status geändert: ${oldStatus} → ${parsed.status}`
+            );
+        }
+
+        // Log to monitoring
+        console.log(`✅ Auto-Update: ${existingApp.firma} - Status auf "${parsed.status}" gesetzt`);
+    }
+
+    // Save updated applications
+    await saveToStorage();
+    renderAll();
+    showToast(`${answers.length} Antwort(en) von Apps Script erkannt ✓`, 'success');
 }
 
 function parseEmailToApplication(email) {
