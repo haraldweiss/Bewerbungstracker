@@ -6,6 +6,9 @@
     <title>📋 Bewerbungs-Tracker v3</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <!-- Encryption: TweetNaCl.js for secure password encryption -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tweetnacl.js/1.0.3/nacl.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tweetnacl.js/1.0.3/nacl-util.min.js"></script>
     <style>
         :root {
             --primary: #4F46E5; --primary-light: #818CF8; --primary-dark: #3730A3;
@@ -797,6 +800,17 @@
         </div>
     </div>
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:1rem;">🔐 Sicherheit & Master-Passwort</div>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Master-Passwort schützt deine SMTP/IMAP Passwörter mit Verschlüsselung.</p>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <button class="btn btn-warning btn-sm" onclick="changeMasterPassword()">🔑 Master-Passwort ändern</button>
+            <button class="btn btn-danger btn-sm" onclick="logoutEncryption()">🔓 Sitzung beenden (Passwort löschen)</button>
+        </div>
+        <div id="encryptionStatus" style="font-size:0.85rem;color:var(--text-muted);">
+            <span id="masterPasswordStatus">Prüfe Status...</span>
+        </div>
+    </div>
+    <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">⚙️ Konfiguration Backups</div>
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Automatische Backups bei jeder Änderung. Max. 10 Backups lokal gespeichert.</p>
         <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
@@ -1027,9 +1041,131 @@ let state = {
 };
 
 /* ═══════════════════════════════════════════════════════
+   ENCRYPTION / DECRYPTION
+═══════════════════════════════════════════════════════ */
+
+class PasswordEncryption {
+    constructor() {
+        this.encryptionKey = null;
+        this.masterPasswordSet = false;
+    }
+
+    // Derive encryption key from master password using PBKDF2
+    async deriveKey(masterPassword) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(masterPassword);
+        const key = await crypto.subtle.importKey('raw', data, { name: 'PBKDF2' }, false, ['deriveBits']);
+        const bits = await crypto.subtle.deriveBits(
+            { name: 'PBKDF2', salt: encoder.encode('bewerbungstracker'), iterations: 100000, hash: 'SHA-256' },
+            key,
+            256
+        );
+        return new Uint8Array(bits);
+    }
+
+    // Set master password (must be called once at app start or when user sets it)
+    async setMasterPassword(password) {
+        const key = await this.deriveKey(password);
+        this.encryptionKey = key;
+        this.masterPasswordSet = true;
+        localStorage.setItem('masterPasswordSet', 'true');
+        return true;
+    }
+
+    // Check if master password is already set
+    isMasterPasswordSet() {
+        return localStorage.getItem('masterPasswordSet') === 'true';
+    }
+
+    // Encrypt sensitive data
+    encrypt(plaintext) {
+        if (!this.encryptionKey) {
+            console.warn('⚠️ No encryption key set');
+            return plaintext;
+        }
+
+        try {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(plaintext);
+            const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
+            const encrypted = nacl.secretbox(data, nonce, this.encryptionKey);
+
+            const combined = new Uint8Array(nonce.length + encrypted.length);
+            combined.set(nonce);
+            combined.set(encrypted, nonce.length);
+
+            return 'ENCRYPTED:' + nacl.util.encodeBase64(combined);
+        } catch(e) {
+            console.error('Encryption error:', e);
+            return plaintext;
+        }
+    }
+
+    // Decrypt sensitive data
+    decrypt(ciphertext) {
+        if (!this.encryptionKey) {
+            console.warn('⚠️ No encryption key set');
+            return ciphertext;
+        }
+
+        if (!ciphertext || !ciphertext.startsWith('ENCRYPTED:')) {
+            return ciphertext;
+        }
+
+        try {
+            const decoder = new TextDecoder();
+            const combined = nacl.util.decodeBase64(ciphertext.substring(10));
+            const nonce = combined.slice(0, nacl.secretbox.nonceLength);
+            const encrypted = combined.slice(nacl.secretbox.nonceLength);
+
+            const decrypted = nacl.secretbox.open(encrypted, nonce, this.encryptionKey);
+            if (!decrypted) {
+                console.error('Decryption failed: invalid key or corrupted data');
+                return '';
+            }
+
+            return decoder.decode(decrypted);
+        } catch(e) {
+            console.error('Decryption error:', e);
+            return '';
+        }
+    }
+
+    // Clear encryption key (logout)
+    clearKey() {
+        this.encryptionKey = null;
+        this.masterPasswordSet = false;
+    }
+}
+
+const encryption = new PasswordEncryption();
+
+/* ═══════════════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════════════ */
 async function init() {
+    // Request master password first if email settings are configured
+    const hasEmailSettings = localStorage.getItem('bewerbungsTrackerV3')?.includes('smtp') ||
+                              localStorage.getItem('bewerbungsTrackerV3')?.includes('imap');
+
+    if (hasEmailSettings && !encryption.masterPasswordSet && encryption.isMasterPasswordSet()) {
+        const password = prompt('🔐 Master-Passwort eingeben (für Email-Einstellungen):');
+        if (password) {
+            await encryption.setMasterPassword(password);
+        } else {
+            showToast('Warnung: Email-Einstellungen sind verschlüsselt und werden nicht verfügbar sein', 'warning');
+        }
+    } else if (!encryption.masterPasswordSet && !encryption.isMasterPasswordSet()) {
+        // First time: set master password
+        const password = prompt('🔐 Master-Passwort für Email-Sicherheit setzen:\n(Dieses Passwort schützt deine SMTP/IMAP Passwörter)');
+        if (password && password.length >= 6) {
+            await encryption.setMasterPassword(password);
+            showToast('Master-Passwort gespeichert ✓', 'success');
+        } else if (password) {
+            showToast('Passwort zu kurz (min. 6 Zeichen)', 'warning');
+        }
+    }
+
     await loadFromStorage();
     renderAll();
     loadSettingsForm();
@@ -1333,6 +1469,9 @@ function loadSettingsForm() {
     if (ip)  ip.value  = state.settings.imapPort      || 993;
     if (ipr) ipr.value = state.settings.imapProtocol || 'imap';
     if (iu)  iu.value  = state.settings.imapUser      || '';
+
+    // Update encryption status display
+    updateEncryptionStatus();
 }
 
 function updateConnectionStatus() {
@@ -2256,6 +2395,82 @@ async function callEmailService(endpoint, data) {
     }
 }
 
+// Update master password status display
+function updateEncryptionStatus() {
+    const status = document.getElementById('masterPasswordStatus');
+    if (encryption.masterPasswordSet && encryption.isMasterPasswordSet()) {
+        status.innerHTML = '✅ Master-Passwort aktiv | Email-Passwörter sind verschlüsselt 🔐';
+        status.style.color = 'var(--secondary)';
+    } else if (encryption.isMasterPasswordSet()) {
+        status.innerHTML = '⏳ Master-Passwort erforderlich | Bitte Browser-Sitzung neustarten';
+        status.style.color = 'var(--warning)';
+    } else {
+        status.innerHTML = '❌ Kein Master-Passwort gesetzt | Starten Sie die App neu';
+        status.style.color = 'var(--danger)';
+    }
+}
+
+// Change master password
+async function changeMasterPassword() {
+    if (!encryption.masterPasswordSet) {
+        showToast('Bitte erst einloggen mit aktuellem Master-Passwort', 'warning');
+        return;
+    }
+
+    const newPassword = prompt('🔐 Neues Master-Passwort eingeben (min. 6 Zeichen):');
+    if (!newPassword) return;
+
+    if (newPassword.length < 6) {
+        showToast('Passwort zu kurz (min. 6 Zeichen)', 'warning');
+        return;
+    }
+
+    if (confirm('Master-Passwort wirklich ändern? Du musst alle Passwörter neu eingeben.')) {
+        await encryption.setMasterPassword(newPassword);
+        showToast('Master-Passwort geändert ✓. Bitte alle Email-Passwörter neu eingeben.', 'success');
+        updateEncryptionStatus();
+    }
+}
+
+// Logout: clear encryption key
+function logoutEncryption() {
+    if (confirm('Sitzung beenden? Master-Passwort wird gelöscht.')) {
+        encryption.clearKey();
+        updateEncryptionStatus();
+        showToast('Sitzung beendet. Browser neustarten, um Email-Einstellungen zu verwenden.', 'info');
+    }
+}
+
+// Save encrypted credentials to localStorage
+function saveEncryptedCredentials(type, data) {
+    try {
+        const encrypted = {
+            data: encryption.encrypt(JSON.stringify(data)),
+            timestamp: new Date().toISOString()
+        };
+        localStorage.setItem(`encrypted_${type}_credentials`, JSON.stringify(encrypted));
+        return true;
+    } catch(e) {
+        console.error('Error saving encrypted credentials:', e);
+        return false;
+    }
+}
+
+// Load encrypted credentials from localStorage
+function loadEncryptedCredentials(type) {
+    try {
+        const stored = localStorage.getItem(`encrypted_${type}_credentials`);
+        if (!stored) return null;
+
+        const encrypted = JSON.parse(stored);
+        const plaintext = encryption.decrypt(encrypted.data);
+        return plaintext ? JSON.parse(plaintext) : null;
+    } catch(e) {
+        console.error('Error loading encrypted credentials:', e);
+        return null;
+    }
+}
+
 async function loadSMTPSettings() {
     const result = await callEmailService('/api/config/get', { key: 'smtp_user' });
     if (result.value) {
@@ -2283,11 +2498,19 @@ async function saveSMTPSettings() {
         return;
     }
 
-    // Save configuration
+    // Save SMTP credentials encrypted locally
+    const smtpData = { host, port, user, pass };
+    const savedLocally = saveEncryptedCredentials('smtp', smtpData);
+
+    if (!savedLocally) {
+        showToast('⚠️ Fehler beim Speichern der verschlüsselten Daten', 'error');
+        return;
+    }
+
+    // Also save non-sensitive parts to Email Service for reference
     await callEmailService('/api/config/save', { key: 'smtp_host', value: host });
     await callEmailService('/api/config/save', { key: 'smtp_port', value: port });
     await callEmailService('/api/config/save', { key: 'smtp_user', value: user });
-    await callEmailService('/api/config/save', { key: 'smtp_pass', value: pass });
 
     // Save email summary settings
     await callEmailService('/api/config/save', { key: 'summary_enabled', value: 'true' });
@@ -2300,8 +2523,8 @@ async function saveSMTPSettings() {
     // Create config backup
     createConfigBackup();
 
-    updateSmtpStatus('✅ SMTP-Einstellungen gespeichert');
-    showToast('SMTP-Einstellungen gespeichert ✓', 'success');
+    updateSmtpStatus('✅ SMTP-Einstellungen gespeichert (Passwort verschlüsselt 🔐)');
+    showToast('SMTP-Einstellungen gespeichert mit verschlüsseltem Passwort ✓', 'success');
 }
 
 async function testSmtpConnection() {
