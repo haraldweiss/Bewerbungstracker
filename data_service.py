@@ -25,6 +25,13 @@ MAX_REQUEST_SIZE_BYTES = 1024 * 1024  # 1MB
 ALLOWED_STATUSES = {'beworben', 'interview', 'zusage', 'absage', 'ghosting', 'antwort'}
 ALLOWED_QUELLEN = {'gmail', 'imap', 'manuell', 'linkedin', 'indeed', 'xing', 'website', 'empfehlung'}
 
+# CORS headers configuration
+CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+}
+
 @contextmanager
 def db_connection():
     """Context manager for database connections"""
@@ -274,10 +281,16 @@ service = DataService()
 class JSONHandler(BaseHTTPRequestHandler):
     """Base HTTP handler with JSON response helpers"""
 
+    def _send_cors_headers(self):
+        """Send CORS headers to allow cross-origin requests"""
+        for key, value in CORS_HEADERS.items():
+            self.send_header(key, value)
+
     def send_json(self, status_code, data):
         """Send JSON response with standard headers"""
         self.send_response(status_code)
         self.send_header('Content-Type', 'application/json')
+        self._send_cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
@@ -295,6 +308,12 @@ class JSONHandler(BaseHTTPRequestHandler):
         self.send_json(status_code, {'status': 'error', 'message': message})
 
 class RequestHandler(JSONHandler):
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests"""
+        self.send_response(200)
+        self._send_cors_headers()
+        self.end_headers()
+
     def do_GET(self):
         """Handle GET requests"""
         parsed = urlparse(self.path)

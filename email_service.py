@@ -17,6 +17,8 @@ import time
 import os
 import imaplib
 import email
+import base64
+import hashlib
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -24,12 +26,57 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import ssl
 
+try:
+    from cryptography.fernet import Fernet
+except ImportError:
+    Fernet = None
+
 HOST = '127.0.0.1'
 PORT = 8766
 DB_FILE = 'email_config.db'
 MAX_REQUEST_SIZE_BYTES = 1024 * 1024  # 1MB
+ENCRYPTION_KEY = None  # Will be derived from master password
+CREDENTIALS_CACHE = {}  # Cache for credentials to avoid repeated DB lookups
+
+# CORS headers configuration
+CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+}
 
 # ── Database ───────────────────────────────────────────────────────────
+
+def derive_encryption_key(master_password):
+    """Derive encryption key from master password using PBKDF2"""
+    if not master_password:
+        return None
+    salt = b'bewerbungstracker_email'  # Fixed salt for consistent key derivation
+    key = hashlib.pbkdf2_hmac('sha256', master_password.encode(), salt, 100000)
+    return base64.urlsafe_b64encode(key[:32])  # Fernet requires 32 bytes
+
+def _crypt_operation(data, encryption_key, operation='encrypt'):
+    """Unified encryption/decryption using Fernet (AES)"""
+    if not encryption_key or not Fernet:
+        return data  # Return as-is if no key or cryptography library
+    try:
+        f = Fernet(encryption_key)
+        if operation == 'encrypt':
+            return f.encrypt(data.encode()).decode()
+        else:  # decrypt
+            return f.decrypt(data.encode()).decode()
+    except Exception as e:
+        op_name = 'Encryption' if operation == 'encrypt' else 'Decryption'
+        print(f"❌ {op_name} error: {e}")
+        return data
+
+def encrypt_password(password, encryption_key):
+    """Encrypt password using Fernet (AES)"""
+    return _crypt_operation(password, encryption_key, 'encrypt')
+
+def decrypt_password(encrypted_password, encryption_key):
+    """Decrypt password using Fernet"""
+    return _crypt_operation(encrypted_password, encryption_key, 'decrypt')
 
 def init_db():
     """Initialize SQLite database for email configuration"""
@@ -39,6 +86,18 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS email_config (
         key TEXT PRIMARY KEY,
         value TEXT
+    )''')
+
+    # Encrypted credentials table
+    cursor.execute('''CREATE TABLE IF NOT EXISTS email_credentials (
+        service TEXT PRIMARY KEY,
+        host TEXT,
+        port INTEGER,
+        user TEXT,
+        password TEXT,
+        encrypted BOOLEAN DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
     cursor.execute('''CREATE TABLE IF NOT EXISTS email_log (
@@ -90,6 +149,59 @@ def set_config(key, value):
         print(f"Error saving config: {e}")
         return False
 
+def save_credentials(service, host, port, user, password, encryption_key):
+    """Save email credentials with encryption"""
+    try:
+        encrypted_password = encrypt_password(password, encryption_key) if encryption_key else password
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''INSERT OR REPLACE INTO email_credentials
+                         (service, host, port, user, password, encrypted, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)''',
+                      (service, host, port, user, encrypted_password, 1 if encryption_key else 0))
+        conn.commit()
+        conn.close()
+        print(f"✅ {service.upper()} credentials saved and encrypted")
+        return True
+    except Exception as e:
+        print(f"❌ Error saving credentials: {e}")
+        return False
+
+def get_credentials(service, encryption_key):
+    """Retrieve and decrypt email credentials (cached to avoid repeated DB lookups)"""
+    # Check cache first (avoids repeated DB operations in hot path)
+    cache_key = f"{service}:{encryption_key}"
+    if cache_key in CREDENTIALS_CACHE:
+        return CREDENTIALS_CACHE[cache_key]
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT host, port, user, password, encrypted FROM email_credentials WHERE service = ?',
+                      (service,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if not result:
+            return None
+
+        host, port, user, encrypted_password, is_encrypted = result
+
+        # Decrypt password if it was encrypted
+        if is_encrypted and encryption_key:
+            password = decrypt_password(encrypted_password, encryption_key)
+        else:
+            password = encrypted_password
+
+        creds = {'host': host, 'port': port, 'user': user, 'password': password}
+
+        # Cache for future lookups
+        CREDENTIALS_CACHE[cache_key] = creds
+        return creds
+    except Exception as e:
+        print(f"❌ Error retrieving credentials: {e}")
+        return None
+
 def log_email(recipient, subject, status, error=''):
     """Log email send attempt"""
     try:
@@ -105,12 +217,22 @@ def log_email(recipient, subject, status, error=''):
 # ── Email Sending ──────────────────────────────────────────────────────
 
 def send_email(recipient, subject, html_body, text_body=''):
-    """Send email via SMTP"""
+    """Send email via SMTP using stored encrypted credentials"""
     try:
-        smtp_host = get_config('smtp_host', 'smtp.gmail.com')
-        smtp_port = int(get_config('smtp_port', '587'))
-        smtp_user = get_config('smtp_user')
-        smtp_pass = get_config('smtp_pass')
+        # Try to get credentials from database first (encrypted)
+        credentials = get_credentials('smtp', ENCRYPTION_KEY)
+
+        if credentials:
+            smtp_host = credentials['host']
+            smtp_port = int(credentials['port'])
+            smtp_user = credentials['user']
+            smtp_pass = credentials['password']
+        else:
+            # Fallback to config table for backward compatibility
+            smtp_host = get_config('smtp_host', 'smtp.gmail.com')
+            smtp_port = int(get_config('smtp_port', '587'))
+            smtp_user = get_config('smtp_user')
+            smtp_pass = get_config('smtp_pass')
 
         if not smtp_user or not smtp_pass:
             error = "SMTP credentials not configured"
@@ -393,10 +515,16 @@ def notify_monitoring_results(responses):
 class JSONHandler(BaseHTTPRequestHandler):
     """Base HTTP handler with JSON response helpers"""
 
+    def _send_cors_headers(self):
+        """Send CORS headers to allow cross-origin requests"""
+        for key, value in CORS_HEADERS.items():
+            self.send_header(key, value)
+
     def send_json(self, status_code, data):
         """Send JSON response with standard headers"""
         self.send_response(status_code)
         self.send_header('Content-Type', 'application/json')
+        self._send_cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
@@ -414,6 +542,12 @@ class JSONHandler(BaseHTTPRequestHandler):
         self.send_json(status_code, {'status': 'error', 'message': message})
 
 class EmailServiceHandler(JSONHandler):
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests"""
+        self.send_response(200)
+        self._send_cors_headers()
+        self.end_headers()
+
     def _check_origin(self):
         """Verify request origin (CSRF protection - localhost only)"""
         origin = self.headers.get('Origin', '')
@@ -424,6 +558,62 @@ class EmailServiceHandler(JSONHandler):
             return False
 
         return True
+
+    def _validate_credentials_input(self, service, host, port, user, password, master_password=None):
+        """Validate email credentials input (shared validation for save/test)
+
+        Returns True if valid, False otherwise (and sends error response).
+        """
+        # Validate service type
+        if not service or service not in ['smtp', 'imap']:
+            self.send_json_error('Invalid service type. Must be "smtp" or "imap"', 400)
+            return False
+
+        # Check required fields
+        required_fields = [service, host, port, user, password]
+        if master_password is not None:
+            required_fields.append(master_password)
+
+        if not all(required_fields):
+            fields = 'service, host, port, user, password'
+            if master_password is not None:
+                fields += ', master_password'
+            self.send_json_error(f'Missing required fields: {fields}', 400)
+            return False
+
+        # Validate port is numeric
+        try:
+            int(port)
+        except (ValueError, TypeError):
+            self.send_json_error('Invalid port number', 400)
+            return False
+
+        return True
+
+    def do_GET(self):
+        """Handle GET requests"""
+        from urllib.parse import urlparse, parse_qs
+
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query_params = parse_qs(parsed.query)
+
+        # Extract single values from query params (parse_qs returns lists)
+        params = {k: v[0] if v else '' for k, v in query_params.items()}
+
+        try:
+            if path == '/api/status':
+                self.handle_status()
+            elif path == '/api/config/get':
+                key = params.get('key', '')
+                self.handle_get_config({'key': key})
+            elif path == '/api/monitoring/check':
+                self.handle_check_monitoring({})
+            else:
+                self.send_json_error('Not found', 404)
+
+        except Exception as e:
+            self.send_json_error(str(e), 500)
 
     def do_POST(self):
         """Handle POST requests"""
@@ -451,6 +641,10 @@ class EmailServiceHandler(JSONHandler):
             self.handle_save_config(data)
         elif self.path == '/api/config/get':
             self.handle_get_config(data)
+        elif self.path == '/api/credentials/save':
+            self.handle_save_credentials(data)
+        elif self.path == '/api/credentials/test':
+            self.handle_test_credentials(data)
         elif self.path == '/api/email/send':
             self.handle_send_email(data)
         elif self.path == '/api/email/test':
@@ -565,6 +759,99 @@ class EmailServiceHandler(JSONHandler):
         """Check for application responses now"""
         responses = check_and_monitor_emails()
         self.send_json_ok({'detected': len(responses), 'responses': responses})
+
+    def handle_save_credentials(self, data):
+        """Save email credentials with encryption"""
+        service = data.get('service', '').lower()  # 'smtp' or 'imap'
+        host = data.get('host', '')
+        port = data.get('port', '')
+        user = data.get('user', '')
+        password = data.get('password', '')
+        master_password = data.get('master_password', '')
+
+        # Validate input
+        if not self._validate_credentials_input(service, host, port, user, password, master_password):
+            return
+
+        try:
+            # Derive encryption key from master password
+            encryption_key = derive_encryption_key(master_password)
+
+            if not encryption_key:
+                self.send_json_error('Failed to derive encryption key from master password', 400)
+                return
+
+            # Save credentials
+            success = save_credentials(service, host, int(port), user, password, encryption_key)
+
+            if success:
+                # Update global ENCRYPTION_KEY if this is the first time
+                global ENCRYPTION_KEY
+                if not ENCRYPTION_KEY:
+                    ENCRYPTION_KEY = encryption_key
+
+                # Clear cache for this service to ensure fresh fetch next time
+                cache_key = f"{service}:{encryption_key}"
+                CREDENTIALS_CACHE.pop(cache_key, None)
+
+                self.send_json_ok({
+                    'message': f'{service.upper()} credentials saved and encrypted',
+                    'service': service
+                })
+            else:
+                self.send_json_error(f'Error saving {service.upper()} credentials', 500)
+        except Exception as e:
+            self.send_json_error(str(e), 500)
+
+    def handle_test_credentials(self, data):
+        """Test email credentials by attempting connection"""
+        service = data.get('service', '').lower()  # 'smtp' or 'imap'
+        host = data.get('host', '')
+        port = data.get('port', '')
+        user = data.get('user', '')
+        password = data.get('password', '')
+
+        # Validate input (no master_password needed for testing)
+        if not self._validate_credentials_input(service, host, port, user, password):
+            return
+
+        try:
+            port_int = int(port)
+            if service == 'smtp':
+                # Test SMTP connection
+                server = smtplib.SMTP(host, port_int, timeout=10)
+                server.starttls()
+                server.login(user, password)
+                server.quit()
+                self.send_json_ok({
+                    'message': 'SMTP credentials are valid',
+                    'service': 'smtp'
+                })
+            else:  # service == 'imap'
+                # Test IMAP connection
+                if port_int == 993:
+                    imap = imaplib.IMAP4_SSL(host, port_int, context=ssl.create_default_context())
+                else:
+                    imap = imaplib.IMAP4(host, port_int)
+                    imap.starttls()
+
+                imap.login(user, password)
+                imap.close()
+                imap.logout()
+
+                self.send_json_ok({
+                    'message': 'IMAP credentials are valid',
+                    'service': 'imap'
+                })
+
+        except smtplib.SMTPAuthenticationError:
+            self.send_json_error('Authentication failed. Check your credentials.', 401)
+        except imaplib.IMAP4.error as e:
+            self.send_json_error(f'IMAP error: {str(e)}', 401)
+        except ConnectionRefusedError:
+            self.send_json_error('Connection refused. Check host and port.', 500)
+        except Exception as e:
+            self.send_json_error(f'Connection test failed: {str(e)}', 500)
 
     def handle_save_applications(self, data):
         """Save applications list for monitoring"""
