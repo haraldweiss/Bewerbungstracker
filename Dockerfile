@@ -19,6 +19,10 @@ COPY app.py .
 COPY index.html .
 COPY manifest.json .
 COPY service-worker.js .
+COPY entrypoint.sh .
+
+# Make entrypoint executable
+RUN chmod +x entrypoint.sh
 
 # Expose port
 EXPOSE 8080
@@ -27,6 +31,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status').read()" || exit 1
 
-# Run application with proper PORT environment variable handling
-# Using shell form so $PORT is properly expanded at runtime
-CMD gunicorn --workers 2 --timeout 120 --bind 0.0.0.0:${PORT:-8080} app:app
+# Use entrypoint script for proper environment variable handling
+ENTRYPOINT ["/app/entrypoint.sh"]
