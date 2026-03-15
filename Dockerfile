@@ -31,6 +31,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status').read()" || exit 1
 
-# Use entrypoint script for proper environment variable handling
-# Array form with explicit bash ensures PORT variable is expanded correctly
-ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
+# Start gunicorn with proper PORT variable expansion
+# Use shell form to ensure environment variables are expanded by bash
+CMD /bin/bash -c 'gunicorn --workers 2 --timeout 120 --bind 0.0.0.0:${PORT:-8080} --access-logfile - --error-logfile - app:app'
