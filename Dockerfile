@@ -20,6 +20,7 @@ COPY index.html .
 COPY manifest.json .
 COPY service-worker.js .
 COPY entrypoint.sh .
+COPY start.py .
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
@@ -31,6 +32,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status').read()" || exit 1
 
-# Start gunicorn with proper PORT variable expansion
-# Use double quotes to ensure bash expands ${PORT} environment variable
-CMD /bin/bash -c "gunicorn --workers 2 --timeout 120 --bind 0.0.0.0:\${PORT:-8080} --access-logfile - --error-logfile - app:app"
+# Start application using Python startup script
+# Python script directly reads PORT environment variable and starts gunicorn
+# This avoids all bash variable expansion complexities
+CMD ["python", "/app/start.py"]
