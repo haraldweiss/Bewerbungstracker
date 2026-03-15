@@ -277,6 +277,7 @@
     <div class="nav-section">Email Import</div>
     <button class="nav-btn" id="nav-gmail" onclick="showView('gmail')">📧 Mail Connector</button>
     <div class="nav-section">System</div>
+    <button class="nav-btn" id="nav-deleted" onclick="showView('deleted')">🗑️ Gelöschte Einträge</button>
     <button class="nav-btn" id="nav-settings" onclick="showView('settings')">⚙️ Einstellungen</button>
 </aside>
 
@@ -678,6 +679,15 @@
             <div id="textEmailList"></div>
         </div>
     </div>
+</div>
+
+<!-- ═══ DELETED ENTRIES ═══ -->
+<div class="view" id="view-deleted">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.75rem;">
+        <h1 style="font-size:1.5rem;font-weight:700;">🗑️ Gelöschte Einträge</h1>
+        <button class="btn btn-secondary btn-sm" onclick="loadDeletedEntries()">🔄 Aktualisieren</button>
+    </div>
+    <div id="deletedList"></div>
 </div>
 
 <!-- ═══ SETTINGS ═══ -->
@@ -1600,6 +1610,7 @@ function showView(name) {
     if (name === 'dashboard') renderDashboard();
     if (name === 'bewerbungen') renderBewerbungen();
     if (name === 'kanban') renderKanban();
+    if (name === 'deleted') loadDeletedEntries();
 }
 
 function switchTab(el, tabId) {
@@ -1921,12 +1932,118 @@ function saveBewerbung(e) {
     closeModal('addModal');
 }
 
-function deleteBewerbung(id) {
-    if (!confirm('Bewerbung wirklich löschen?')) return;
-    state.bewerbungen = state.bewerbungen.filter(x => x.id !== id);
-    saveToStorage();
-    renderAll();
-    showToast('Gelöscht', 'warning');
+async function deleteBewerbung(id) {
+    if (!confirm('Bewerbung wirklich löschen? (Kann später wiederhergestellt werden)')) return;
+
+    try {
+        // Delete from database
+        const response = await fetch(`http://localhost:8767/api/applications/${id}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
+        }
+
+        // Remove from frontend state
+        state.bewerbungen = state.bewerbungen.filter(x => x.id !== id);
+        saveToStorage();
+        renderAll();
+        showToast('✅ Gelöscht (Wiederherstellbar)', 'warning');
+    } catch (error) {
+        console.error('Delete error:', error);
+        showToast('❌ Fehler beim Löschen', 'error');
+    }
+}
+
+/* ═══════════════════════════════════════════════════════
+   DELETED ENTRIES MANAGEMENT
+═══════════════════════════════════════════════════════ */
+async function loadDeletedEntries() {
+    try {
+        const response = await fetch('http://localhost:8767/api/applications/deleted');
+        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+
+        const data = await response.json();
+        const deleted = data.deleted || [];
+
+        renderDeletedEntries(deleted);
+    } catch (error) {
+        console.error('Error loading deleted entries:', error);
+        document.getElementById('deletedList').innerHTML = `
+            <div class="card" style="border-left:4px solid #ff6b6b;">
+                <p style="color:var(--text-muted);">❌ Fehler beim Laden gelöschter Einträge</p>
+            </div>
+        `;
+    }
+}
+
+function renderDeletedEntries(deleted) {
+    const el = document.getElementById('deletedList');
+
+    if (!deleted || deleted.length === 0) {
+        el.innerHTML = '<div class="card"><p style="color:var(--text-muted);">Keine gelöschten Einträge</p></div>';
+        return;
+    }
+
+    el.innerHTML = `
+        <div style="display:grid;gap:0.75rem;">
+            ${deleted.map(app => `
+                <div class="card" style="border-left:4px solid #ffa500;padding:1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+                    <div style="flex:1;min-width:250px;">
+                        <div style="font-weight:700;font-size:1.1rem;margin-bottom:0.25rem;">${escapeHtml(app.firma || 'Unbekannt')}</div>
+                        <div style="color:var(--text-muted);font-size:0.9rem;">
+                            ${app.position ? '👔 ' + escapeHtml(app.position) + ' • ' : ''}
+                            Gelöscht: ${formatDate(app.deletedAt)}
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                        <button class="btn btn-success btn-sm" onclick="recoverBewerbung('${app.id}')">♻️ Wiederherstellen</button>
+                        <button class="btn btn-danger btn-sm" onclick="permanentlyDeleteBewerbung('${app.id}')">🗑️ Endgültig löschen</button>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+async function recoverBewerbung(id) {
+    if (!confirm('Bewerbung wirklich wiederherstellen?')) return;
+
+    try {
+        const response = await fetch(`http://localhost:8767/api/applications/${id}/recover`, {
+            method: 'POST'
+        });
+
+        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+
+        // Reload deleted entries and applications
+        await loadFromStorage();
+        loadDeletedEntries();
+        renderAll();
+        showToast('✅ Bewerbung wiederhergestellt', 'success');
+    } catch (error) {
+        console.error('Recovery error:', error);
+        showToast('❌ Fehler beim Wiederherstellen', 'error');
+    }
+}
+
+async function permanentlyDeleteBewerbung(id) {
+    if (!confirm('⚠️ WARNUNG: Das kann nicht rückgängig gemacht werden!\n\nBewerbung wirklich endgültig löschen?')) return;
+
+    try {
+        const response = await fetch(`http://localhost:8767/api/applications/${id}?permanent=true`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+
+        loadDeletedEntries();
+        showToast('🗑️ Bewerbung endgültig gelöscht', 'warning');
+    } catch (error) {
+        console.error('Permanent delete error:', error);
+        showToast('❌ Fehler beim Löschen', 'error');
+    }
 }
 
 /* ═══════════════════════════════════════════════════════

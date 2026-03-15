@@ -95,7 +95,7 @@ class DataService:
         with db_connection() as conn:
             c = conn.cursor()
 
-            # Applications table
+            # Applications table (with soft delete support)
             c.execute('''CREATE TABLE IF NOT EXISTS bewerbungen (
                 id TEXT PRIMARY KEY,
                 firma TEXT NOT NULL,
@@ -109,7 +109,9 @@ class DataService:
                 link TEXT,
                 notizen TEXT,
                 createdAt TEXT,
-                updatedAt TEXT
+                updatedAt TEXT,
+                deleted INTEGER DEFAULT 0,
+                deletedAt TEXT
             )''')
 
             # Settings table (key-value pairs)
@@ -125,11 +127,14 @@ class DataService:
 
             conn.commit()
 
-    def get_all_bewerbungen(self):
-        """Fetch all applications, ordered by createdAt DESC"""
+    def get_all_bewerbungen(self, include_deleted=False):
+        """Fetch all applications (excluding deleted by default), ordered by createdAt DESC"""
         with db_connection() as conn:
             c = conn.cursor()
-            c.execute('SELECT * FROM bewerbungen ORDER BY createdAt DESC')
+            if include_deleted:
+                c.execute('SELECT * FROM bewerbungen ORDER BY createdAt DESC')
+            else:
+                c.execute('SELECT * FROM bewerbungen WHERE deleted = 0 ORDER BY createdAt DESC')
             rows = [dict(row) for row in c.fetchall()]
         return rows
 
@@ -196,7 +201,35 @@ class DataService:
         return updated
 
     def delete_bewerbung(self, id):
-        """Delete application"""
+        """Soft delete application (mark as deleted, don't remove from DB)"""
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute('UPDATE bewerbungen SET deleted = 1, deletedAt = ? WHERE id = ?',
+                      (datetime.now().isoformat(), id))
+            conn.commit()
+            affected = c.rowcount
+        return affected > 0
+
+    def get_deleted_bewerbungen(self):
+        """Fetch all deleted applications, ordered by deletedAt DESC"""
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT * FROM bewerbungen WHERE deleted = 1 ORDER BY deletedAt DESC')
+            rows = [dict(row) for row in c.fetchall()]
+        return rows
+
+    def recover_bewerbung(self, id):
+        """Recover a deleted application"""
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute('UPDATE bewerbungen SET deleted = 0, deletedAt = NULL, updatedAt = ? WHERE id = ?',
+                      (datetime.now().isoformat(), id))
+            conn.commit()
+            affected = c.rowcount
+        return affected > 0
+
+    def permanently_delete_bewerbung(self, id):
+        """Permanently delete application from database (irreversible)"""
         with db_connection() as conn:
             c = conn.cursor()
             c.execute('DELETE FROM bewerbungen WHERE id = ?', (id,))
@@ -259,10 +292,10 @@ class DataService:
 
             conn.commit()
 
-    def export_data(self):
-        """Export all data for backup"""
+    def export_data(self, include_deleted=False):
+        """Export data for backup (excludes deleted by default)"""
         return {
-            'bewerbungen': self.get_all_bewerbungen(),
+            'bewerbungen': self.get_all_bewerbungen(include_deleted=include_deleted),
             'settings': self.get_settings(),
             'exportedAt': datetime.now().isoformat()
         }
@@ -323,6 +356,10 @@ class RequestHandler(JSONHandler):
             if path == '/api/applications':
                 data = service.get_all_bewerbungen()
                 self.send_json_ok({'count': len(data), 'applications': data})
+
+            elif path == '/api/applications/deleted':
+                data = service.get_deleted_bewerbungen()
+                self.send_json_ok({'count': len(data), 'deleted': data})
 
             elif path.startswith('/api/applications/'):
                 app_id = path.split('/')[-1]
@@ -387,6 +424,15 @@ class RequestHandler(JSONHandler):
                 else:
                     self.send_json_error('Confirmation required', 400)
 
+            elif path.startswith('/api/applications/') and path.endswith('/recover'):
+                # Recover a deleted application
+                app_id = path.split('/')[-2]
+                if service.recover_bewerbung(app_id):
+                    app = service.get_bewerbung(app_id)
+                    self.send_json_ok({'message': 'Recovered', 'application': app})
+                else:
+                    self.send_json_error('Not found', 404)
+
             else:
                 self.send_json_error('Not found', 404)
 
@@ -428,14 +474,23 @@ class RequestHandler(JSONHandler):
         """Handle DELETE requests"""
         parsed = urlparse(self.path)
         path = parsed.path
+        query_params = parse_qs(parsed.query)
 
         try:
             if path.startswith('/api/applications/'):
                 app_id = path.split('/')[-1]
-                if service.delete_bewerbung(app_id):
-                    self.send_json_ok({'message': 'Deleted'})
+                # Check if permanent deletion is requested (requires confirmation)
+                if query_params.get('permanent') == ['true']:
+                    if service.permanently_delete_bewerbung(app_id):
+                        self.send_json_ok({'message': 'Permanently deleted'})
+                    else:
+                        self.send_json_error('Not found', 404)
                 else:
-                    self.send_json_error('Not found', 404)
+                    # Soft delete (mark as deleted)
+                    if service.delete_bewerbung(app_id):
+                        self.send_json_ok({'message': 'Deleted (recoverable)'})
+                    else:
+                        self.send_json_error('Not found', 404)
             else:
                 self.send_json_error('Not found', 404)
 
@@ -453,14 +508,17 @@ def run_server(port=8767):
     print(f"✅ Bewerbungs-Tracker Data Service running on http://127.0.0.1:{port}")
     print(f"📦 SQLite database: {DB_FILE}")
     print(f"📚 API Endpoints:")
-    print(f"   GET  /api/applications - List all applications")
+    print(f"   GET  /api/applications - List all applications (active)")
     print(f"   GET  /api/applications/:id - Get single application")
+    print(f"   GET  /api/applications/deleted - List deleted applications")
     print(f"   POST /api/applications - Create application")
     print(f"   PUT  /api/applications/:id - Update application")
-    print(f"   DELETE /api/applications/:id - Delete application")
+    print(f"   DELETE /api/applications/:id - Soft delete application")
+    print(f"   DELETE /api/applications/:id?permanent=true - Permanently delete")
+    print(f"   POST /api/applications/:id/recover - Recover deleted application")
     print(f"   GET  /api/settings - Get all settings")
     print(f"   PUT  /api/settings - Update settings")
-    print(f"   GET  /api/export - Export all data")
+    print(f"   GET  /api/export - Export data (excludes deleted)")
     print(f"   POST /api/import - Import data")
     print(f"   GET  /api/status - Service status")
     try:
