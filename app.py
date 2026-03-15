@@ -382,15 +382,27 @@ def status():
 # INITIALIZATION & STARTUP
 # ═══════════════════════════════════════════════════════
 
+# Initialize database on startup (works with gunicorn and app.run)
+@app.before_request
+def initialize_db():
+    """Initialize database on first request"""
+    if not hasattr(app, '_db_initialized'):
+        init_db()
+        app._db_initialized = True
+
+# Also initialize on startup for faster first request
+try:
+    init_db()
+    print(f"✅ Database initialized at startup")
+except Exception as e:
+    print(f"⚠️ Database initialization warning: {e}")
+
 if __name__ == '__main__':
     print(f"🚀 Bewerbungs-Tracker Web Server starting...")
     print(f"📦 Database: {DB_FILE}")
     print(f"🌐 Listening on: {HOST}:{PORT}")
     print(f"🔗 Open browser: http://localhost:{PORT}")
     print(f"📚 API available at: http://localhost:{PORT}/api/*")
-
-    # Initialize database
-    init_db()
 
     # Start server
     app.run(host=HOST, port=PORT, debug=False)
