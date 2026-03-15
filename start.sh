@@ -1,9 +1,13 @@
 #!/bin/bash
 
 # Bewerbungs-Tracker Start Script for macOS and Linux
-# Starts Web Server, IMAP Proxy, and Email Service
+# Starts Web Server, IMAP Proxy, Email Service, and Data Service
+# Automatically stops any previously running services first (clean restart)
 
 # Note: Don't use 'set -e' as it will exit on missing files even if services start
+
+# Get the directory where the script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "🚀 Bewerbungs-Tracker - Starting all services..."
 echo ""
@@ -61,27 +65,50 @@ check_port() {
     fi
 }
 
-# Function to kill existing processes on ports if needed
+# Function to kill existing processes on ports gracefully
 kill_existing_process() {
     local port=$1
     local name=$2
     if check_port $port; then
-        echo -e "${YELLOW}⚠️  Port $port is already in use ($name). Killing existing process...${NC}"
-        lsof -ti:$port | xargs kill -9 2>/dev/null || true
-        sleep 1
+        echo -e "${YELLOW}⚠️  Port $port is already in use ($name). Stopping...${NC}"
+        pids=$(lsof -ti:$port 2>/dev/null)
+        if [ -n "$pids" ]; then
+            # Try graceful shutdown first
+            kill -TERM $pids 2>/dev/null || true
+            sleep 1
+            # Force kill if still running
+            kill -9 $pids 2>/dev/null || true
+        fi
     fi
 }
 
-# Check if ports are available
+# Check if ports are available and stop existing services if needed
 echo -e "${BLUE}Checking port availability...${NC}"
 PORTS=(8080 8765 8766 8767)
 NAMES=("Web Server" "IMAP Proxy" "Email Service" "Data Service")
 
+CLEANUP_NEEDED=false
 for i in "${!PORTS[@]}"; do
     if check_port ${PORTS[$i]}; then
         echo -e "${YELLOW}⚠️  Port ${PORTS[$i]} (${NAMES[$i]}) is already in use${NC}"
+        CLEANUP_NEEDED=true
     fi
 done
+
+# If ports are in use, stop existing services for clean restart
+if [ "$CLEANUP_NEEDED" = true ]; then
+    echo ""
+    echo -e "${YELLOW}🔄 Stopping existing services for clean restart...${NC}"
+    echo ""
+    for i in "${!PORTS[@]}"; do
+        kill_existing_process ${PORTS[$i]} "${NAMES[$i]}"
+    done
+    echo ""
+    echo -e "${GREEN}✅ Old services stopped. Starting fresh...${NC}"
+    echo ""
+else
+    echo ""
+fi
 echo ""
 
 # Initialize PID variables
@@ -192,12 +219,15 @@ echo ""
 
 # Create a save PIDs for cleanup
 PIDS_TO_KILL="$WEB_PID $IMAP_PID $EMAIL_PID $DATA_PID"
-echo -e "${YELLOW}🛑 To stop all services, run:${NC}"
-echo "  kill $PIDS_TO_KILL"
+echo -e "${YELLOW}🛑 To stop all services:${NC}"
+echo "  • Use the stop script: ${BLUE}./stop.sh${NC}"
+echo "  • Or manually: ${BLUE}kill $PIDS_TO_KILL${NC}"
 echo ""
 echo -e "${BLUE}💡 Tips:${NC}"
 echo "  • Open http://localhost:8080 in your browser"
 echo "  • All services run in the background"
+echo "  • ./stop.sh cleanly stops all services"
+echo "  • ./start.sh automatically restarts existing services"
 echo "  • Check /tmp/*.log files if services don't work"
 echo "  • Run 'ps aux | grep python3' to see running processes"
 echo ""
