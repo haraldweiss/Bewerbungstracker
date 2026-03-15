@@ -19,10 +19,6 @@ COPY app.py .
 COPY index.html .
 COPY manifest.json .
 COPY service-worker.js .
-COPY start-server.sh .
-
-# Make startup script executable
-RUN chmod +x start-server.sh
 
 # Expose port
 EXPOSE 8080
@@ -31,5 +27,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status').read()" || exit 1
 
-# Run application with startup script (properly handles PORT env var)
-CMD ["./start-server.sh"]
+# Run application with proper PORT environment variable handling
+# Using shell form so $PORT is properly expanded at runtime
+CMD gunicorn --workers 2 --timeout 120 --bind 0.0.0.0:${PORT:-8080} app:app
