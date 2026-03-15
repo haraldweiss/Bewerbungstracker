@@ -51,6 +51,9 @@ Ein leistungsstarkes, datenschutzfreundliches Tool zur Verwaltung von Bewerbunge
 - **Suche & Filter** - Finde Bewerbungen nach Firma, Position oder Quelle
 - **Ghosting-Erkennung** - Markiert automatisch Bewerbungen ohne Rückmeldung nach X Tagen
 - **Mehrere Quellen** - Verfolge Bewerbungen aus Gmail, LinkedIn, Indeed, XING, Websites und manuell
+- **🗑️ Wiederherstellbare Löschungen** - ⭐ NEUE: Soft-Delete mit Wiederherstellungsmöglichkeit
+- **Gelöschte Einträge verwalten** - Separate View für gelöschte Bewerbungen mit One-Click Recovery
+- **Endgültige Löschung** - Option für permanente Löschung mit Doppel-Bestätigung
 
 #### 🌙 Benutzeroberfläche
 - **Dark/Light Mode** - Wechsle zwischen dunklem und hellem Theme
@@ -116,25 +119,41 @@ Ein leistungsstarkes, datenschutzfreundliches Tool zur Verwaltung von Bewerbunge
    cd Bewerbungstracker
    ```
 
-2. **Web Server starten**
+2. **Alle Services starten** (empfohlen - einfachste Methode)
    ```bash
-   python3 -m http.server 8080 --directory .
+   ./start.sh
    ```
-   Öffne dann `http://localhost:8080` in deinem Browser
+   Das Skript startet automatisch alle 4 Services (Web, IMAP, Email, Data)
 
-3. **IMAP-Proxy starten** (für Email-Integration & Monitoring)
+3. **Services manuell starten** (alternativ)
    ```bash
-   python3 imap_proxy.py
+   python3 -m http.server 8080 --directory .      # Web Server (Port 8080)
+   python3 imap_proxy.py                           # IMAP Proxy (Port 8765)
+   python3 email_service.py                        # Email Service (Port 8766)
+   python3 data_service.py                         # Data Service (Port 8767)
    ```
-   Der Proxy läuft auf `http://localhost:8765` (nur localhost aus Sicherheitsgründen)
 
-4. **Email-Service starten** (für SMTP-Versand & Email-Monitor) ⭐ NEU
-   ```bash
-   python3 email_service.py
-   ```
-   Der Service läuft auf `http://localhost:8766`
+4. **Browser öffnen**
+   Navigiere zu `http://localhost:8080`
 
-#### Mit Launch-Konfiguration (einfacher)
+#### Services verwalten
+
+**Alle Services starten** (mit automatischer Cleanup von alten Prozessen):
+```bash
+./start.sh
+```
+
+**Alle Services stoppen** (sauberes Shutdown):
+```bash
+./stop.sh
+```
+
+**Services neu starten**:
+```bash
+./start.sh  # Stoppt alte Services automatisch und startet neu
+```
+
+#### Mit Launch-Konfiguration (Claude Code)
 
 Wenn Claude Code installiert ist:
 ```bash
@@ -151,6 +170,32 @@ preview_start "Email Service"
 2. Fülle Firma, Position, Datum und weitere Details aus
 3. Füge den Job-Link ein
 4. Klicke **"💾 Speichern"**
+
+#### Wiederherstellbare Löschungen ⭐ NEU
+
+**Bewerbung löschen (Soft Delete):**
+1. Klicke das 🗑️ Symbol neben einer Bewerbung
+2. Bestätige die Löschung mit Checkbox
+3. Die Bewerbung wird in den Papierkorb verschoben (nicht endgültig gelöscht!)
+4. Du siehst die Meldung "✅ Gelöscht (Wiederherstellbar)"
+
+**Gelöschte Bewerbungen anzeigen:**
+1. Klicke im Menü auf **"🗑️ Gelöschte Einträge"**
+2. Alle gelöschten Bewerbungen werden mit Löschdatum angezeigt
+3. Du kannst sehen, wann jede Bewerbung gelöscht wurde
+
+**Bewerbung wiederherstellen:**
+1. Gehe zu **"🗑️ Gelöschte Einträge"**
+2. Klicke **"♻️ Wiederherstellen"** beim gewünschten Eintrag
+3. Die Bewerbung erscheint wieder in deiner normalen Liste
+4. Alle Daten sind erhalten!
+
+**Endgültig löschen (Optional):**
+1. Gehe zu **"🗑️ Gelöschte Einträge"**
+2. Klicke **"🗑️ Endgültig löschen"** (mit Doppel-Bestätigung)
+3. ⚠️ WARNUNG: Dies kann NICHT rückgängig gemacht werden!
+
+**Tipp:** Soft-Delete ist die sichere Standardlöschung. Du kannst Fehler leicht rückgängig machen. Nutze endgültige Löschung nur wenn du einen Eintrag wirklich komplett entfernen möchtest.
 
 #### Email-Monitoring aktivieren ⭐ NEU
 
