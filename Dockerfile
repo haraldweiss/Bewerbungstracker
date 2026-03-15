@@ -32,5 +32,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status').read()" || exit 1
 
 # Start gunicorn with proper PORT variable expansion
-# Use shell form to ensure environment variables are expanded by bash
-CMD /bin/bash -c 'gunicorn --workers 2 --timeout 120 --bind 0.0.0.0:${PORT:-8080} --access-logfile - --error-logfile - app:app'
+# Use double quotes to ensure bash expands ${PORT} environment variable
+CMD /bin/bash -c "gunicorn --workers 2 --timeout 120 --bind 0.0.0.0:\${PORT:-8080} --access-logfile - --error-logfile - app:app"
