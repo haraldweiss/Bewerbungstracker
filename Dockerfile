@@ -32,4 +32,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status').read()" || exit 1
 
 # Use entrypoint script for proper environment variable handling
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Shell form ensures bash is used and PORT variable is expanded
+ENTRYPOINT /app/entrypoint.sh
