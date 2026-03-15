@@ -19,7 +19,6 @@ COPY app.py .
 COPY index.html .
 COPY manifest.json .
 COPY service-worker.js .
-COPY style.css .
 
 # Expose port
 EXPOSE 8080
