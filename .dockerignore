@@ -1,0 +1,17 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+.DS_Store
+.env.local
+.venv
+venv
+node_modules
+start.sh
+stop.sh
+imap_proxy.py
+email_service.py
+data_service.py
+.claude
+*.md
+.pytest_cache

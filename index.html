@@ -2,8 +2,15 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>📋 Bewerbungs-Tracker v3</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="description" content="📋 Track your job applications with ease. Monitor status, dates, interviews, and automate email notifications.">
+    <meta name="theme-color" content="#4CAF50">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Bewerbungen">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%234CAF50' width='180' height='180' rx='40'/><text x='90' y='90' font-size='100' fill='white' text-anchor='middle' dominant-baseline='middle'>📋</text></svg>">
+    <title>📋 Bewerbungs-Tracker v4</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <!-- Encryption: TweetNaCl.js for secure password encryption -->
@@ -1319,14 +1326,14 @@ function checkIfEmailSummaryShouldBeSent() {
 async function loadFromStorage() {
     try {
         // Try to load from Data Service (SQLite)
-        const response = await fetch('http://localhost:8767/api/applications');
+        const response = await fetch('/api/applications');
         if (response.ok) {
             const data = await response.json();
             state.bewerbungen = data.applications || [];
         }
 
         // Load settings from Data Service
-        const settingsResponse = await fetch('http://localhost:8767/api/settings');
+        const settingsResponse = await fetch('/api/settings');
         if (settingsResponse.ok) {
             const settingsData = await settingsResponse.json();
             state.settings = { ...state.settings, ...settingsData.settings };
@@ -1487,7 +1494,7 @@ function downloadConfigBackups() {
 async function saveToStorage() {
     try {
         // Try to save to Data Service (SQLite)
-        const response = await fetch('http://localhost:8767/api/applications');
+        const response = await fetch('/api/applications');
 
         if (response.ok) {
             const currentData = await response.json();
@@ -1498,14 +1505,14 @@ async function saveToStorage() {
                 const existing = currentApps.find(a => a.id === app.id);
                 if (existing) {
                     // Update existing
-                    await fetch(`http://localhost:8767/api/applications/${app.id}`, {
+                    await fetch(`/api/applications/${app.id}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(app)
                     });
                 } else {
                     // Create new
-                    await fetch('http://localhost:8767/api/applications', {
+                    await fetch('/api/applications', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(app)
@@ -1514,7 +1521,7 @@ async function saveToStorage() {
             }
 
             // Save settings
-            await fetch('http://localhost:8767/api/settings', {
+            await fetch('/api/settings', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(state.settings)
@@ -1937,7 +1944,7 @@ async function deleteBewerbung(id) {
 
     try {
         // Delete from database
-        const response = await fetch(`http://localhost:8767/api/applications/${id}`, {
+        const response = await fetch(`/api/applications/${id}`, {
             method: 'DELETE'
         });
 
@@ -1961,7 +1968,7 @@ async function deleteBewerbung(id) {
 ═══════════════════════════════════════════════════════ */
 async function loadDeletedEntries() {
     try {
-        const response = await fetch('http://localhost:8767/api/applications/deleted');
+        const response = await fetch('/api/applications/deleted');
         if (!response.ok) throw new Error(`API error: ${response.statusText}`);
 
         const data = await response.json();
@@ -2011,7 +2018,7 @@ async function recoverBewerbung(id) {
     if (!confirm('Bewerbung wirklich wiederherstellen?')) return;
 
     try {
-        const response = await fetch(`http://localhost:8767/api/applications/${id}/recover`, {
+        const response = await fetch(`/api/applications/${id}/recover`, {
             method: 'POST'
         });
 
@@ -2032,7 +2039,7 @@ async function permanentlyDeleteBewerbung(id) {
     if (!confirm('⚠️ WARNUNG: Das kann nicht rückgängig gemacht werden!\n\nBewerbung wirklich endgültig löschen?')) return;
 
     try {
-        const response = await fetch(`http://localhost:8767/api/applications/${id}?permanent=true`, {
+        const response = await fetch(`/api/applications/${id}?permanent=true`, {
             method: 'DELETE'
         });
 
@@ -3902,6 +3909,62 @@ function importSingleImapEmail(idx) {
     showToast('Importiert: ' + parsed.firma, 'success');
     renderImapResults();
 }
+
+/* ═══════════════════════════════════════════════════════
+   SERVICE WORKER & PWA REGISTRATION
+═══════════════════════════════════════════════════════ */
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+            .then(registration => {
+                console.log('✅ Service Worker registered:', registration);
+                // Check for updates periodically
+                setInterval(() => {
+                    registration.update();
+                }, 60000); // Check every minute
+            })
+            .catch(error => {
+                console.warn('⚠️ Service Worker registration failed:', error);
+            });
+    });
+
+    // Handle service worker updates
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+    });
+}
+
+// Prompt to install PWA
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    // Show install button/prompt if needed
+    console.log('📱 PWA install prompt available');
+});
+
+// Handle PWA installation
+function installPWA() {
+    if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+            if (choiceResult.outcome === 'accepted') {
+                console.log('✅ PWA installed');
+                deferredPrompt = null;
+                showToast('✅ App installed! Jetzt können Sie offline arbeiten.', 'success');
+            }
+        });
+    }
+}
+
+// Notify user when app is updated
+window.addEventListener('appinstalled', () => {
+    console.log('✅ PWA installation complete');
+    showToast('✅ App erfolgreich installiert!', 'success');
+});
 
 /* ═══ START ═══ */
 document.addEventListener('DOMContentLoaded', () => {
