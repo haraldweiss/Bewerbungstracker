@@ -720,7 +720,11 @@
         <div style="margin-bottom:1rem;">
             <label style="display:block;margin-bottom:0.5rem;font-weight:600;">Oder CV Text einfügen:</label>
             <textarea id="cvTextInput" placeholder="Dein CV-Text hier..." style="width:100%;min-height:300px;padding:1rem;border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:0.9rem;"></textarea>
-            <button class="btn btn-success btn-sm" onclick="saveCV()" style="margin-top:0.5rem;">💾 Speichern</button>
+            <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <button class="btn btn-success btn-sm" onclick="saveCV()">💾 Speichern</button>
+                <button class="btn btn-secondary btn-sm" onclick="cleanupCVText()">🧹 Formatieren</button>
+                <button class="btn btn-secondary btn-sm" onclick="showCVStatistics()">📊 Statistik</button>
+            </div>
         </div>
         <div style="padding:1rem;background:var(--bg-secondary);border-radius:4px;border-left:4px solid var(--success);">
             <strong>✅ CV Status:</strong> <span id="cvStatus" style="color:var(--muted);">Kein CV gespeichert</span>
@@ -4144,15 +4148,81 @@ function uploadCV() {
     }
 }
 
+function cleanCVText(text) {
+    // Remove multiple spaces and normalize whitespace
+    text = text.replace(/[ \t]+/g, ' ');
+    // Remove multiple line breaks
+    text = text.replace(/\n\n\n+/g, '\n\n');
+    // Remove leading/trailing whitespace from each line
+    text = text.split('\n').map(line => line.trim()).join('\n');
+    // Remove trailing spaces at end
+    text = text.trim();
+    return text;
+}
+
+function formatCVForAI(text) {
+    // Format CV text optimally for AI processing
+    let formatted = cleanCVText(text);
+    // Add section markers for better parsing
+    const sections = {
+        'contact': ['Email', 'Phone', 'LinkedIn', 'Kontakt'],
+        'profile': ['Profile', 'Profil', 'Summary', 'Zusammenfassung'],
+        'experience': ['Experience', 'Erfahrung', 'Work Experience', 'Berufserfahrung', 'Employment'],
+        'skills': ['Skills', 'Fähigkeiten', 'Competencies', 'Kompetenzen', 'Technical Skills'],
+        'education': ['Education', 'Ausbildung', 'Qualifications', 'Qualifikationen'],
+        'certifications': ['Certifications', 'Zertifikate', 'Certificates'],
+        'languages': ['Languages', 'Sprachen']
+    };
+    return formatted;
+}
+
+function getCVStats(text) {
+    const words = text.trim().split(/\s+/).length;
+    const chars = text.length;
+    // Rough token estimation (1 token ≈ 4 chars)
+    const estimatedTokens = Math.ceil(chars / 4);
+    return { words, chars, estimatedTokens };
+}
+
+function validateCVSize(text) {
+    const stats = getCVStats(text);
+    // Max reasonable size for most AI APIs
+    const MAX_CHARS = 50000; // ~12,500 tokens
+    const MAX_WORDS = 10000;
+    
+    const warnings = [];
+    if (stats.chars > MAX_CHARS) {
+        warnings.push(`⚠️ CV zu lang (${stats.chars} Zeichen, max: ${MAX_CHARS})`);
+    }
+    if (stats.words > MAX_WORDS) {
+        warnings.push(`⚠️ Zu viele Wörter (${stats.words}, max: ${MAX_WORDS})`);
+    }
+    return { valid: warnings.length === 0, warnings, stats };
+}
+
 function saveCV() {
-    const text = document.getElementById('cvTextInput').value.trim();
+    let text = document.getElementById('cvTextInput').value.trim();
     if (!text) {
         showToast('⚠️ CV-Text ist leer', 'warning');
         return;
     }
+    
+    // Clean CV text
+    text = cleanCVText(text);
+    
+    // Validate size
+    const validation = validateCVSize(text);
+    if (!validation.valid) {
+        validation.warnings.forEach(w => showToast(w, 'warning'));
+        if (!confirm('CV überschreitet empfohlene Größe. Fortfahren?')) return;
+    }
+    
+    const stats = validation.stats;
     cvData = { text, fileName: 'manual_cv.txt', uploadDate: new Date().toISOString() };
     localStorage.setItem('cvData', JSON.stringify(cvData));
-    showToast('✅ CV gespeichert', 'success');
+    
+    showToast(`✅ CV gespeichert (${stats.words} Wörter, ${stats.estimatedTokens} Tokens)`, 'success');
+    document.getElementById('cvTextInput').value = text;
     loadCVStatus();
 }
 
@@ -4161,9 +4231,70 @@ function loadCVStatus() {
     if (stored) {
         cvData = JSON.parse(stored);
         const date = new Date(cvData.uploadDate).toLocaleDateString('de-DE');
-        document.getElementById('cvStatus').innerHTML = `✅ Gespeichert (${cvData.fileName}) - ${date}`;
+        const stats = getCVStats(cvData.text);
+        document.getElementById('cvStatus').innerHTML = `✅ Gespeichert (${cvData.fileName}) - ${date}<br><small>📊 ${stats.words} Wörter | ${stats.chars} Zeichen | ~${stats.estimatedTokens} Tokens</small>`;
         document.getElementById('cvTextInput').value = cvData.text;
     }
+}
+
+function cleanupCVText() {
+    const textarea = document.getElementById('cvTextInput');
+    const original = textarea.value;
+    if (!original.trim()) {
+        showToast('⚠️ CV-Text ist leer', 'warning');
+        return;
+    }
+    
+    const beforeStats = getCVStats(original);
+    const cleaned = cleanCVText(original);
+    const afterStats = getCVStats(cleaned);
+    
+    textarea.value = cleaned;
+    
+    showToast(`✅ Formatiert: ${beforeStats.chars} → ${afterStats.chars} Zeichen (-${beforeStats.chars - afterStats.chars})`, 'success');
+}
+
+function showCVStatistics() {
+    const text = document.getElementById('cvTextInput').value;
+    if (!text.trim()) {
+        showToast('⚠️ CV-Text ist leer', 'warning');
+        return;
+    }
+    
+    const stats = getCVStats(text);
+    const validation = validateCVSize(text);
+    
+    let msg = `📊 CV STATISTIK\n\n`;
+    msg += `Wörter: ${stats.words}\n`;
+    msg += `Zeichen: ${stats.chars}\n`;
+    msg += `Geschätzte Tokens: ${stats.estimatedTokens}\n\n`;
+    msg += `LIMITS:\n`;
+    msg += `Max Zeichen: 50.000 (${((stats.chars/50000)*100).toFixed(1)}% genutzt)\n`;
+    msg += `Max Wörter: 10.000 (${((stats.words/10000)*100).toFixed(1)}% genutzt)\n`;
+    msg += `Max Tokens: 12.500 (${((stats.estimatedTokens/12500)*100).toFixed(1)}% genutzt)\n\n`;
+    
+    if (validation.valid) {
+        msg += `✅ BEREIT für AI-Vergleich`;
+    } else {
+        msg += `⚠️ WARNUNGEN:\n` + validation.warnings.map(w => w.replace(/^.+?: /, '')).join('\n');
+    }
+    
+    alert(msg);
+}
+
+function validatePromptSize(prompt) {
+    const stats = getCVStats(prompt);
+    // Token limit validation
+    const SAFE_LIMIT = 30000; // Safe for most APIs (Claude, GPT-4, Gemini)
+    const WARNING_LIMIT = 20000;
+    
+    const warnings = [];
+    if (stats.estimatedTokens > SAFE_LIMIT) {
+        warnings.push(`❌ Prompt zu groß (${stats.estimatedTokens} Tokens, max: ${SAFE_LIMIT})`);
+    } else if (stats.estimatedTokens > WARNING_LIMIT) {
+        warnings.push(`⚠️ Prompt groß (${stats.estimatedTokens} Tokens)`);
+    }
+    return { valid: stats.estimatedTokens <= SAFE_LIMIT, warnings, stats };
 }
 
 function generateComparisonPrompt() {
@@ -4176,29 +4307,51 @@ function generateComparisonPrompt() {
         showToast('⚠️ Bitte gib eine Stellenanzeige ein', 'warning');
         return;
     }
+    
+    // Clean and format CV for better AI processing
+    const cleanCV = formatCVForAI(cvData.text);
+    
     const prompt = `Du bist ein erfahrener Recruiter und Karriereberater. Analysiere folgendes CV im Vergleich zur Stellenanzeige:
 
-═══ CV ═══
-${cvData.text}
+═══ KANDIDATEN-CV ═══
+${cleanCV}
 
 ═══ STELLENANZEIGE ═══
 ${jobDesc}
 
-═══ ANALYSE ═══
-Bitte analysiere:
-1. **Skill-Match**: Welche Fähigkeiten aus dem CV passen zur Stelle? (Prozentsatz)
-2. **Erfahrung**: Passt die Berufserfahrung zur Anforderung?
-3. **Lücken**: Welche Fähigkeiten/Erfahrung fehlen?
-4. **Stärken**: Was sind die Top 3 Stärken dieses Kandidaten für diese Position?
-5. **Schwächen**: Welche Bedenken könnten Recruiter haben?
-6. **Empfehlungen**: Wie könnte der Kandidat sein CV anpassen?
-7. **Erfolgswahrscheinlichkeit**: Schätze die Chance ein (niedrig/mittel/hoch)
+═══ ANALYSE-ANFORDERUNGEN ═══
+Bitte analysiere STRUKTURIERT:
 
-Sei konkret, konstruktiv und berücksichtige auch Soft Skills.`;
+1. **Skill-Match Score**: Prozentsatz der geforderten Skills, die vorhanden sind (0-100%)
+2. **Erfahrung Alignment**: Passt die Berufserfahrung zur Anforderung? (ja/teilweise/nein + Erklärung)
+3. **Skill-Lücken**: Welche kritischen Fähigkeiten/Erfahrung fehlen?
+4. **Top 3 Stärken**: Beste Qualifikationen für diese Position mit konkreten Gründen
+5. **Potenzielle Bedenken**: Was könnten Recruiter kritisch sehen?
+6. **Konkrete Empfehlungen**: 3-5 spezifische Verbesserungen für das CV
+7. **Erfolgswahrscheinlichkeit**: Einschätzung (niedrig/mittel/hoch) mit Begründung
+8. **Gehaltsbereich**: Geschätzter Bereich basierend auf Erfahrung
+
+Nutze konkrete Beispiele aus CV und Anzeige. Sei konstruktiv und fair.`;
+    
+    // Validate prompt size
+    const validation = validatePromptSize(prompt);
+    if (!validation.valid) {
+        validation.warnings.forEach(w => showToast(w, 'error'));
+        showToast('Bitte kürze CV oder Stellenanzeige', 'warning');
+        return;
+    }
+    if (validation.warnings.length > 0) {
+        validation.warnings.forEach(w => showToast(w, 'warning'));
+    }
     
     document.getElementById('generatedPrompt').value = prompt;
+    const stats = getCVStats(prompt);
+    const infoHTML = `<div style="margin-bottom:0.5rem;font-size:0.85rem;color:var(--text-muted);">
+        📊 ${stats.words} Wörter | ${stats.chars} Zeichen | ~${stats.estimatedTokens} Tokens
+    </div>`;
+    document.querySelector('[id="promptOutput"]').insertAdjacentHTML('afterbegin', infoHTML);
     document.getElementById('promptOutput').style.display = 'block';
-    showToast('✅ Prompt generiert', 'success');
+    showToast('✅ Prompt generiert und validiert', 'success');
     renderAIPlatforms();
 }
 
@@ -4395,8 +4548,39 @@ function toggleAPIKeyVisibility() {
     field.type = field.type === 'password' ? 'text' : 'password';
 }
 
+function validateAPIRequest(prompt, apiName) {
+    // Validate request size for different API providers
+    const apiLimits = {
+        'claude': 100000, // Claude 3 context window
+        'openai': 128000, // GPT-4 context
+        'gemini': 30000, // Gemini API safe limit
+        'default': 20000 // Safe default
+    };
+    
+    const stats = getCVStats(prompt);
+    const maxTokens = apiLimits[apiName.toLowerCase()] || apiLimits['default'];
+    
+    if (stats.estimatedTokens > maxTokens) {
+        return { valid: false, error: `Request überschreitet Limit (${stats.estimatedTokens}/${maxTokens} Tokens)` };
+    }
+    
+    // Check payload size (5MB limit for most APIs)
+    const payloadSize = JSON.stringify({ prompt }).length;
+    const MAX_PAYLOAD = 5242880; // 5MB
+    if (payloadSize > MAX_PAYLOAD) {
+        return { valid: false, error: `Payload zu groß (${(payloadSize/1024/1024).toFixed(2)}MB)` };
+    }
+    
+    return { valid: true, stats };
+}
+
 function sendToAPI(aiId) {
     const prompt = document.getElementById('generatedPrompt').value;
+    if (!prompt) {
+        showToast('⚠️ Kein Prompt generiert', 'warning');
+        return;
+    }
+    
     const ai = customAIPlatforms.find(a => a.id === aiId);
     if (!ai) {
         showToast('❌ KI-Plattform nicht gefunden', 'error');
@@ -4406,16 +4590,47 @@ function sendToAPI(aiId) {
         showToast('❌ Kein API Key gespeichert', 'error');
         return;
     }
-    showToast('⚡ Sende zu ' + ai.name + '...', 'info');
+    
+    // Validate request size
+    const validation = validateAPIRequest(prompt, ai.name);
+    if (!validation.valid) {
+        showToast('❌ ' + validation.error, 'error');
+        return;
+    }
+    
+    showToast(`⚡ Sende zu ${ai.name} (${validation.stats.estimatedTokens} Tokens)...`, 'info');
+    
+    // Timeout after 60 seconds
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    
     fetch(ai.url, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${ai.apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
-    }).then(r => r.json()).then(data => {
+        headers: { 
+            'Authorization': `Bearer ${ai.apiKey}`, 
+            'Content-Type': 'application/json',
+            'User-Agent': 'Bewerbungs-Tracker/4.4'
+        },
+        body: JSON.stringify({ prompt }),
+        signal: controller.signal
+    })
+    .then(r => {
+        clearTimeout(timeoutId);
+        if (!r.ok) throw new Error(`API Error ${r.status}: ${r.statusText}`);
+        return r.json();
+    })
+    .then(data => {
         document.getElementById('resultText').value = (data.response || data.content || JSON.stringify(data, null, 2));
-        showToast('✅ Antwort erhalten', 'success');
-    }).catch(e => {
-        showToast('❌ Fehler: ' + e.message, 'error');
+        showToast(`✅ Antwort erhalten von ${ai.name}`, 'success');
+    })
+    .catch(e => {
+        clearTimeout(timeoutId);
+        if (e.name === 'AbortError') {
+            showToast('❌ Request Timeout (60s)', 'error');
+        } else {
+            showToast('❌ Fehler: ' + e.message, 'error');
+        }
+        console.error('API Error:', e);
     });
 }
 
