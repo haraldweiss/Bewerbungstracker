@@ -4414,28 +4414,72 @@ Nutze konkrete Beispiele aus CV und Anzeige. Sei konstruktiv und fair.`;
 
 function renderAIPlatforms() {
     const container = document.getElementById('aiPlatformsList');
-    container.innerHTML = '';
-    const allPlatforms = [...BUILTIN_AI_PLATFORMS, ...customAIPlatforms];
-    allPlatforms.forEach(ai => {
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.style.padding = '1rem';
-        card.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-                <span style="font-weight:600;">${ai.emoji} ${ai.name}</span>
-                <span style="font-size:0.8rem;color:var(--text-muted);">${ai.type === 'web' ? '🌐' : '⚡'}</span>
-            </div>
-            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                ${ai.type === 'web' ? `
-                    <button class="btn btn-secondary btn-sm" onclick="openAIWithPrompt('${ai.url}')">🚀 Öffnen</button>
-                ` : `
-                    <button class="btn btn-secondary btn-sm" onclick="sendToAPI('${ai.id}')">⚡ Senden</button>
-                `}
-                <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('generatedPrompt')">📋 Kopieren</button>
-            </div>
-        `;
-        container.appendChild(card);
-    });
+    let html = '';
+    
+    // Built-in platforms
+    if (BUILTIN_AI_PLATFORMS.length > 0) {
+        html += '<div style="margin-bottom:1rem;"><div style="font-weight:600;font-size:0.95rem;margin-bottom:0.5rem;padding:0.5rem;background:var(--bg-secondary);border-radius:4px;">🌐 Web-basierte Plattformen (manuell)</div>';
+        BUILTIN_AI_PLATFORMS.forEach(ai => {
+            html += `
+                <div class="card" style="padding:0.75rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;">
+                    <div style="flex:1;">
+                        <div style="font-weight:600;margin-bottom:0.25rem;">${ai.emoji} ${ai.name}</div>
+                        <div style="font-size:0.8rem;color:var(--text-muted);">Öffne in neuem Tab und füge Prompt ein</div>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                        <button class="btn btn-primary btn-sm" onclick="openAIWithPrompt('${ai.url}')">🚀 Öffnen</button>
+                        <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('generatedPrompt')">📋 Kopieren</button>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+    }
+    
+    // Custom API platforms
+    const apiPlatforms = customAIPlatforms.filter(ai => ai.type === 'api');
+    if (apiPlatforms.length > 0) {
+        html += '<div style="margin-bottom:1rem;"><div style="font-weight:600;font-size:0.95rem;margin-bottom:0.5rem;padding:0.5rem;background:var(--bg-secondary);border-radius:4px;">⚡ API-basierte Plattformen (automatisch)</div>';
+        apiPlatforms.forEach(ai => {
+            html += `
+                <div class="card" style="padding:0.75rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;">
+                    <div style="flex:1;">
+                        <div style="font-weight:600;margin-bottom:0.25rem;">${ai.emoji} ${ai.name}</div>
+                        <div style="font-size:0.8rem;color:var(--text-muted);">${ai.description || 'Benutzerdefinierte API'}</div>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="sendToAPI('${ai.id}')">⚡ Senden</button>
+                </div>
+            `;
+        });
+        html += '</div>';
+    }
+    
+    // Custom Web platforms
+    const webPlatforms = customAIPlatforms.filter(ai => ai.type === 'web');
+    if (webPlatforms.length > 0) {
+        html += '<div><div style="font-weight:600;font-size:0.95rem;margin-bottom:0.5rem;padding:0.5rem;background:var(--bg-secondary);border-radius:4px;">🔧 Custom Web-Plattformen</div>';
+        webPlatforms.forEach(ai => {
+            html += `
+                <div class="card" style="padding:0.75rem;margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;">
+                    <div style="flex:1;">
+                        <div style="font-weight:600;margin-bottom:0.25rem;">${ai.emoji} ${ai.name}</div>
+                        <div style="font-size:0.8rem;color:var(--text-muted);">${ai.description || 'Benutzerdefinierte Plattform'}</div>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                        <button class="btn btn-secondary btn-sm" onclick="openAIWithPrompt('${ai.url}')">🚀 Öffnen</button>
+                        <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('generatedPrompt')">📋 Kopieren</button>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+    }
+    
+    if (!BUILTIN_AI_PLATFORMS.length && customAIPlatforms.length === 0) {
+        html = '<p style="color:var(--text-muted);text-align:center;padding:1rem;">Keine KI-Plattformen konfiguriert</p>';
+    }
+    
+    container.innerHTML = html;
 }
 
 function openAIWithPrompt(url) {
@@ -4571,25 +4615,66 @@ function addCustomAI() {
 function loadCustomAIPlatforms() {
     customAIPlatforms = JSON.parse(localStorage.getItem('customAIPlatforms') || '[]');
     const container = document.getElementById('customAIList');
-    if (customAIPlatforms.length === 0) {
-        container.innerHTML = '<p style="color:var(--text-muted);">Keine benutzerdefinierten Plattformen</p>';
-        return;
-    }
-    container.innerHTML = customAIPlatforms.map(ai => `
-        <div class="card" style="padding:1rem;">
-            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.5rem;">
-                <div>
-                    <div style="font-weight:600;margin-bottom:0.25rem;">${ai.emoji} ${escapeHtml(ai.name)}</div>
-                    <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.25rem;">${escapeHtml(ai.description || 'Keine Beschreibung')}</div>
-                    <div style="font-size:0.8rem;color:var(--text-muted);word-break:break-all;">${escapeHtml(ai.url)}</div>
+    
+    let html = '';
+    
+    // Show built-in platforms (read-only)
+    html += '<div style="margin-bottom:1.5rem;"><div style="font-weight:600;margin-bottom:0.75rem;padding:0.5rem;background:var(--bg-secondary);border-radius:4px;">🌐 Eingebaute Plattformen (immer verfügbar)</div>';
+    html += BUILTIN_AI_PLATFORMS.map(ai => `
+        <div class="card" style="padding:1rem;margin-bottom:0.5rem;">
+            <div style="display:flex;justify-content:space-between;align-items:start;">
+                <div style="flex:1;">
+                    <div style="font-weight:600;margin-bottom:0.25rem;">${ai.emoji} ${ai.name}</div>
+                    <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.25rem;">Webbasiert (manuell öffnen)</div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);word-break:break-all;"><a href="${ai.url}" target="_blank" style="color:var(--primary);">${ai.url}</a></div>
                 </div>
-                <div style="display:flex;gap:0.25rem;">
-                    <button class="btn btn-secondary btn-sm" onclick="editCustomAI('${ai.id}')">✏️</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteCustomAI('${ai.id}')">🗑️</button>
-                </div>
+                <span style="font-size:0.75rem;background:var(--success);color:white;padding:0.25rem 0.5rem;border-radius:3px;margin-left:0.5rem;">Standard</span>
             </div>
         </div>
     `).join('');
+    html += '</div>';
+    
+    // Show custom platforms
+    html += '<div><div style="font-weight:600;margin-bottom:0.75rem;padding:0.5rem;background:var(--bg-secondary);border-radius:4px;">⚙️ Benutzerdefinierte Plattformen</div>';
+    
+    if (customAIPlatforms.length === 0) {
+        html += '<p style="color:var(--text-muted);padding:1rem;text-align:center;">Keine benutzerdefinierten Plattformen. Füge eine über das Formular hinzu!</p>';
+    } else {
+        html += customAIPlatforms.map(ai => `
+            <div class="card" style="padding:1rem;margin-bottom:0.5rem;">
+                <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.5rem;">
+                    <div style="flex:1;">
+                        <div style="font-weight:600;margin-bottom:0.25rem;">${ai.emoji} ${escapeHtml(ai.name)}</div>
+                        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.25rem;">${ai.type === 'web' ? '🌐 Webbasiert' : '⚡ API-basiert'} - ${escapeHtml(ai.description || 'Keine Beschreibung')}</div>
+                        <div style="font-size:0.8rem;color:var(--text-muted);word-break:break-all;">${escapeHtml(ai.url)}</div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;padding-top:0.5rem;border-top:1px solid var(--border);">
+                    <button class="btn btn-secondary btn-sm" onclick="viewCustomAI('${ai.id}')">👁️ Ansehen</button>
+                    <button class="btn btn-secondary btn-sm" onclick="editCustomAI('${ai.id}')">✏️ Bearbeiten</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteCustomAI('${ai.id}')">🗑️ Löschen</button>
+                </div>
+            </div>
+        `).join('');
+    }
+    html += '</div>';
+    
+    container.innerHTML = html;
+}
+
+function viewCustomAI(id) {
+    const ai = customAIPlatforms.find(a => a.id === id);
+    if (!ai) return;
+    
+    const info = `KI-Plattform Informationen
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${ai.emoji} Name: ${ai.name}
+🔗 URL/Endpoint: ${ai.url}
+📝 Typ: ${ai.type === 'web' ? '🌐 Webbasiert' : '⚡ API-basiert'}
+📄 Beschreibung: ${ai.description || '(keine)'}
+🔑 API Key: ${ai.apiKey ? '✅ Gespeichert' : '❌ Nicht gespeichert'}`;
+    
+    alert(info);
 }
 
 function deleteCustomAI(id) {
