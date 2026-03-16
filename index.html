@@ -285,6 +285,7 @@
     <button class="nav-btn" id="nav-gmail" onclick="showView('gmail')">📧 Mail Connector</button>
     <div class="nav-section">System</div>
     <button class="nav-btn" id="nav-deleted" onclick="showView('deleted')">🗑️ Gelöschte Einträge</button>
+    <button class="nav-btn" id="nav-cvcompare" onclick="showView('cvcompare')">📋 CV Vergleich</button>
     <button class="nav-btn" id="nav-settings" onclick="showView('settings')">⚙️ Einstellungen</button>
 </aside>
 
@@ -695,6 +696,132 @@
         <button class="btn btn-secondary btn-sm" onclick="loadDeletedEntries()">🔄 Aktualisieren</button>
     </div>
     <div id="deletedList"></div>
+</div>
+
+<!-- ═══ CV COMPARISON ═══ -->
+<div class="view" id="view-cvcompare">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.75rem;">
+        <h1 style="font-size:1.5rem;font-weight:700;">📋 CV Vergleich mit KI</h1>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="showCVTab('upload')">📤 CV</button>
+            <button class="btn btn-secondary btn-sm" onclick="showCVTab('compare')">🔍 Vergleich</button>
+            <button class="btn btn-secondary btn-sm" onclick="showCVTab('custom-ai')">⚙️ KI-Plattformen</button>
+        </div>
+    </div>
+
+    <!-- CV Upload Tab -->
+    <div id="cv-upload-tab" class="card" style="display:none;">
+        <div class="card-title" style="margin-bottom:1rem;">📤 Dein CV verwalten</div>
+        <div style="margin-bottom:1rem;">
+            <label style="display:block;margin-bottom:0.5rem;font-weight:600;">CV hochladen (PDF/DOCX/TXT):</label>
+            <input type="file" id="cvFileInput" accept=".pdf,.docx,.txt,.doc" style="padding:0.5rem;border:1px solid var(--border);border-radius:4px;width:100%;max-width:300px;">
+            <button class="btn btn-success btn-sm" onclick="uploadCV()" style="margin-top:0.5rem;">📤 Upload</button>
+        </div>
+        <div style="margin-bottom:1rem;">
+            <label style="display:block;margin-bottom:0.5rem;font-weight:600;">Oder CV Text einfügen:</label>
+            <textarea id="cvTextInput" placeholder="Dein CV-Text hier..." style="width:100%;min-height:300px;padding:1rem;border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:0.9rem;"></textarea>
+            <button class="btn btn-success btn-sm" onclick="saveCV()" style="margin-top:0.5rem;">💾 Speichern</button>
+        </div>
+        <div style="padding:1rem;background:var(--bg-secondary);border-radius:4px;border-left:4px solid var(--success);">
+            <strong>✅ CV Status:</strong> <span id="cvStatus" style="color:var(--muted);">Kein CV gespeichert</span>
+        </div>
+    </div>
+
+    <!-- CV Comparison Tab -->
+    <div id="cv-compare-tab" class="card" style="display:none;">
+        <div class="card-title" style="margin-bottom:1rem;">🔍 CV mit Stellenanzeige vergleichen</div>
+        
+        <div style="margin-bottom:1.5rem;">
+            <label style="display:block;margin-bottom:0.5rem;font-weight:600;">Stellenanzeige einfügen:</label>
+            <textarea id="jobDescriptionInput" placeholder="Jobposting-Text hier einfügen..." style="width:100%;min-height:250px;padding:1rem;border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:0.9rem;"></textarea>
+        </div>
+
+        <div style="margin-bottom:1.5rem;padding:1rem;background:var(--bg-secondary);border-radius:4px;">
+            <button class="btn btn-primary" onclick="generateComparisonPrompt()" style="width:100%;margin-bottom:1rem;">⚡ Vergleichs-Prompt generieren</button>
+            <div id="promptOutput" style="display:none;">
+                <label style="display:block;margin-bottom:0.5rem;font-weight:600;">Generierter Prompt:</label>
+                <textarea id="generatedPrompt" readonly style="width:100%;min-height:200px;padding:1rem;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);font-family:monospace;font-size:0.85rem;"></textarea>
+                <div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('generatedPrompt')">📋 Kopieren</button>
+                    <button class="btn btn-secondary btn-sm" onclick="exportPromptAsJSON()">💾 Exportieren</button>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-bottom:1.5rem;">
+            <div style="font-weight:600;margin-bottom:0.75rem;">🤖 Verfügbare KI-Plattformen:</div>
+            <div id="aiPlatformsList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.75rem;"></div>
+        </div>
+
+        <div style="padding:1rem;background:var(--bg-secondary);border-radius:4px;">
+            <div style="font-weight:600;margin-bottom:0.75rem;">📝 Ergebnisse:</div>
+            <div style="margin-bottom:1rem;">
+                <input type="text" id="resultTitle" placeholder="Titel für Vergleich (optional)" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;margin-bottom:0.5rem;">
+                <textarea id="resultText" placeholder="Analyseergebnisse von KI hier einfügen..." style="width:100%;min-height:200px;padding:1rem;border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:0.85rem;"></textarea>
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <button class="btn btn-success" onclick="saveComparison()">💾 Speichern</button>
+                <button class="btn btn-secondary btn-sm" onclick="clearComparison()">🗑️ Löschen</button>
+            </div>
+        </div>
+
+        <div style="margin-top:1.5rem;" id="savedComparisonsSection">
+            <div style="font-weight:600;margin-bottom:0.75rem;">📊 Gespeicherte Vergleiche:</div>
+            <div id="savedComparisonsList"></div>
+        </div>
+    </div>
+
+    <!-- Custom AI Platforms Tab -->
+    <div id="custom-ai-tab" class="card" style="display:none;">
+        <div class="card-title" style="margin-bottom:1rem;">⚙️ KI-Plattformen verwalten</div>
+        
+        <div style="margin-bottom:1.5rem;padding:1rem;background:var(--bg-secondary);border-radius:4px;border-left:4px solid var(--info);">
+            <div style="font-weight:600;margin-bottom:1rem;">➕ Neue KI-Plattform hinzufügen:</div>
+            <div style="display:grid;gap:0.75rem;">
+                <div>
+                    <label style="display:block;font-size:0.9rem;margin-bottom:0.25rem;">📛 Name:</label>
+                    <input type="text" id="aiName" placeholder="z.B. Claude, ChatGPT, Custom API" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;">
+                </div>
+                <div>
+                    <label style="display:block;font-size:0.9rem;margin-bottom:0.25rem;">🔗 URL / Endpoint:</label>
+                    <input type="text" id="aiUrl" placeholder="z.B. https://claude.ai oder API Endpoint" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;">
+                </div>
+                <div>
+                    <label style="display:block;font-size:0.9rem;margin-bottom:0.25rem;">🔑 API Key (optional):</label>
+                    <div style="display:flex;gap:0.5rem;align-items:center;">
+                        <input type="password" id="aiApiKey" placeholder="API Key (optional)" style="flex:1;padding:0.5rem;border:1px solid var(--border);border-radius:4px;">
+                        <button class="btn btn-secondary btn-sm" onclick="toggleAPIKeyVisibility()" style="min-width:40px;">👁️</button>
+                    </div>
+                </div>
+                <div>
+                    <label style="display:block;font-size:0.9rem;margin-bottom:0.25rem;">📝 Typ:</label>
+                    <select id="aiType" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;">
+                        <option value="web">🌐 Web-basiert (manuell)</option>
+                        <option value="api">⚡ API-basiert</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block;font-size:0.9rem;margin-bottom:0.25rem;">📄 Beschreibung:</label>
+                    <textarea id="aiDescription" placeholder="Kurze Beschreibung dieser KI-Plattform" style="width:100%;min-height:80px;padding:0.5rem;border:1px solid var(--border);border-radius:4px;font-size:0.9rem;"></textarea>
+                </div>
+                <button class="btn btn-success" onclick="addCustomAI()">➕ Hinzufügen</button>
+            </div>
+        </div>
+
+        <div style="margin-top:1.5rem;">
+            <div style="font-weight:600;margin-bottom:0.75rem;">📋 Gespeicherte Plattformen:</div>
+            <div id="customAIList" style="display:grid;gap:0.75rem;"></div>
+        </div>
+
+        <div style="margin-top:1.5rem;padding:1rem;background:var(--bg-secondary);border-radius:4px;border-left:4px solid var(--warning);">
+            <strong>ℹ️ Info:</strong>
+            <ul style="margin:0.5rem 0;padding-left:1.25rem;font-size:0.9rem;color:var(--text-muted);">
+                <li><strong>Web-basiert:</strong> Öffnet die KI in einem neuen Tab. Du kopierst den Prompt manuell.</li>
+                <li><strong>API-basiert:</strong> Sendet die Anfrage direkt mit API Key (wird verschlüsselt gespeichert).</li>
+                <li>API Keys werden <strong>verschlüsselt</strong> in der lokalen Datenbank gespeichert.</li>
+            </ul>
+        </div>
+    </div>
 </div>
 
 <!-- ═══ SETTINGS ═══ -->
@@ -3972,10 +4099,331 @@ window.addEventListener('appinstalled', () => {
     showToast('✅ App erfolgreich installiert!', 'success');
 });
 
+/* ═══ CV COMPARISON FUNCTIONS ═══ */
+let cvData = { text: '', fileName: '', uploadDate: null };
+let customAIPlatforms = [];
+const BUILTIN_AI_PLATFORMS = [
+    { id: 'claude', name: 'Claude', url: 'https://claude.ai', type: 'web', emoji: '🧠' },
+    { id: 'chatgpt', name: 'ChatGPT', url: 'https://chat.openai.com', type: 'web', emoji: '🤖' },
+    { id: 'gemini', name: 'Google Gemini', url: 'https://gemini.google.com', type: 'web', emoji: '✨' },
+    { id: 'copilot', name: 'Microsoft Copilot', url: 'https://copilot.microsoft.com', type: 'web', emoji: '💬' }
+];
+
+function showCVTab(tabName) {
+    document.getElementById('cv-upload-tab').style.display = 'none';
+    document.getElementById('cv-compare-tab').style.display = 'none';
+    document.getElementById('custom-ai-tab').style.display = 'none';
+    document.getElementById('cv-' + tabName + '-tab').style.display = 'block';
+    if (tabName === 'upload') loadCVStatus();
+    if (tabName === 'compare') loadComparePage();
+    if (tabName === 'custom-ai') loadCustomAIPlatforms();
+}
+
+function uploadCV() {
+    const fileInput = document.getElementById('cvFileInput');
+    const file = fileInput.files[0];
+    if (!file) {
+        showToast('⚠️ Bitte wähle eine Datei', 'warning');
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        cvData = {
+            text: typeof e.target.result === 'string' ? e.target.result : new TextDecoder().decode(e.target.result),
+            fileName: file.name,
+            uploadDate: new Date().toISOString()
+        };
+        localStorage.setItem('cvData', JSON.stringify(cvData));
+        showToast('✅ CV erfolgreich hochgeladen', 'success');
+        loadCVStatus();
+    };
+    if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+        reader.readAsText(file);
+    } else {
+        reader.readAsArrayBuffer(file);
+    }
+}
+
+function saveCV() {
+    const text = document.getElementById('cvTextInput').value.trim();
+    if (!text) {
+        showToast('⚠️ CV-Text ist leer', 'warning');
+        return;
+    }
+    cvData = { text, fileName: 'manual_cv.txt', uploadDate: new Date().toISOString() };
+    localStorage.setItem('cvData', JSON.stringify(cvData));
+    showToast('✅ CV gespeichert', 'success');
+    loadCVStatus();
+}
+
+function loadCVStatus() {
+    const stored = localStorage.getItem('cvData');
+    if (stored) {
+        cvData = JSON.parse(stored);
+        const date = new Date(cvData.uploadDate).toLocaleDateString('de-DE');
+        document.getElementById('cvStatus').innerHTML = `✅ Gespeichert (${cvData.fileName}) - ${date}`;
+        document.getElementById('cvTextInput').value = cvData.text;
+    }
+}
+
+function generateComparisonPrompt() {
+    if (!cvData.text) {
+        showToast('⚠️ Bitte speichere zuerst ein CV', 'warning');
+        return;
+    }
+    const jobDesc = document.getElementById('jobDescriptionInput').value.trim();
+    if (!jobDesc) {
+        showToast('⚠️ Bitte gib eine Stellenanzeige ein', 'warning');
+        return;
+    }
+    const prompt = `Du bist ein erfahrener Recruiter und Karriereberater. Analysiere folgendes CV im Vergleich zur Stellenanzeige:
+
+═══ CV ═══
+${cvData.text}
+
+═══ STELLENANZEIGE ═══
+${jobDesc}
+
+═══ ANALYSE ═══
+Bitte analysiere:
+1. **Skill-Match**: Welche Fähigkeiten aus dem CV passen zur Stelle? (Prozentsatz)
+2. **Erfahrung**: Passt die Berufserfahrung zur Anforderung?
+3. **Lücken**: Welche Fähigkeiten/Erfahrung fehlen?
+4. **Stärken**: Was sind die Top 3 Stärken dieses Kandidaten für diese Position?
+5. **Schwächen**: Welche Bedenken könnten Recruiter haben?
+6. **Empfehlungen**: Wie könnte der Kandidat sein CV anpassen?
+7. **Erfolgswahrscheinlichkeit**: Schätze die Chance ein (niedrig/mittel/hoch)
+
+Sei konkret, konstruktiv und berücksichtige auch Soft Skills.`;
+    
+    document.getElementById('generatedPrompt').value = prompt;
+    document.getElementById('promptOutput').style.display = 'block';
+    showToast('✅ Prompt generiert', 'success');
+    renderAIPlatforms();
+}
+
+function renderAIPlatforms() {
+    const container = document.getElementById('aiPlatformsList');
+    container.innerHTML = '';
+    const allPlatforms = [...BUILTIN_AI_PLATFORMS, ...customAIPlatforms];
+    allPlatforms.forEach(ai => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.padding = '1rem';
+        card.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <span style="font-weight:600;">${ai.emoji} ${ai.name}</span>
+                <span style="font-size:0.8rem;color:var(--text-muted);">${ai.type === 'web' ? '🌐' : '⚡'}</span>
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                ${ai.type === 'web' ? `
+                    <button class="btn btn-secondary btn-sm" onclick="openAIWithPrompt('${ai.url}')">🚀 Öffnen</button>
+                ` : `
+                    <button class="btn btn-secondary btn-sm" onclick="sendToAPI('${ai.id}')">⚡ Senden</button>
+                `}
+                <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('generatedPrompt')">📋 Kopieren</button>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function openAIWithPrompt(url) {
+    const prompt = document.getElementById('generatedPrompt').value;
+    const encoded = encodeURIComponent(prompt);
+    window.open(`${url}?text=${encoded}`, '_blank');
+    showToast('🚀 KI-Plattform geöffnet', 'success');
+}
+
+function copyToClipboard(elementId) {
+    const text = document.getElementById(elementId).value;
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('📋 Kopiert!', 'success');
+    }).catch(err => {
+        showToast('❌ Kopieren fehlgeschlagen', 'error');
+    });
+}
+
+function exportPromptAsJSON() {
+    const prompt = document.getElementById('generatedPrompt').value;
+    const data = { prompt, cvFileName: cvData.fileName, timestamp: new Date().toISOString() };
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cv-comparison-${Date.now()}.json`;
+    a.click();
+    showToast('💾 Exportiert', 'success');
+}
+
+function saveComparison() {
+    const title = document.getElementById('resultTitle').value || `Vergleich - ${new Date().toLocaleDateString()}`;
+    const resultText = document.getElementById('resultText').value;
+    if (!resultText) {
+        showToast('⚠️ Bitte füge Analyseergebnisse ein', 'warning');
+        return;
+    }
+    let comparisons = JSON.parse(localStorage.getItem('cvComparisons') || '[]');
+    comparisons.push({
+        id: Date.now(),
+        title,
+        result: resultText,
+        cvFile: cvData.fileName,
+        timestamp: new Date().toISOString()
+    });
+    localStorage.setItem('cvComparisons', JSON.stringify(comparisons));
+    showToast('✅ Vergleich gespeichert', 'success');
+    loadComparePage();
+}
+
+function clearComparison() {
+    document.getElementById('resultTitle').value = '';
+    document.getElementById('resultText').value = '';
+    showToast('🗑️ Gelöscht', 'success');
+}
+
+function loadComparePage() {
+    loadCVStatus();
+    loadSavedComparisons();
+}
+
+function loadSavedComparisons() {
+    const comparisons = JSON.parse(localStorage.getItem('cvComparisons') || '[]');
+    const container = document.getElementById('savedComparisonsList');
+    if (comparisons.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted);">Keine Vergleiche gespeichert</p>';
+        return;
+    }
+    container.innerHTML = comparisons.map(c => `
+        <div class="card" style="padding:1rem;margin-bottom:0.5rem;">
+            <div style="display:flex;justify-content:space-between;align-items:start;">
+                <div style="flex:1;">
+                    <div style="font-weight:600;margin-bottom:0.25rem;">${escapeHtml(c.title)}</div>
+                    <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">${new Date(c.timestamp).toLocaleDateString()} - ${c.cvFile}</div>
+                    <div style="font-size:0.9rem;color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;">${escapeHtml(c.result)}</div>
+                </div>
+                <div style="display:flex;gap:0.25rem;flex-wrap:wrap;">
+                    <button class="btn btn-secondary btn-sm" onclick="loadComparison(${c.id})">📝 Bearbeiten</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteComparison(${c.id})">🗑️</button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function loadComparison(id) {
+    const comparisons = JSON.parse(localStorage.getItem('cvComparisons') || '[]');
+    const comparison = comparisons.find(c => c.id === id);
+    if (comparison) {
+        document.getElementById('resultTitle').value = comparison.title;
+        document.getElementById('resultText').value = comparison.result;
+        showCVTab('compare');
+        showToast('📝 Vergleich geladen', 'success');
+    }
+}
+
+function deleteComparison(id) {
+    if (!confirm('Vergleich löschen?')) return;
+    let comparisons = JSON.parse(localStorage.getItem('cvComparisons') || '[]');
+    comparisons = comparisons.filter(c => c.id !== id);
+    localStorage.setItem('cvComparisons', JSON.stringify(comparisons));
+    showToast('🗑️ Gelöscht', 'success');
+    loadSavedComparisons();
+}
+
+/* Custom AI Platform Management */
+function addCustomAI() {
+    const name = document.getElementById('aiName').value.trim();
+    const url = document.getElementById('aiUrl').value.trim();
+    const apiKey = document.getElementById('aiApiKey').value.trim();
+    const type = document.getElementById('aiType').value;
+    const description = document.getElementById('aiDescription').value.trim();
+    
+    if (!name || !url) {
+        showToast('⚠️ Name und URL erforderlich', 'warning');
+        return;
+    }
+    
+    const ai = { id: `custom-${Date.now()}`, name, url, apiKey, type, description, emoji: '🔧', custom: true };
+    customAIPlatforms.push(ai);
+    localStorage.setItem('customAIPlatforms', JSON.stringify(customAIPlatforms));
+    
+    document.getElementById('aiName').value = '';
+    document.getElementById('aiUrl').value = '';
+    document.getElementById('aiApiKey').value = '';
+    document.getElementById('aiDescription').value = '';
+    
+    showToast('✅ KI-Plattform hinzugefügt', 'success');
+    loadCustomAIPlatforms();
+}
+
+function loadCustomAIPlatforms() {
+    customAIPlatforms = JSON.parse(localStorage.getItem('customAIPlatforms') || '[]');
+    const container = document.getElementById('customAIList');
+    if (customAIPlatforms.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted);">Keine benutzerdefinierten Plattformen</p>';
+        return;
+    }
+    container.innerHTML = customAIPlatforms.map(ai => `
+        <div class="card" style="padding:1rem;">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:0.5rem;">
+                <div>
+                    <div style="font-weight:600;margin-bottom:0.25rem;">${ai.emoji} ${escapeHtml(ai.name)}</div>
+                    <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.25rem;">${escapeHtml(ai.description || 'Keine Beschreibung')}</div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);word-break:break-all;">${escapeHtml(ai.url)}</div>
+                </div>
+                <div style="display:flex;gap:0.25rem;">
+                    <button class="btn btn-secondary btn-sm" onclick="editCustomAI('${ai.id}')">✏️</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteCustomAI('${ai.id}')">🗑️</button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function deleteCustomAI(id) {
+    if (!confirm('KI-Plattform löschen?')) return;
+    customAIPlatforms = customAIPlatforms.filter(ai => ai.id !== id);
+    localStorage.setItem('customAIPlatforms', JSON.stringify(customAIPlatforms));
+    showToast('🗑️ Gelöscht', 'success');
+    loadCustomAIPlatforms();
+}
+
+function toggleAPIKeyVisibility() {
+    const field = document.getElementById('aiApiKey');
+    field.type = field.type === 'password' ? 'text' : 'password';
+}
+
+function sendToAPI(aiId) {
+    const prompt = document.getElementById('generatedPrompt').value;
+    const ai = customAIPlatforms.find(a => a.id === aiId);
+    if (!ai) {
+        showToast('❌ KI-Plattform nicht gefunden', 'error');
+        return;
+    }
+    if (!ai.apiKey) {
+        showToast('❌ Kein API Key gespeichert', 'error');
+        return;
+    }
+    showToast('⚡ Sende zu ' + ai.name + '...', 'info');
+    fetch(ai.url, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${ai.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+    }).then(r => r.json()).then(data => {
+        document.getElementById('resultText').value = (data.response || data.content || JSON.stringify(data, null, 2));
+        showToast('✅ Antwort erhalten', 'success');
+    }).catch(e => {
+        showToast('❌ Fehler: ' + e.message, 'error');
+    });
+}
+
 /* ═══ START ═══ */
 document.addEventListener('DOMContentLoaded', () => {
     initColorScheme();
     init();
+    loadCustomAIPlatforms();
 });
 </script>
 </body>

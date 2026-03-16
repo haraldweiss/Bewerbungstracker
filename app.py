@@ -96,10 +96,21 @@ def init_db():
             value TEXT
         )''')
 
+        # CV Comparisons table
+        c.execute('''CREATE TABLE IF NOT EXISTS cv_comparisons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            result TEXT,
+            cv_file TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )''')
+
         # Create indices
         c.execute('CREATE INDEX IF NOT EXISTS idx_status ON bewerbungen(status)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_firma ON bewerbungen(firma)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_createdAt ON bewerbungen(createdAt)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_cv_comp_created ON cv_comparisons(created_at)')
 
         conn.commit()
 
@@ -365,6 +376,84 @@ def export_endpoint():
     """Export data"""
     data = export_data()
     return jsonify({'status': 'ok', **data})
+
+# ═══ CV Comparison Endpoints ═══
+
+@app.route('/api/cv-comparison/save', methods=['POST'])
+def save_cv_comparison():
+    """Save CV comparison result"""
+    data = request.get_json()
+    title = data.get('title', 'Untitled Comparison')
+    result = data.get('result', '')
+    cv_file = data.get('cv_file', 'unknown')
+    
+    if not result:
+        return jsonify({'status': 'error', 'message': 'Result is required'}), 400
+    
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute('''INSERT INTO cv_comparisons (title, result, cv_file, created_at) 
+                     VALUES (?, ?, ?, ?)''',
+                  (title, result, cv_file, datetime.now().isoformat()))
+        conn.commit()
+        comparison_id = c.lastrowid
+    
+    return jsonify({'status': 'ok', 'id': comparison_id, 'message': 'Comparison saved'})
+
+@app.route('/api/cv-comparison/list', methods=['GET'])
+def list_cv_comparisons():
+    """List all CV comparisons"""
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute('SELECT id, title, cv_file, created_at FROM cv_comparisons ORDER BY created_at DESC')
+        comparisons = [{'id': row[0], 'title': row[1], 'cv_file': row[2], 'created_at': row[3]} 
+                      for row in c.fetchall()]
+    return jsonify({'status': 'ok', 'comparisons': comparisons})
+
+@app.route('/api/cv-comparison/<int:comp_id>', methods=['GET'])
+def get_cv_comparison(comp_id):
+    """Get a specific CV comparison"""
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute('SELECT id, title, result, cv_file, created_at FROM cv_comparisons WHERE id = ?', (comp_id,))
+        row = c.fetchone()
+    
+    if not row:
+        return jsonify({'status': 'error', 'message': 'Comparison not found'}), 404
+    
+    return jsonify({'status': 'ok', 'comparison': {
+        'id': row[0], 'title': row[1], 'result': row[2], 'cv_file': row[3], 'created_at': row[4]
+    }})
+
+@app.route('/api/cv-comparison/<int:comp_id>', methods=['DELETE'])
+def delete_cv_comparison(comp_id):
+    """Delete a CV comparison"""
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute('DELETE FROM cv_comparisons WHERE id = ?', (comp_id,))
+        conn.commit()
+        if c.rowcount == 0:
+            return jsonify({'status': 'error', 'message': 'Comparison not found'}), 404
+    
+    return jsonify({'status': 'ok', 'message': 'Comparison deleted'})
+
+@app.route('/api/cv-comparison/export', methods=['POST'])
+def export_cv_comparison():
+    """Export CV comparison as file"""
+    data = request.get_json()
+    comp_id = data.get('id')
+    
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute('SELECT title, result, created_at FROM cv_comparisons WHERE id = ?', (comp_id,))
+        row = c.fetchone()
+    
+    if not row:
+        return jsonify({'status': 'error', 'message': 'Comparison not found'}), 404
+    
+    return jsonify({'status': 'ok', 'comparison': {
+        'title': row[0], 'result': row[1], 'created_at': row[2]
+    }})
 
 # ═══ Status/Health Check ═══
 
