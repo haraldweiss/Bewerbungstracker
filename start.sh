@@ -132,15 +132,19 @@ verify_service() {
     fi
 }
 
-# Start Web Server
+# Start Web Server (Flask app)
 echo -e "${BLUE}Starting Web Server (port 8080)...${NC}"
-python3 -m http.server 8080 --directory . > /tmp/webserver.log 2>&1 &
-WEB_PID=$!
-if verify_service 8080 "Web Server"; then
-    echo -e "${GREEN}   PID: $WEB_PID${NC}"
+if [ -f "app.py" ]; then
+    python3 app.py > /tmp/webserver.log 2>&1 &
+    WEB_PID=$!
+    if verify_service 8080 "Web Server"; then
+        echo -e "${GREEN}   PID: $WEB_PID${NC}"
+    else
+        FAILED_SERVICES="$FAILED_SERVICES Web Server"
+        cat /tmp/webserver.log | head -20
+    fi
 else
-    FAILED_SERVICES="$FAILED_SERVICES Web Server"
-    cat /tmp/webserver.log | head -20
+    echo -e "${YELLOW}⚠️  app.py not found, skipping Web Server${NC}"
 fi
 echo ""
 

@@ -3460,6 +3460,12 @@ function formatDate(str) {
     try { return new Date(str).toLocaleDateString('de-DE'); } catch(e) { return str; }
 }
 
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+    return text.replace(/[&<>"']/g, m => map[m]);
+}
+
 function getDaysSince(datum) {
     if (!datum) return 0;
     return Math.floor((Date.now() - new Date(datum)) / 86400000);
