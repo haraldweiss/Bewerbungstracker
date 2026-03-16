@@ -13,6 +13,9 @@
     <title>📋 Bewerbungs-Tracker v4</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <!-- PDF & DOCX Parsing Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <!-- Encryption: TweetNaCl.js for secure password encryption -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tweetnacl.js/1.0.3/nacl.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tweetnacl.js/1.0.3/nacl-util.min.js"></script>
@@ -4123,29 +4126,83 @@ function showCVTab(tabName) {
     if (tabName === 'custom-ai') loadCustomAIPlatforms();
 }
 
-function uploadCV() {
+async function uploadCV() {
     const fileInput = document.getElementById('cvFileInput');
     const file = fileInput.files[0];
     if (!file) {
         showToast('⚠️ Bitte wähle eine Datei', 'warning');
         return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    
+    showToast(`📄 Lese ${file.name}...`, 'info');
+    
+    try {
+        let text = '';
+        
+        if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+            // Plain text file
+            text = await file.text();
+        } else if (file.name.endsWith('.pdf')) {
+            // PDF file
+            text = await extractPDFText(file);
+        } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+            // DOCX file
+            text = await extractDOCXText(file);
+        } else if (file.name.endsWith('.doc') || file.type === 'application/msword') {
+            // Legacy DOC file - show warning
+            showToast('⚠️ .doc Format wird nicht unterstützt. Bitte in .docx oder PDF konvertieren.', 'warning');
+            return;
+        } else {
+            showToast('❌ Dateiformat nicht unterstützt. Verwende .txt, .pdf oder .docx', 'error');
+            return;
+        }
+        
+        if (!text || text.trim().length === 0) {
+            showToast('❌ Keine Text extrahiert. Bitte überprüfe die Datei.', 'error');
+            return;
+        }
+        
         cvData = {
-            text: typeof e.target.result === 'string' ? e.target.result : new TextDecoder().decode(e.target.result),
+            text: cleanCVText(text),
             fileName: file.name,
             uploadDate: new Date().toISOString()
         };
+        
         localStorage.setItem('cvData', JSON.stringify(cvData));
-        showToast('✅ CV erfolgreich hochgeladen', 'success');
+        const stats = getCVStats(cvData.text);
+        showToast(`✅ CV hochgeladen (${stats.words} Wörter, ${stats.estimatedTokens} Tokens)`, 'success');
         loadCVStatus();
-    };
-    if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-        reader.readAsText(file);
-    } else {
-        reader.readAsArrayBuffer(file);
+        document.getElementById('cvTextInput').value = cvData.text;
+    } catch (error) {
+        showToast(`❌ Fehler beim Lesen der Datei: ${error.message}`, 'error');
+        console.error('File upload error:', error);
     }
+}
+
+async function extractPDFText(file) {
+    // Configure PDF.js worker
+    if (typeof pdfjsLib !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    let fullText = '';
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n\n';
+    }
+    
+    return fullText;
+}
+
+async function extractDOCXText(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    return result.value;
 }
 
 function cleanCVText(text) {
