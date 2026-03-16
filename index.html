@@ -329,6 +329,7 @@
             <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Hinzufügen</button>
         </div>
     </div>
+    <div id="bewerbungenStatsGrid"></div>
     <div class="toolbar">
         <div class="search-box">
             <span class="search-icon">🔍</span>
@@ -1838,9 +1839,141 @@ function renderDashboard() {
 }
 
 /* ═══════════════════════════════════════════════════════
+   STATISTICS FOR BEWERBUNGEN
+═══════════════════════════════════════════════════════ */
+function calculateBewerbungenStats() {
+    const apps = state.bewerbungen;
+    const now = new Date();
+    
+    // Status breakdown
+    const statusCounts = {
+        beworben: apps.filter(a => a.status === 'beworben').length,
+        antwort: apps.filter(a => a.status === 'antwort').length,
+        interview: apps.filter(a => a.status === 'interview').length,
+        zusage: apps.filter(a => a.status === 'zusage').length,
+        absage: apps.filter(a => a.status === 'absage').length,
+        ghosting: apps.filter(a => a.status === 'ghosting').length
+    };
+    
+    // Response rate: antwort + interview + zusage + absage / total
+    const responded = statusCounts.antwort + statusCounts.interview + statusCounts.zusage + statusCounts.absage;
+    const responseRate = apps.length > 0 ? Math.round((responded / apps.length) * 100) : 0;
+    
+    // Success rate: zusage / responded
+    const successRate = responded > 0 ? Math.round((statusCounts.zusage / responded) * 100) : 0;
+    
+    // Average days to response
+    const respondedApps = apps.filter(a => ['antwort', 'interview', 'zusage', 'absage'].includes(a.status));
+    const avgDays = respondedApps.length > 0 
+        ? Math.round(respondedApps.reduce((sum, a) => sum + getDaysSince(a.datum), 0) / respondedApps.length)
+        : 0;
+    
+    // Applications per source
+    const sourceCounts = {};
+    apps.forEach(a => {
+        const source = getQuelleLabel(a.quelle);
+        sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+    });
+    
+    // Fastest response (days to first reply)
+    const fastestResponse = respondedApps.length > 0
+        ? Math.min(...respondedApps.map(a => getDaysSince(a.datum)))
+        : 0;
+    
+    // Most active source
+    const activeSource = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])[0] || ['–', 0];
+    
+    return {
+        total: apps.length,
+        statusCounts,
+        responseRate,
+        successRate,
+        avgDays,
+        sourceCounts,
+        fastestResponse,
+        activeSource,
+        responded
+    };
+}
+
+function renderBewerbungenStats() {
+    const stats = calculateBewerbungenStats();
+    const statsGrid = document.getElementById('bewerbungenStatsGrid');
+    if (!statsGrid) return;
+    
+    const statCards = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:0.75rem;margin-bottom:1.5rem;">
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">📊 Gesamt</div>
+                <div style="font-size:1.8rem;font-weight:700;color:var(--primary-light);">${stats.total}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">Bewerbungen</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">📤 Beworben</div>
+                <div style="font-size:1.8rem;font-weight:700;color:#3B82F6;">${stats.statusCounts.beworben}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">${stats.total > 0 ? Math.round(stats.statusCounts.beworben / stats.total * 100) : 0}%</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">📨 Antwort</div>
+                <div style="font-size:1.8rem;font-weight:700;color:#F59E0B;">${stats.statusCounts.antwort}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">${stats.total > 0 ? Math.round(stats.statusCounts.antwort / stats.total * 100) : 0}%</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">🎤 Interview</div>
+                <div style="font-size:1.8rem;font-weight:700;color:#8B5CF6;">${stats.statusCounts.interview}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">${stats.total > 0 ? Math.round(stats.statusCounts.interview / stats.total * 100) : 0}%</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">✅ Zusage</div>
+                <div style="font-size:1.8rem;font-weight:700;color:#10B981;">${stats.statusCounts.zusage}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">${stats.total > 0 ? Math.round(stats.statusCounts.zusage / stats.total * 100) : 0}%</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">❌ Absage</div>
+                <div style="font-size:1.8rem;font-weight:700;color:#EF4444;">${stats.statusCounts.absage}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">${stats.total > 0 ? Math.round(stats.statusCounts.absage / stats.total * 100) : 0}%</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">👻 Ghosting</div>
+                <div style="font-size:1.8rem;font-weight:700;color:#94A3B8;">${stats.statusCounts.ghosting}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">${stats.total > 0 ? Math.round(stats.statusCounts.ghosting / stats.total * 100) : 0}%</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">📊 Antwortquote</div>
+                <div style="font-size:1.8rem;font-weight:700;color:var(--primary-light);">${stats.responseRate}%</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">${stats.responded} / ${stats.total}</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">🎯 Erfolgsquote</div>
+                <div style="font-size:1.8rem;font-weight:700;color:#10B981;">${stats.successRate}%</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">${stats.statusCounts.zusage} Zusagen</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">⏱ Ø Antwortzeit</div>
+                <div style="font-size:1.8rem;font-weight:700;color:#F59E0B;">${stats.avgDays}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">Tage</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">⚡ Schnellste</div>
+                <div style="font-size:1.8rem;font-weight:700;color:#8B5CF6;">${stats.fastestResponse}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">Tage (min)</div>
+            </div>
+            <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;text-align:center;">
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">📌 Top Quelle</div>
+                <div style="font-size:1.2rem;font-weight:700;color:var(--primary-light);word-break:break-word;">${stats.activeSource[0]}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">${stats.activeSource[1]} Apps</div>
+            </div>
+        </div>
+    `;
+    
+    statsGrid.innerHTML = statCards;
+}
+
+/* ═══════════════════════════════════════════════════════
    RENDER BEWERBUNGEN
 ═══════════════════════════════════════════════════════ */
 function renderBewerbungen() {
+    renderBewerbungenStats();
     const search = (document.getElementById('searchInput')?.value || '').toLowerCase();
     const sort = document.getElementById('sortSelect')?.value || 'datum-desc';
 

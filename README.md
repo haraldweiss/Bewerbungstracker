@@ -55,6 +55,19 @@ Ein leistungsstarkes, datenschutzfreundliches Tool zur Verwaltung von Bewerbunge
 - **Gelöschte Einträge verwalten** - Separate View für gelöschte Bewerbungen mit One-Click Recovery
 - **Endgültige Löschung** - Option für permanente Löschung mit Doppel-Bestätigung
 
+#### 📈 Statistiken & Metriken (Bewerbungen-Seite)
+- **12 Statistik-Karten** - ⭐ NEU: Umfassende Übersicht mit Live-Metriken
+  - **Gesamt** - Gesamtzahl aller Bewerbungen
+  - **Status Breakdown** - Anzahl für jeden Status (Beworben, Antwort, Interview, Zusage, Absage, Ghosting)
+  - **Antwortquote (%)** - Prozentsatz der Bewerbungen mit Rückmeldung
+  - **Erfolgsquote (%)** - Prozentsatz der Zusagen bezogen auf Antworten
+  - **Ø Antwortzeit** - Durchschnittliche Tage bis zur Rückmeldung
+  - **Schnellste Antwort** - Minimum Tage bis zur Rückmeldung
+  - **Top Quelle** - Wichtigster Kanal für Bewerbungen
+- **Responsive Grid** - Passt sich automatisch an Bildschirmgröße an
+- **Echtzeit-Updates** - Statistiken aktualisieren sich automatisch bei Datenänderungen
+- **Dark/Light Mode** - Farbcodierte Metriken mit Themenanpassung
+
 #### 🌙 Benutzeroberfläche
 - **Dark/Light Mode** - Wechsle zwischen dunklem und hellem Theme
 - **Responsive Design** - Funktioniert nahtlos auf Desktop und Mobilgeräten
@@ -170,6 +183,32 @@ preview_start "Email Service"
 2. Fülle Firma, Position, Datum und weitere Details aus
 3. Füge den Job-Link ein
 4. Klicke **"💾 Speichern"**
+
+#### Statistiken & Metriken (Bewerbungen-Seite) ⭐ NEU
+
+Die Bewerbungen-Seite zeigt 12 Live-Statistik-Karten direkt unter der Überschrift:
+
+**Basis-Metriken:**
+- **📊 Gesamt**: Gesamtzahl aller Bewerbungen
+- **📤 Beworben**: Anzahl ausstehender Bewerbungen mit Prozentsatz
+- **📨 Antwort**: Anzahl erhaltener Antworten mit Prozentsatz
+- **🎤 Interview**: Anzahl vereinbarter Interviews mit Prozentsatz
+- **✅ Zusage**: Anzahl erhaltener Jobangebote mit Prozentsatz
+- **❌ Absage**: Anzahl erhaltener Ablehnungen mit Prozentsatz
+- **👻 Ghosting**: Anzahl nicht beantworteter Bewerbungen mit Prozentsatz
+
+**Performances-Metriken:**
+- **📊 Antwortquote**: Prozentsatz aller Bewerbungen mit Rückmeldung (X% = responded/total)
+- **🎯 Erfolgsquote**: Prozentsatz der Zusagen bezogen auf Antworten (erfolgreiche Bewerbungen)
+- **⏱ Ø Antwortzeit**: Durchschnittliche Anzahl von Tagen bis zur Rückmeldung
+- **⚡ Schnellste**: Minimum Tage bis zur Rückmeldung (schnellste positive Rückmeldung)
+- **📌 Top Quelle**: Der aktivste Kanal mit Anzahl Bewerbungen
+
+**Wie die Metriken berechnet werden:**
+- Alle Werte werden in Echtzeit aus deinen aktuellen Bewerbungsdaten berechnet
+- Automatische Updates beim Wechsel zwischen Tabs oder Statusänderungen
+- Ignoriert gelöschte Einträge (nur aktive Bewerbungen)
+- Responsive Design: Passt sich an Desktop, Tablet und Mobilgeräte an
 
 #### Wiederherstellbare Löschungen ⭐ NEU
 
@@ -464,6 +503,20 @@ A powerful, privacy-focused application for managing job applications and tracki
 - **Search & Filter** - Find applications by company, position, or source
 - **Ghosting Detection** - Automatically mark applications as ghosting after X days without response
 - **Multiple Sources** - Track applications from Gmail, LinkedIn, Indeed, XING, websites, and manual entries
+- **Recoverable Deletions** - ⭐ NEW: Soft-delete with recovery capability
+
+#### 📈 Statistics & Metrics (Applications Page)
+- **12 Statistic Cards** - ⭐ NEW: Comprehensive overview with live metrics
+  - **Total** - Total number of all applications
+  - **Status Breakdown** - Count for each status (Applied, Response, Interview, Offer, Rejection, Ghosting)
+  - **Response Rate (%)** - Percentage of applications with response
+  - **Success Rate (%)** - Percentage of offers relative to responses
+  - **Avg Response Time** - Average days until response
+  - **Fastest Response** - Minimum days until response
+  - **Top Source** - Most active channel for applications
+- **Responsive Grid** - Automatically adapts to screen size
+- **Real-Time Updates** - Statistics update automatically on data changes
+- **Dark/Light Mode** - Color-coded metrics with theme adaptation
 
 #### 🌙 UI/UX
 - **Dark/Light Mode** - Toggle between dark and light themes
@@ -520,6 +573,32 @@ preview_start "Email Service"
 2. Fill in company, position, date, and other details
 3. Paste the job link
 4. Click **"💾 Speichern"**
+
+#### Statistics & Metrics (Applications Page) ⭐ NEW
+
+The Applications page displays 12 live statistic cards directly below the heading:
+
+**Basic Metrics:**
+- **📊 Total**: Total number of all applications
+- **📤 Applied**: Number of pending applications with percentage
+- **📨 Response**: Number of responses received with percentage
+- **🎤 Interview**: Number of scheduled interviews with percentage
+- **✅ Offer**: Number of job offers received with percentage
+- **❌ Rejection**: Number of rejections received with percentage
+- **👻 Ghosting**: Number of unanswered applications with percentage
+
+**Performance Metrics:**
+- **📊 Response Rate**: Percentage of all applications with response (X% = responded/total)
+- **🎯 Success Rate**: Percentage of offers relative to responses (successful applications)
+- **⏱ Avg Response Time**: Average number of days until response
+- **⚡ Fastest**: Minimum days until response (quickest positive feedback)
+- **📌 Top Source**: Most active channel with application count
+
+**How Metrics Are Calculated:**
+- All values are calculated in real-time from your current application data
+- Automatic updates when switching tabs or changing status
+- Ignores deleted entries (only active applications)
+- Responsive design: Adapts to desktop, tablet, and mobile devices
 
 #### Setting Up Email Monitoring ⭐ NEW
 
@@ -712,7 +791,25 @@ Contributions are welcome! Please feel free to submit pull requests with improve
 
 ## 📋 Changelog
 
-### v4.2 - Encrypted Credential Storage & Code Quality (Latest)
+### v4.3 - Statistics & Metrics Dashboard (Latest)
+
+**🎯 Statistics Feature:**
+- ✅ 12 Live Statistic Cards on Bewerbungen page
+- ✅ Real-time metrics calculation:
+  - **Basis-Metriken**: Gesamt, Status-Breakdown (all 6 statuses)
+  - **Performance-Metriken**: Antwortquote, Erfolgsquote, Ø Antwortzeit, Schnellste Antwort, Top Quelle
+- ✅ Responsive grid layout (auto-fit columns)
+- ✅ Color-coded metrics matching status colors
+- ✅ Automatic updates on data changes
+- ✅ Dark/Light mode support
+
+**Implementation:**
+- New functions: `calculateBewerbungenStats()`, `renderBewerbungenStats()`
+- Integrated into `renderBewerbungen()` for automatic updates
+- HTML container: `<div id="bewerbungenStatsGrid"></div>`
+- No external dependencies, pure JavaScript calculations
+
+### v4.2 - Encrypted Credential Storage & Code Quality
 
 **Phase 2.2: Encrypted Credential Storage + Code Review Fixes**
 
