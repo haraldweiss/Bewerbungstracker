@@ -1,0 +1,84 @@
+<!-- Form Group Component
+     Usage:
+     <div class="form-group">
+         <label>{LABEL}</label>
+         <input type="text" id="{ID}" placeholder="{PLACEHOLDER}">
+     </div>
+
+     or with select:
+     <div class="form-group">
+         <label>{LABEL}</label>
+         <select id="{ID}">
+             <option>{OPTIONS}</option>
+         </select>
+     </div>
+
+     or with textarea:
+     <div class="form-group">
+         <label>{LABEL}</label>
+         <textarea id="{ID}" rows="4" placeholder="{PLACEHOLDER}"></textarea>
+     </div>
+-->
+
+<style scoped>
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.form-group label {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: var(--text);
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    padding: 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 0.9rem;
+    font-family: inherit;
+    transition: all 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    background: var(--bg-card);
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+    color: var(--text-muted);
+}
+
+.form-group input:disabled,
+.form-group select:disabled,
+.form-group textarea:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Select dropdown styling */
+.form-group select {
+    cursor: pointer;
+    appearance: none;
+    padding-right: 2rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23E2E8F0' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.65rem center;
+}
+
+:root[data-scheme="light"] .form-group select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%230F172A' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+}
+</style>

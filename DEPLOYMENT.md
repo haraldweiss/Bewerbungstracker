@@ -1,362 +1,149 @@
-# 📱 Bewerbungs-Tracker: Deployment & Mobile Guide
+# 🚀 Deployment auf wolfinisoftware.de
 
-**Make your job tracking app work everywhere - Desktop, Mobile, iPhone, Android, and the Cloud!**
+Dieses Dokument beschreibt, wie man den Bewerbungstracker mit Login-Authentifizierung auf wolfinisoftware.de deployed.
 
----
+## Voraussetzungen
 
-## 🎯 Quick Start Options
+- Domain `wolfinisoftware.de` mit vollständigem Zugriff (SSH/FTP)
+- Python 3.7+ auf dem Server installiert
+- Nginx oder Apache als Reverse Proxy
+- ~50MB Speicherplatz (Frontend + Backend + SQLite-DB)
 
-### Option 1: Local Development (Desktop Only)
-```bash
-./start.sh  # Starts all services on localhost
-```
-✅ Perfect for: Development, testing, personal use on one computer
+## Installation Steps
 
----
-
-### Option 2: Cloud Deployment (Best for Mobile) ⭐ **RECOMMENDED**
-Deploy to Railway, Heroku, or AWS and access from any device (iPhone, Android, Desktop).
-
----
-
-## ☁️ Deploy to Railway (30 seconds) - FREE TIER AVAILABLE
-
-**Railway is the easiest option for getting your app on the internet!**
-
-### Step 1: Create Railway Account
-1. Go to [railway.app](https://railway.app)
-2. Sign up with GitHub (recommended)
-
-### Step 2: Deploy Your App
-```bash
-# Option A: Deploy from GitHub UI (easiest)
-1. Fork/Push repo to GitHub
-2. Go to railway.app dashboard
-3. Click "New Project" → "Deploy from GitHub"
-4. Select your Bewerbungstracker repo
-5. Wait ~2-5 minutes for deployment ✨
-
-# Option B: Deploy via Railway CLI (if you prefer command line)
-npm install -g @railway/cli
-railway login
-cd Bewerbungstracker
-railway up
-```
-
-### Step 3: Access Your App
-```
-Your app will be available at:
-https://bewerbungstracker-prod.railway.app  (example)
-```
-
-### Step 4: Install on Your Phone
-**iPhone:**
-1. Open the URL in Safari
-2. Tap Share → "Add to Home Screen"
-3. Tap "Add"
-4. App appears on home screen! 📱
-
-**Android:**
-1. Open the URL in Chrome
-2. Menu → "Install app"
-3. Tap "Install"
-4. App appears on home screen! 📱
-
----
-
-## 🐳 Deploy with Docker (Advanced)
-
-### Option 1: Railway with Docker (Automatic)
-Railway auto-detects the Dockerfile - just push!
+### 1. Code auf den Server uploaden
 
 ```bash
-git push  # Railway auto-deploys when Dockerfile exists
+# Lokal: Alle Dateien ausser .git in einen Ordner packen
+cd /Library/WebServer/Documents/Bewerbungstracker
+tar --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
+    -czf bewerbungstracker.tar.gz .
+
+# Zu Server uploaden (z.B. via SCP oder Cyberduck)
+scp bewerbungstracker.tar.gz user@wolfinisoftware.de:/var/www/tracker/
 ```
 
-### Option 2: Docker Locally
+### 2. Server-Seite: Code entpacken und Setup
+
 ```bash
-# Build image
-docker build -t bewerbungstracker .
+# SSH auf Server
+ssh user@wolfinisoftware.de
 
-# Run container
-docker run -p 8080:8080 bewerbungstracker
+# Ordner erstellen & entpacken
+mkdir -p /var/www/tracker
+cd /var/www/tracker
+tar -xzf bewerbungstracker.tar.gz
+rm bewerbungstracker.tar.gz
 
-# Access at http://localhost:8080
+# Python-Dependencies installieren
+pip3 install flask flask-cors
+
+# Permissions setzen
+chmod 755 /var/www/tracker
+chmod 644 /var/www/tracker/app.py
+chmod 644 /var/www/tracker/index.html
 ```
 
----
+### 3. Nginx als Reverse Proxy konfigurieren
 
-## 🚀 Deploy to Heroku (Requires Credit Card)
+Erstelle `/etc/nginx/sites-available/tracker`:
 
-### Step 1: Install Heroku CLI
+```nginx
+server {
+    listen 80;
+    server_name tracker.wolfinisoftware.de;
+
+    # Optional: Redirect auf HTTPS (empfohlen!)
+    # return 301 https://$server_name$request_uri;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Dann aktivieren:
 ```bash
-# macOS
-brew install heroku
-
-# Linux
-curl https://cli-assets.heroku.com/install.sh | sh
+sudo ln -s /etc/nginx/sites-available/tracker /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
-### Step 2: Create & Deploy
+### 4. App mit Supervisor im Hintergrund starten
+
+Erstelle `/etc/supervisor/conf.d/bewerbungstracker.conf`:
+
+```ini
+[program:bewerbungstracker]
+directory=/var/www/tracker
+command=python3 app.py
+user=www-data
+autostart=true
+autorestart=true
+redirect_stderr=true
+stdout_logfile=/var/log/bewerbungstracker.log
+environment=PORT=8000,AUTH_USERNAME=admin,AUTH_PASSWORD=dein-sicheres-passwort
+```
+
+Dann:
 ```bash
-heroku login
-heroku create bewerbungstracker-YOUR-NAME
-git push heroku main
-
-# Get your URL:
-heroku open
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl start bewerbungstracker
 ```
 
----
+### 5. Login-Credentials anpassen
 
-## 🌐 Deploy to AWS (More Complex)
+**Wichtig**: Standard-Credentials sind:
+- Benutzername: `admin`
+- Passwort: `password123`
 
-### Using AWS Lightsail (Simplest)
-1. Go to AWS Lightsail console
-2. Click "Create instance" → "Linux"
-3. Choose "Flask" blueprint
-4. Upload your code
-5. Done!
+Diese MÜSSEN geändert werden!
 
-### Using AWS App Runner (Container-based)
 ```bash
-# AWS handles everything
-aws apprunner create-service \
-  --service-name bewerbungstracker \
-  --source-configuration repositoryType=GITHUB,imageRepository=... \
-  --instance-configuration cpu=1 vCPU,memory=2GB
+# /etc/supervisor/conf.d/bewerbungstracker.conf ändern:
+# environment=AUTH_USERNAME=dein-username,AUTH_PASSWORD=dein-super-sicheres-passwort
+
+sudo supervisorctl restart bewerbungstracker
 ```
 
----
+## HTTPS Setup (empfohlen!)
 
-## 📱 Mobile Features (PWA)
-
-Your app now works as a Progressive Web App (PWA):
-
-### iPhone (iOS 15+)
-✅ Add to home screen
-✅ Works offline
-✅ App-like interface
-❌ Cannot push notifications (iOS limitation)
-
-### Android
-✅ Add to home screen
-✅ Works offline
-✅ App-like interface
-✅ Push notifications (with additional setup)
-
-### Installation Steps
-
-**iPhone:**
-```
-1. Open in Safari
-2. Tap Share icon (bottom/middle)
-3. Tap "Add to Home Screen"
-4. Name it "Bewerbungen"
-5. Tap "Add"
-```
-
-**Android:**
-```
-1. Open in Chrome
-2. Tap ⋮ (three dots)
-3. Tap "Install app"
-4. Tap "Install"
-```
-
----
-
-## 📊 Architecture Changes for Cloud
-
-### Before (Localhost Only)
-```
-Your Computer
-├── Web Server (port 8080)
-├── IMAP Proxy (port 8765)
-├── Email Service (port 8766)
-└── Data Service (port 8767)
-
-❌ Only accessible from your computer
-❌ Mobile devices cannot access
-```
-
-### After (Cloud Deployment)
-```
-Railway/Heroku Server
-├── Unified Flask App
-│   ├── Frontend (index.html)
-│   ├── API endpoints (/api/*)
-│   ├── PWA support
-│   └── Service Worker
-└── SQLite Database
-
-✅ Accessible from anywhere
-✅ Works on all devices
-✅ Offline support
-```
-
----
-
-## 🔐 Security for Cloud
-
-### Before (Localhost)
-- ✅ Safe by default (only local access)
-- ❌ No multi-user support
-
-### After (Cloud)
-- Add authentication if needed:
-```javascript
-// Optional: Add login to app
-fetch('/api/login', {
-  method: 'POST',
-  body: JSON.stringify({ username, password })
-})
-```
-
-### Database Options
-- **SQLite** (included, good for single user)
-- **PostgreSQL** (Railway includes free tier, better for multi-user)
-
-To use PostgreSQL:
+Mit Let's Encrypt:
 ```bash
-# Add PostgreSQL plugin in Railway dashboard
-# Update connection string in app.py
+sudo certbot --nginx -d tracker.wolfinisoftware.de
 ```
 
----
+## Daten-Persistenz
 
-## 🔄 Sync & Offline Mode
+SQLite-DB speichert automatisch in `bewerbungen.db`.
 
-### How It Works
-1. **Online:** All changes sync immediately to cloud
-2. **Offline:** Changes save locally (in Service Worker cache)
-3. **Back Online:** Changes automatically sync ↔️
-
-### User Experience
-```
-User is offline:
-- ✅ Can add/edit applications
-- ✅ Changes appear immediately
-- ✅ No "Connection lost" message
-
-User goes online:
-- ✅ All changes auto-sync
-- ✅ No manual refresh needed
-```
-
----
-
-## 📈 Monitoring & Logs
-
-### Railway Dashboard
-```
-1. Go to railway.app dashboard
-2. Click your project
-3. View logs in real-time
-4. Check metrics (CPU, Memory, etc.)
-```
-
-### Heroku Logs
+**Backups:**
 ```bash
-heroku logs --tail
-heroku logs --num=100
+# Tägliches Backup
+0 2 * * * cp /var/www/tracker/bewerbungen.db /backup/bewerbungen_$(date +\%Y\%m\%d).db
 ```
 
-### Docker Logs (Local)
+## API-Endpoints
+
 ```bash
-docker logs -f bewerbungstracker
+# Login
+curl -X POST https://tracker.wolfinisoftware.de/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"dein-passwort"}'
+
+# Logout
+curl -X POST -H "Authorization: Bearer TOKEN" \
+  https://tracker.wolfinisoftware.de/api/auth/logout
 ```
 
----
+## Troubleshooting
 
-## 🐛 Troubleshooting
-
-### App Won't Start
-```bash
-# Railway/Heroku
-Check the build logs in dashboard
-
-# Docker
-docker logs bewerbungstracker
-```
-
-### Database Issues
-```bash
-# Railway adds SQLite automatically
-# Or add PostgreSQL from Railway UI
-```
-
-### PWA Not Installing
-```
-1. Check HTTPS is enabled (required for PWA)
-2. Manifest.json is present
-3. Service Worker is registered (open DevTools)
-```
-
-### Offline Features Not Working
-```
-1. Check "Application" tab in DevTools
-2. Verify Service Worker is active
-3. Check Cache Storage section
-```
-
----
-
-## 📊 Performance Comparison
-
-| Feature | Local | Railway | Heroku | AWS |
-|---------|-------|---------|--------|-----|
-| Cost | Free | Free tier | $7+/month | $1+/month |
-| Setup Time | 5 min | 1 min | 10 min | 30 min |
-| Mobile Access | ❌ | ✅ | ✅ | ✅ |
-| Offline Support | ✅ | ✅ | ✅ | ✅ |
-| Scaling | ❌ | ✅ | ✅ | ✅ |
-| Database | SQLite | SQLite | PostgreSQL | AWS RDS |
-
----
-
-## 📚 More Information
-
-### PWA Basics
-- [MDN: Web Apps](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
-- [Service Workers](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API)
-
-### Deployment
-- [Railway Docs](https://docs.railway.app/)
-- [Heroku Docs](https://devcenter.heroku.com/)
-- [AWS App Runner](https://aws.amazon.com/apprunner/)
-
-### Docker
-- [Docker Tutorial](https://docs.docker.com/get-started/)
-- [Docker Hub](https://hub.docker.com/)
-
----
-
-## ✅ Deployment Checklist
-
-- [ ] Created Railway account
-- [ ] Forked repo to GitHub (if using Railway UI)
-- [ ] Deployed app to cloud
-- [ ] Accessed app via URL
-- [ ] Installed PWA on phone
-- [ ] Tested offline functionality
-- [ ] Verified all API endpoints work
-- [ ] Set up custom domain (optional)
-- [ ] Enabled HTTPS (automatic on Railway/Heroku)
-- [ ] Added backup strategy (export data regularly)
-
----
-
-## 🎉 Success Indicators
-
-✅ App loads on `https://your-app.railway.app`
-✅ Can add/edit applications
-✅ Search and filtering work
-✅ PWA installs on phone
-✅ Works offline
-✅ Data persists after reload
-✅ Changes sync when back online
-
----
-
-**Your app is now ready for the world! 🌍📱**
+- Port belegt? `lsof -i :8000`
+- Flask läuft? `sudo supervisorctl status bewerbungstracker`
+- Logs? `tail -f /var/log/bewerbungstracker.log`
+- DB-Fehler? `chmod 666 /var/www/tracker/bewerbungen.db`

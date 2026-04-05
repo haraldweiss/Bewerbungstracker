@@ -1,0 +1,145 @@
+<!-- Tabs Component -->
+<!-- Used in: Mail Connector, Settings, Admin Panel, and other multi-section views -->
+<!-- Props: tabs (array of {id, label, icon}) -->
+
+<!-- Tab Navigation Bar -->
+<div class="tabs">
+    {{#each tabs}}
+    <div class="tab {{#if active}}active{{/if}}"
+         onclick="switchTab(this,'{{id}}'{{#if callback}};{{callback}}(){{/if}})">
+        {{icon}} {{label}}
+    </div>
+    {{/each}}
+</div>
+
+<!-- Tab Content Container -->
+{{#each tabs}}
+<div class="tab-content {{#if active}}active{{/if}}" id="{{id}}">
+    <!-- Content will be inserted here by JavaScript -->
+</div>
+{{/each}}
+
+<!-- Alternative: Vertical Tabs (for sidebar navigation) -->
+<div class="tabs-vertical">
+    {{#each tabs}}
+    <div class="tab-vertical {{#if active}}active{{/if}}"
+         onclick="switchTab(this,'{{id}}')">
+        {{icon}} {{label}}
+    </div>
+    {{/each}}
+</div>
+
+<!-- Styles for tabs (in components.css) -->
+<style>
+.tabs {
+    display:flex;
+    gap:0.5rem;
+    border-bottom:1px solid var(--border);
+    margin-bottom:1rem;
+    overflow-x:auto;
+}
+
+.tab {
+    padding:0.75rem 1.25rem;
+    border-bottom:2px solid transparent;
+    background:transparent;
+    color:var(--text-muted);
+    cursor:pointer;
+    font-size:0.9rem;
+    white-space:nowrap;
+    transition:all 0.2s;
+    position:relative;
+}
+
+.tab:hover {
+    color:var(--text);
+    background:var(--bg-card);
+}
+
+.tab.active {
+    color:var(--primary);
+    border-bottom-color:var(--primary);
+    background:transparent;
+}
+
+.tab-content {
+    display:none;
+    animation:fadeIn 0.3s ease;
+}
+
+.tab-content.active {
+    display:block;
+}
+
+@keyframes fadeIn {
+    from { opacity:0; transform:translateY(8px); }
+    to { opacity:1; transform:translateY(0); }
+}
+
+/* Vertical Tabs Variant */
+.tabs-vertical {
+    display:flex;
+    flex-direction:column;
+    gap:0;
+    border-left:1px solid var(--border);
+    padding-left:0;
+}
+
+.tab-vertical {
+    padding:0.75rem 1.25rem;
+    border-left:2px solid transparent;
+    background:transparent;
+    color:var(--text-muted);
+    cursor:pointer;
+    font-size:0.9rem;
+    text-align:left;
+    transition:all 0.2s;
+    margin-left:-1px;
+}
+
+.tab-vertical:hover {
+    color:var(--text);
+    background:var(--bg-card2);
+}
+
+.tab-vertical.active {
+    color:var(--primary);
+    border-left-color:var(--primary);
+    background:var(--bg-card);
+}
+
+/* Responsive */
+@media(max-width:640px) {
+    .tabs {
+        gap:0.25rem;
+    }
+    .tab {
+        padding:0.5rem 0.75rem;
+        font-size:0.8rem;
+    }
+}
+</style>
+
+<!-- JavaScript Helper -->
+<script>
+function switchTab(tabElement, contentId, callback) {
+    // Remove active class from all tabs and contents
+    const allTabs = tabElement.parentElement.querySelectorAll('.tab, .tab-vertical');
+    const allContents = document.querySelectorAll('.tab-content');
+
+    allTabs.forEach(t => t.classList.remove('active'));
+    allContents.forEach(c => c.classList.remove('active'));
+
+    // Add active class to clicked tab and corresponding content
+    tabElement.classList.add('active');
+    const contentElement = document.getElementById(contentId);
+    if (contentElement) {
+        contentElement.classList.add('active');
+    }
+
+    // Call optional callback function
+    if (callback && typeof window[callback] === 'function') {
+        window[callback]();
+    }
+}
+</script>

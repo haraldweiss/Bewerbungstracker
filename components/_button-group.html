@@ -1,0 +1,77 @@
+<!-- Button Group Component
+     Usage (horizontal):
+     <div class="button-group">
+         <button class="btn btn-primary">Primary</button>
+         <button class="btn btn-secondary">Secondary</button>
+     </div>
+
+     Usage (vertical):
+     <div class="button-group button-group-vertical">
+         <button class="btn btn-primary">Primary</button>
+         <button class="btn btn-secondary">Secondary</button>
+     </div>
+
+     Usage (justified):
+     <div class="button-group button-group-justified">
+         <button class="btn btn-primary">Primary</button>
+         <button class="btn btn-secondary">Secondary</button>
+     </div>
+-->
+
+<style scoped>
+.button-group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.button-group.button-group-vertical {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.button-group.button-group-vertical .btn {
+    width: 100%;
+    justify-content: center;
+}
+
+.button-group.button-group-justified {
+    width: 100%;
+}
+
+.button-group.button-group-justified .btn {
+    flex: 1;
+    justify-content: center;
+}
+
+/* Compact variant */
+.button-group.button-group-compact {
+    gap: 0.25rem;
+}
+
+/* Segmented control variant */
+.button-group.button-group-segmented {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0;
+    gap: 0;
+}
+
+.button-group.button-group-segmented .btn {
+    border-radius: 0;
+    border: none;
+    border-right: 1px solid var(--border);
+    padding: 0.5rem 1rem;
+    flex: 1;
+}
+
+.button-group.button-group-segmented .btn:last-child {
+    border-right: none;
+}
+
+.button-group.button-group-segmented .btn.active {
+    background: var(--primary);
+    color: white;
+}
+</style>

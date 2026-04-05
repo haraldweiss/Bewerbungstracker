@@ -1,0 +1,92 @@
+<!-- Stat Card Component -->
+<!-- Used in: Dashboard, Statistics, Status Overview -->
+<!-- Props: icon, value, label, variant (blue, yellow, purple, green, red) -->
+
+<!-- Standard Stat Card (Dashboard variant) -->
+<div class="stat-card {{variant}}">
+    <div class="stat-icon">{{icon}}</div>
+    <div class="stat-value">{{value}}</div>
+    <div class="stat-label">{{label}}</div>
+</div>
+
+<!-- Compact Stat Card (Alternative variant) -->
+<div class="stat-card-compact {{variant}}">
+    <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;">{{icon}} {{label}}</div>
+    <div style="font-size:1.8rem;font-weight:700;color:{{color}};">{{value}}</div>
+    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">{{percentage}}</div>
+</div>
+
+<!-- Horizontal Stat Card (For status bars) -->
+<div class="stat-card-horizontal">
+    <div style="width:80px;font-size:0.8rem;color:var(--text-muted);">{{label}}</div>
+    <div style="flex:1;background:var(--bg-card2);border-radius:20px;height:8px;">
+        <div style="width:{{percentage}};background:{{color}};height:100%;border-radius:20px;transition:width 0.5s;"></div>
+    </div>
+    <div style="width:24px;font-size:0.8rem;text-align:right;">{{count}}</div>
+</div>
+
+<!-- Styles for stat cards (in components.css) -->
+<style>
+.stat-card {
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:1.25rem;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:0.5rem;
+    min-height:120px;
+    justify-content:center;
+    transition:all 0.2s;
+}
+
+.stat-card:hover {
+    background:var(--bg-card2);
+    transform:translateY(-2px);
+    box-shadow:0 4px 12px rgba(0,0,0,0.2);
+}
+
+.stat-icon {
+    font-size:1.75rem;
+}
+
+.stat-value {
+    font-size:1.75rem;
+    font-weight:700;
+}
+
+.stat-label {
+    font-size:0.8rem;
+    color:var(--text-muted);
+    text-align:center;
+}
+
+.stat-card.blue { --card-color:#3B82F6; }
+.stat-card.yellow { --card-color:#F59E0B; }
+.stat-card.purple { --card-color:#8B5CF6; }
+.stat-card.green { --card-color:#10B981; }
+.stat-card.red { --card-color:#EF4444; }
+
+.stat-card-compact {
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:1rem;
+    text-align:center;
+}
+
+.stat-card-horizontal {
+    display:flex;
+    align-items:center;
+    gap:0.75rem;
+    margin-bottom:0.6rem;
+}
+
+/* Variant color mapping */
+.stat-card.blue .stat-value { color:#3B82F6; }
+.stat-card.yellow .stat-value { color:#F59E0B; }
+.stat-card.purple .stat-value { color:#8B5CF6; }
+.stat-card.green .stat-value { color:#10B981; }
+.stat-card.red .stat-value { color:#EF4444; }
+</style>

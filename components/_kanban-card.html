@@ -1,0 +1,190 @@
+<!-- Kanban Card Component -->
+<!-- Used in: Kanban Board, Column Items -->
+<!-- Props: id, firma, position, days, daysColor, onClick -->
+
+<!-- Standard Kanban Card -->
+<div class="kanban-card" onclick="{{onClick}}'{{id}}')">
+    <div class="kanban-firma">{{firma}}</div>
+    <div class="kanban-position">{{position}}</div>
+    <div class="kanban-days" style="color:{{daysColor}};">⏱ {{days}}d</div>
+</div>
+
+<!-- Kanban Card with Status Badge -->
+<div class="kanban-card kanban-card-with-status">
+    <div style="flex:1;">
+        <div class="kanban-firma">{{firma}}</div>
+        <div class="kanban-position">{{position}}</div>
+        <div class="kanban-date">{{date}}</div>
+    </div>
+    <div>{{statusBadge}}</div>
+</div>
+
+<!-- Kanban Card - Compact -->
+<div class="kanban-card-compact">
+    <div class="kanban-firma-compact">{{firma}}</div>
+    <div class="kanban-position-compact">{{position}}</div>
+    <div class="kanban-meta">{{days}}d</div>
+</div>
+
+<!-- Kanban Column Container -->
+<div class="kanban-col">
+    <div class="kanban-header" style="background:{{color}}20;border-bottom:1px solid {{color}}40;">
+        <span>{{label}}</span>
+        <span style="background:{{color}};color:white;border-radius:12px;padding:0.1rem 0.5rem;font-size:0.75rem;">{{count}}</span>
+    </div>
+    <div class="kanban-body">
+        <!-- Kanban cards will be rendered here -->
+    </div>
+</div>
+
+<!-- Styles for kanban components (in components.css) -->
+<style>
+.kanban-board {
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));
+    gap:1.5rem;
+    margin-top:1rem;
+}
+
+.kanban-col {
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:12px;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+    max-height:calc(100vh - 200px);
+}
+
+.kanban-header {
+    padding:0.75rem 1rem;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    font-weight:600;
+    font-size:0.9rem;
+    background-color:var(--bg-card2);
+}
+
+.kanban-body {
+    flex:1;
+    overflow-y:auto;
+    padding:0.75rem;
+    display:flex;
+    flex-direction:column;
+    gap:0.6rem;
+}
+
+.kanban-card {
+    background:var(--bg-card2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:0.85rem;
+    cursor:pointer;
+    transition:all 0.2s;
+    user-select:none;
+}
+
+.kanban-card:hover {
+    background:var(--bg);
+    border-color:var(--primary);
+    transform:translateY(-2px);
+    box-shadow:0 4px 12px rgba(79,70,229,0.2);
+}
+
+.kanban-firma {
+    font-weight:600;
+    font-size:0.9rem;
+    color:var(--primary-light);
+    margin-bottom:0.35rem;
+}
+
+.kanban-position {
+    font-size:0.8rem;
+    color:var(--text-muted);
+    margin-bottom:0.4rem;
+}
+
+.kanban-days {
+    font-size:0.75rem;
+    font-weight:500;
+}
+
+.kanban-card-with-status {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:0.6rem;
+}
+
+.kanban-date {
+    font-size:0.7rem;
+    color:var(--text-muted);
+    margin-top:0.2rem;
+}
+
+.kanban-card-compact {
+    background:var(--bg-card2);
+    padding:0.6rem;
+    border-radius:6px;
+    cursor:pointer;
+    transition:all 0.2s;
+}
+
+.kanban-card-compact:hover {
+    background:var(--primary);
+    color:white;
+}
+
+.kanban-firma-compact {
+    font-size:0.8rem;
+    font-weight:600;
+}
+
+.kanban-position-compact {
+    font-size:0.7rem;
+    opacity:0.8;
+    margin-top:0.15rem;
+}
+
+.kanban-meta {
+    font-size:0.65rem;
+    opacity:0.7;
+    margin-top:0.2rem;
+}
+
+/* Responsive Kanban Board */
+@media(max-width:1024px) {
+    .kanban-board {
+        grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
+        gap:1rem;
+    }
+}
+
+@media(max-width:640px) {
+    .kanban-board {
+        grid-template-columns:1fr;
+        gap:0.75rem;
+    }
+
+    .kanban-col {
+        max-height:400px;
+    }
+
+    .kanban-body {
+        max-height:300px;
+    }
+}
+
+/* Drag & Drop Support (future enhancement) */
+.kanban-card.dragging {
+    opacity:0.5;
+    transform:rotate(2deg);
+}
+
+.kanban-body.drag-over {
+    background:var(--primary);
+    background:rgba(79,70,229,0.1);
+    border-radius:8px;
+}
+</style>

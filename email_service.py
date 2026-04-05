@@ -45,6 +45,83 @@ CORS_HEADERS = {
     'Access-Control-Allow-Headers': 'Content-Type'
 }
 
+# ── Helper Classes ─────────────────────────────────────────────────────
+
+class IMAPConnection:
+    """Helper class for establishing and managing IMAP connections"""
+    def __init__(self, host, port, user, password):
+        self.host = host
+        self.port = int(port)
+        self.user = user
+        self.password = password
+        self.connection = None
+
+    def connect(self):
+        """Establish IMAP connection with SSL/TLS support"""
+        try:
+            if self.port == 993:
+                self.connection = imaplib.IMAP4_SSL(
+                    self.host, self.port,
+                    context=ssl.create_default_context()
+                )
+            else:
+                self.connection = imaplib.IMAP4(self.host, self.port)
+                self.connection.starttls()
+
+            self.connection.login(self.user, self.password)
+            return True
+        except (imaplib.IMAP4.error, ConnectionError) as e:
+            print(f"❌ IMAP Connection Error: {e}")
+            return False
+
+    def select_folder(self, folder='INBOX'):
+        """Select a folder in the mailbox"""
+        if self.connection:
+            self.connection.select(folder)
+
+    def close(self):
+        """Close the IMAP connection"""
+        if self.connection:
+            try:
+                self.connection.close()
+                self.connection.logout()
+            except:
+                pass
+
+
+class InputValidator:
+    """Consolidate input validation logic"""
+    @staticmethod
+    def validate_email(email):
+        """Validate email format"""
+        return email and '@' in email
+
+    @staticmethod
+    def validate_credentials(host, port, user, password):
+        """Validate email credentials"""
+        if not all([host, port, user, password]):
+            return False, 'Missing required fields'
+        try:
+            port_int = int(port)
+            if port_int < 1 or port_int > 65535:
+                return False, 'Invalid port number'
+            return True, None
+        except ValueError:
+            return False, 'Port must be a number'
+
+    @staticmethod
+    def validate_email_params(recipient, subject, html_body):
+        """Validate email sending parameters"""
+        if not recipient:
+            return False, 'Missing recipient'
+        if not subject:
+            return False, 'Missing subject'
+        if not html_body:
+            return False, 'Missing email body'
+        if not InputValidator.validate_email(recipient):
+            return False, 'Invalid email format'
+        return True, None
+
 # ── Database ───────────────────────────────────────────────────────────
 
 def derive_encryption_key(master_password):
@@ -349,15 +426,13 @@ def fetch_imap_emails():
         if not imap_host or not imap_user or not imap_pass:
             return []
 
-        # Connect to IMAP
-        if imap_port == '993':
-            imap = imaplib.IMAP4_SSL(imap_host, int(imap_port), context=ssl.create_default_context())
-        else:
-            imap = imaplib.IMAP4(imap_host, int(imap_port))
-            imap.starttls()
+        # Use IMAPConnection helper for consistent connection handling
+        imap_conn = IMAPConnection(imap_host, imap_port, imap_user, imap_pass)
+        if not imap_conn.connect():
+            return []
 
-        imap.login(imap_user, imap_pass)
-        imap.select('INBOX')
+        imap_conn.select_folder('INBOX')
+        imap = imap_conn.connection
 
         # Fetch emails from last 7 days
         since_date = (datetime.now() - timedelta(days=7)).strftime('%d-%b-%Y')
@@ -375,8 +450,7 @@ def fetch_imap_emails():
                 'date': msg.get('Date', ''),
             })
 
-        imap.close()
-        imap.logout()
+        imap_conn.close()
         return emails
 
     except Exception as e:
@@ -602,13 +676,16 @@ class EmailServiceHandler(JSONHandler):
         params = {k: v[0] if v else '' for k, v in query_params.items()}
 
         try:
-            if path == '/api/status':
-                self.handle_status()
-            elif path == '/api/config/get':
-                key = params.get('key', '')
-                self.handle_get_config({'key': key})
-            elif path == '/api/monitoring/check':
-                self.handle_check_monitoring({})
+            # Route dispatch dictionary
+            get_routes = {
+                '/api/status': lambda: self.handle_status(),
+                '/api/config/get': lambda: self.handle_get_config({'key': params.get('key', '')}),
+                '/api/monitoring/check': lambda: self.handle_check_monitoring({})
+            }
+
+            handler = get_routes.get(path)
+            if handler:
+                handler()
             else:
                 self.send_json_error('Not found', 404)
 
@@ -636,27 +713,28 @@ class EmailServiceHandler(JSONHandler):
             self.send_json_error('Invalid JSON', 400)
             return
 
-        # Route based on path
-        if self.path == '/api/config/save':
-            self.handle_save_config(data)
-        elif self.path == '/api/config/get':
-            self.handle_get_config(data)
-        elif self.path == '/api/credentials/save':
-            self.handle_save_credentials(data)
-        elif self.path == '/api/credentials/test':
-            self.handle_test_credentials(data)
-        elif self.path == '/api/email/send':
-            self.handle_send_email(data)
-        elif self.path == '/api/email/test':
-            self.handle_test_email(data)
-        elif self.path == '/api/status':
-            self.handle_status()
-        elif self.path == '/api/monitoring/enable':
-            self.handle_enable_monitoring(data)
-        elif self.path == '/api/monitoring/check':
-            self.handle_check_monitoring(data)
-        elif self.path == '/api/applications/cache':
-            self.handle_save_applications(data)
+        # Route dispatch dictionary - maps URL path to handler function
+        post_routes = {
+            '/api/config/save': self.handle_save_config,
+            '/api/config/get': self.handle_get_config,
+            '/api/credentials/save': self.handle_save_credentials,
+            '/api/credentials/test': self.handle_test_credentials,
+            '/api/email/send': self.handle_send_email,
+            '/api/email/test': self.handle_test_email,
+            '/api/status': self.handle_status,
+            '/api/monitoring/enable': self.handle_enable_monitoring,
+            '/api/monitoring/check': self.handle_check_monitoring,
+            '/api/applications/cache': self.handle_save_applications,
+        }
+
+        # Dispatch request to appropriate handler
+        handler = post_routes.get(self.path)
+        if handler:
+            # Handlers that accept data parameter
+            if self.path != '/api/status':
+                handler(data)
+            else:
+                handler()  # handle_status() takes no parameters
         else:
             self.send_response(404)
             self.end_headers()
@@ -828,21 +906,16 @@ class EmailServiceHandler(JSONHandler):
                     'service': 'smtp'
                 })
             else:  # service == 'imap'
-                # Test IMAP connection
-                if port_int == 993:
-                    imap = imaplib.IMAP4_SSL(host, port_int, context=ssl.create_default_context())
+                # Test IMAP connection using consolidated helper
+                imap_conn = IMAPConnection(host, port_int, user, password)
+                if imap_conn.connect():
+                    imap_conn.close()
+                    self.send_json_ok({
+                        'message': 'IMAP credentials are valid',
+                        'service': 'imap'
+                    })
                 else:
-                    imap = imaplib.IMAP4(host, port_int)
-                    imap.starttls()
-
-                imap.login(user, password)
-                imap.close()
-                imap.logout()
-
-                self.send_json_ok({
-                    'message': 'IMAP credentials are valid',
-                    'service': 'imap'
-                })
+                    self.send_json_error('Invalid IMAP credentials', 401)
 
         except smtplib.SMTPAuthenticationError:
             self.send_json_error('Authentication failed. Check your credentials.', 401)
