@@ -3,6 +3,7 @@ import SwiftData
 
 @MainActor
 class ApplicationsViewModel: ObservableObject {
+    let apiClient: APIClientProtocol
     @Published var applications: [ApplicationModel] = []
     @Published var filteredApplications: [ApplicationModel] = []
     @Published var searchText: String = ""
@@ -11,8 +12,9 @@ class ApplicationsViewModel: ObservableObject {
 
     private let modelContext: ModelContext
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, apiClient: APIClientProtocol = URLSessionAPIClient()) {
         self.modelContext = modelContext
+        self.apiClient = apiClient
         fetchApplications()
     }
 

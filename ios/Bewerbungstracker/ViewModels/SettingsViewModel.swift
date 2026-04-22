@@ -3,6 +3,7 @@ import SwiftData
 
 @MainActor
 class SettingsViewModel: ObservableObject {
+    let apiClient: APIClientProtocol
     @Published var user: UserModel?
     @Published var lastSyncTime: String = "Never"
     @Published var isSyncing: Bool = false
@@ -11,8 +12,9 @@ class SettingsViewModel: ObservableObject {
 
     private let modelContext: ModelContext
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, apiClient: APIClientProtocol = URLSessionAPIClient()) {
         self.modelContext = modelContext
+        self.apiClient = apiClient
         fetchUser()
         updateLastSyncTime()
     }
@@ -72,11 +74,24 @@ class SettingsViewModel: ObservableObject {
     }
 
     func logout() {
-        // Clear user session
-        if let currentUser = user {
-            modelContext.delete(currentUser)
-            try? modelContext.save()
+        Task {
+            do {
+                try await apiClient.logout()
+                // Clear user session
+                if let currentUser = user {
+                    modelContext.delete(currentUser)
+                    try? modelContext.save()
+                }
+                isLoggedOut = true
+            } catch {
+                print("Logout error: \(error)")
+                // Clear session anyway even if API call fails
+                if let currentUser = user {
+                    modelContext.delete(currentUser)
+                    try? modelContext.save()
+                }
+                isLoggedOut = true
+            }
         }
-        isLoggedOut = true
     }
 }

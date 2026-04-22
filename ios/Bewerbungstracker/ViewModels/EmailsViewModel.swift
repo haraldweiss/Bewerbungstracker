@@ -3,6 +3,7 @@ import SwiftData
 
 @MainActor
 class EmailsViewModel: ObservableObject {
+    let apiClient: APIClientProtocol
     @Published var emails: [EmailModel] = []
     @Published var filteredEmails: [EmailModel] = []
     @Published var groupedEmails: [(application: ApplicationModel?, emails: [EmailModel])] = []
@@ -13,8 +14,9 @@ class EmailsViewModel: ObservableObject {
 
     private let modelContext: ModelContext
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, apiClient: APIClientProtocol = URLSessionAPIClient()) {
         self.modelContext = modelContext
+        self.apiClient = apiClient
         fetchEmails()
     }
 
