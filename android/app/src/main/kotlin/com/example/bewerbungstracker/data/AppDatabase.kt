@@ -17,6 +17,8 @@ data class ApplicationEntity(
     val position: String,
     val status: String = "applied", // "applied", "interview", "offer", "rejected", "archived"
     val appliedDate: Long? = null, // Unix timestamp
+    val location: String? = null, // Application location
+    val notes: String? = null, // Application notes
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

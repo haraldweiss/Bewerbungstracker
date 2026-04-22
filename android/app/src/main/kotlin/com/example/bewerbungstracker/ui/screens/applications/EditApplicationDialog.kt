@@ -10,9 +10,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -67,7 +67,7 @@ fun EditApplicationDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Company field
-                OutlinedTextField(
+                TextField(
                     value = company,
                     onValueChange = { company = it },
                     label = { Text("Company*") },
@@ -76,7 +76,7 @@ fun EditApplicationDialog(
                 )
 
                 // Position field
-                OutlinedTextField(
+                TextField(
                     value = position,
                     onValueChange = { position = it },
                     label = { Text("Position*") },
@@ -85,7 +85,7 @@ fun EditApplicationDialog(
                 )
 
                 // Location field
-                OutlinedTextField(
+                TextField(
                     value = location,
                     onValueChange = { location = it },
                     label = { Text("Location") },
@@ -95,7 +95,7 @@ fun EditApplicationDialog(
 
                 // Applied Date field with date picker
                 val dateFormatter = SimpleDateFormat("MM/dd/yyyy", Locale.getDefault())
-                OutlinedTextField(
+                TextField(
                     value = dateFormatter.format(Date(appliedDate)),
                     onValueChange = { /* Date picker handles this */ },
                     label = { Text("Applied Date") },
@@ -103,12 +103,11 @@ fun EditApplicationDialog(
                         .fillMaxWidth()
                         .clickable { showDatePicker = true },
                     readOnly = true,
-                    enabled = false,
                     singleLine = true
                 )
 
                 // Notes field
-                OutlinedTextField(
+                TextField(
                     value = notes,
                     onValueChange = { notes = it },
                     label = { Text("Notes") },
