@@ -1,17 +1,58 @@
 import SwiftUI
 
 struct AppColors {
-    static let primary = Color(red: 0, green: 0.48, blue: 1) // #007AFF
-    static let statusInterview = Color(red: 0.29, green: 0.69, blue: 0.31) // #4CAF50
-    static let statusApplied = Color(red: 1, green: 0.60, blue: 0) // #FF9800
-    static let statusOffer = Color(red: 0.13, green: 0.59, blue: 1) // #2196F3
-    static let statusPending = Color(red: 0.61, green: 0.15, blue: 0.69) // #9C27B0
-    static let textPrimary = Color(red: 0.2, green: 0.2, blue: 0.2) // #333
-    static let textSecondary = Color(red: 0.4, green: 0.4, blue: 0.4) // #666
-    static let textTertiary = Color(red: 0.6, green: 0.6, blue: 0.6) // #999
-    static let background = Color.white
-    static let cardBackground = Color.white
-    static let sectionBackground = Color(red: 0.96, green: 0.96, blue: 0.96) // #F5F5F5
-    static let border = Color(red: 0.88, green: 0.88, blue: 0.88) // #E0E0E0
-    static let danger = Color(red: 1, green: 0.24, blue: 0.19) // #FF3B30
+    @Environment(\.colorScheme) var colorScheme
+
+    // Background colors
+    var background: Color {
+        colorScheme == .dark ? Color(red: 0.1, green: 0.1, blue: 0.1) : .white
+    }
+
+    var cardBackground: Color {
+        colorScheme == .dark ? Color(red: 0.18, green: 0.18, blue: 0.18) : .white
+    }
+
+    var sectionBackground: Color {
+        colorScheme == .dark ? Color(red: 0.14, green: 0.14, blue: 0.14) : Color(red: 0.96, green: 0.96, blue: 0.96)
+    }
+
+    // Text colors
+    var textPrimary: Color {
+        colorScheme == .dark ? .white : Color(red: 0.2, green: 0.2, blue: 0.2)
+    }
+
+    var textSecondary: Color {
+        colorScheme == .dark ? Color(red: 0.8, green: 0.8, blue: 0.8) : Color(red: 0.4, green: 0.4, blue: 0.4)
+    }
+
+    var textTertiary: Color {
+        Color(red: 0.6, green: 0.6, blue: 0.6)
+    }
+
+    // Border colors
+    var border: Color {
+        colorScheme == .dark ? Color(red: 0.25, green: 0.25, blue: 0.25) : Color(red: 0.88, green: 0.88, blue: 0.88)
+    }
+
+    // Status colors (unchanged)
+    let statusInterview = Color(red: 0.298, green: 0.686, blue: 0.314) // #4CAF50
+    let statusApplied = Color(red: 1.0, green: 0.596, blue: 0.0)       // #FF9800
+    let statusOffer = Color(red: 0.129, green: 0.588, blue: 0.953)     // #2196F3
+    let statusPending = Color(red: 0.612, green: 0.153, blue: 0.690)   // #9C27B0
+
+    // Action colors
+    let primary = Color(red: 0.0, green: 0.478, blue: 1.0)             // #007AFF
+    let danger = Color(red: 1.0, green: 0.231, blue: 0.188)            // #FF3B30
+}
+
+// Environment key for injecting AppColors into view hierarchy
+struct AppColorsEnvironmentKey: EnvironmentKey {
+    static let defaultValue: AppColors? = nil
+}
+
+extension EnvironmentValues {
+    var appColors: AppColors? {
+        get { self[AppColorsEnvironmentKey.self] }
+        set { self[AppColorsEnvironmentKey.self] = newValue }
+    }
 }
