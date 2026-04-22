@@ -113,6 +113,35 @@ class ApplicationsViewModel(
         }
     }
 
+    fun editApplication(
+        id: String,
+        company: String,
+        position: String,
+        appliedDate: Long,
+        status: String? = null
+    ) {
+        viewModelScope.launch {
+            try {
+                val existing = repository.getApplication(userId, id)
+                if (existing != null) {
+                    val updated = existing.copy(
+                        company = company,
+                        position = position,
+                        appliedDate = appliedDate,
+                        status = status ?: existing.status,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    repository.updateApplication(updated)
+                    loadApplications()
+                } else {
+                    _uiState.value = _uiState.value.copy(errorMessage = "Application not found")
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message ?: "Update failed")
+            }
+        }
+    }
+
     fun deleteApplication(application: ApplicationEntity) {
         viewModelScope.launch {
             try {
@@ -120,6 +149,22 @@ class ApplicationsViewModel(
                 loadApplications()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(errorMessage = e.message)
+            }
+        }
+    }
+
+    fun deleteApplicationById(id: String) {
+        viewModelScope.launch {
+            try {
+                val existing = repository.getApplication(userId, id)
+                if (existing != null) {
+                    repository.deleteApplication(existing)
+                    loadApplications()
+                } else {
+                    _uiState.value = _uiState.value.copy(errorMessage = "Application not found")
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message ?: "Delete failed")
             }
         }
     }
