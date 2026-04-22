@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 
 /// Application (Bewerbung) model for local SwiftData persistence
 @Model
@@ -7,10 +8,12 @@ final class ApplicationModel {
     @Attribute(.unique) var id: UUID
     var company: String
     var position: String
+    var location: String?
     var status: String // "applied", "interview", "offer", "rejected", "archived"
     var appliedDate: Date?
     var createdAt: Date
     var updatedAt: Date
+    var notes: String?
 
     @Relationship(deleteRule: .cascade, inverse: \EmailModel.matchedApplication)
     var emails: [EmailModel] = []
@@ -19,21 +22,25 @@ final class ApplicationModel {
         id: UUID = UUID(),
         company: String,
         position: String,
+        location: String? = nil,
         status: String = "applied",
-        appliedDate: Date? = nil
+        appliedDate: Date? = nil,
+        notes: String? = nil
     ) {
         self.id = id
         self.company = company
         self.position = position
+        self.location = location
         self.status = status
         self.appliedDate = appliedDate
+        self.notes = notes
         self.createdAt = Date()
         self.updatedAt = Date()
     }
 }
 
 // MARK: - Status Enum
-enum ApplicationStatus: String, CaseIterable {
+enum ApplicationStatus: String, CaseIterable, Codable {
     case applied = "applied"
     case interview = "interview"
     case offer = "offer"
@@ -52,6 +59,16 @@ enum ApplicationStatus: String, CaseIterable {
             return "Rejected"
         case .archived:
             return "Archived"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .applied: return AppColors.statusApplied
+        case .interview: return AppColors.statusInterview
+        case .offer: return AppColors.statusOffer
+        case .rejected: return AppColors.danger
+        case .archived: return AppColors.textTertiary
         }
     }
 }
