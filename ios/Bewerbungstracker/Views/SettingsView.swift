@@ -103,6 +103,32 @@ struct SettingsView: View {
                     }
                     .padding(.horizontal, 12)
 
+                    // Appearance Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Appearance")
+                            .font(AppFonts.heading)
+                            .foregroundColor(AppColors.textPrimary)
+                            .padding(.horizontal, 12)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Theme")
+                                .font(AppFonts.body)
+                                .foregroundColor(AppColors.textSecondary)
+
+                            Picker("Theme", selection: $viewModel.appearanceMode) {
+                                Text("System").tag("system")
+                                Text("Light").tag("light")
+                                Text("Dark").tag("dark")
+                            }
+                            .pickerStyle(.segmented)
+                            .tint(AppColors.primary)
+                        }
+                        .padding(12)
+                        .background(AppColors.sectionBackground)
+                        .cornerRadius(6)
+                    }
+                    .padding(.horizontal, 12)
+
                     // Export Section
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Export")

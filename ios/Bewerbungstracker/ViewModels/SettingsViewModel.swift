@@ -9,12 +9,23 @@ class SettingsViewModel: ObservableObject {
     @Published var isSyncing: Bool = false
     @Published var showLogoutAlert: Bool = false
     @Published var isLoggedOut: Bool = false
+    @Published var appearanceMode: String = "system" {
+        didSet {
+            UserDefaults.standard.setValue(appearanceMode, forKey: "darkModePreference")
+        }
+    }
 
     private let modelContext: ModelContext
 
     init(modelContext: ModelContext, apiClient: APIClientProtocol = URLSessionAPIClient()) {
         self.modelContext = modelContext
         self.apiClient = apiClient
+        // Load saved appearance preference from UserDefaults
+        if let saved = UserDefaults.standard.string(forKey: "darkModePreference") {
+            self.appearanceMode = saved
+        } else {
+            self.appearanceMode = "system"
+        }
         fetchUser()
         updateLastSyncTime()
     }
@@ -92,6 +103,17 @@ class SettingsViewModel: ObservableObject {
                 }
                 isLoggedOut = true
             }
+        }
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        switch appearanceMode {
+        case "light":
+            return .light
+        case "dark":
+            return .dark
+        default:
+            return nil // System default
         }
     }
 }
