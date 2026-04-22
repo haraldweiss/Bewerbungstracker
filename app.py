@@ -26,10 +26,12 @@ def create_app(config_class=None):
     from api.auth import auth_bp
     from api.applications import apps_bp
     from api.emails import emails_bp
+    from claude_integration import claude_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(apps_bp)
     app.register_blueprint(emails_bp)
+    app.register_blueprint(claude_bp)
 
     # Error handlers
     @app.errorhandler(401)
