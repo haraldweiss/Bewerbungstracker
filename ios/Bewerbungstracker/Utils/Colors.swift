@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AppColors {
-    @Environment(\.colorScheme) var colorScheme
+    let colorScheme: ColorScheme
 
     // Background colors
     var background: Color {
@@ -43,16 +43,4 @@ struct AppColors {
     // Action colors
     let primary = Color(red: 0.0, green: 0.478, blue: 1.0)             // #007AFF
     let danger = Color(red: 1.0, green: 0.231, blue: 0.188)            // #FF3B30
-}
-
-// Environment key for injecting AppColors into view hierarchy
-struct AppColorsEnvironmentKey: EnvironmentKey {
-    static let defaultValue: AppColors? = nil
-}
-
-extension EnvironmentValues {
-    var appColors: AppColors? {
-        get { self[AppColorsEnvironmentKey.self] }
-        set { self[AppColorsEnvironmentKey.self] = newValue }
-    }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProfileCard: View {
     let user: UserModel?
+    @Environment(\.colorScheme) var colorScheme
 
     var initials: String {
         guard let user = user else { return "?" }
@@ -13,12 +14,14 @@ struct ProfileCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let colors = AppColors(colorScheme: colorScheme)
+
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 16) {
                 // Initials circle
                 ZStack {
                     Circle()
-                        .fill(AppColors.primary)
+                        .fill(colors.primary)
                         .frame(width: 56, height: 56)
 
                     Text(initials)
@@ -30,17 +33,17 @@ struct ProfileCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(user?.name ?? "Unknown User")
                         .font(AppFonts.heading)
-                        .foregroundColor(AppColors.textPrimary)
+                        .foregroundColor(colors.textPrimary)
 
                     Text(user?.email ?? "no-email@example.com")
                         .font(AppFonts.body)
-                        .foregroundColor(AppColors.textSecondary)
+                        .foregroundColor(colors.textSecondary)
                 }
 
                 Spacer()
             }
             .padding(16)
-            .background(AppColors.sectionBackground)
+            .background(colors.sectionBackground)
             .cornerRadius(8)
         }
         .padding(12)

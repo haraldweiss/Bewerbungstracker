@@ -2,8 +2,10 @@ import SwiftUI
 
 struct MainTabView: View {
     @State private var selectedTab: Int = 0
+    @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
+        let colors = AppColors(colorScheme: colorScheme)
         ZStack(alignment: .bottom) {
             TabView(selection: $selectedTab) {
                 ApplicationsView()
@@ -34,7 +36,7 @@ struct MainTabView: View {
                     }
                     .tag(3)
             }
-            .accentColor(AppColors.primary)
+            .accentColor(colors.primary)
         }
     }
 }

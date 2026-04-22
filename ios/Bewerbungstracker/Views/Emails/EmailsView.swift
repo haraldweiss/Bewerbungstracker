@@ -3,6 +3,7 @@ import SwiftData
 
 struct EmailsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) var colorScheme
     @StateObject private var viewModel: EmailsViewModel
 
     init() {
@@ -12,19 +13,20 @@ struct EmailsView: View {
     }
 
     var body: some View {
+        let colors = AppColors(colorScheme: colorScheme)
         NavigationStack {
             VStack(spacing: 0) {
                 // Search Bar
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(AppColors.textTertiary)
+                        .foregroundColor(colors.textTertiary)
                     TextField("Search emails", text: Binding(
                         get: { viewModel.searchText },
                         set: { viewModel.updateSearch($0) }
                     ))
                 }
                 .padding(12)
-                .background(AppColors.sectionBackground)
+                .background(colors.sectionBackground)
                 .cornerRadius(6)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -34,16 +36,16 @@ struct EmailsView: View {
                     VStack(spacing: 12) {
                         Image(systemName: "envelope.open")
                             .font(.system(size: 48))
-                            .foregroundColor(AppColors.textTertiary)
+                            .foregroundColor(colors.textTertiary)
                         Text("No emails")
                             .font(AppFonts.heading)
-                            .foregroundColor(AppColors.textSecondary)
+                            .foregroundColor(colors.textSecondary)
                         Text("Emails linked to your applications will appear here")
                             .font(AppFonts.secondary)
-                            .foregroundColor(AppColors.textTertiary)
+                            .foregroundColor(colors.textTertiary)
                     }
                     .frame(maxHeight: .infinity)
-                    .background(AppColors.background)
+                    .background(colors.background)
                 } else {
                     ScrollView {
                         VStack(spacing: 12) {

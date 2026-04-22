@@ -4,14 +4,16 @@ struct NotificationRow: View {
     let notification: NotificationModel
     var onDelete: (() -> Void)?
     var onMarkAsRead: (() -> Void)?
+    @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
+        let colors = AppColors(colorScheme: colorScheme)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
                 // Icon
                 Image(systemName: notification.type.icon)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(AppColors.primary)
+                    .foregroundColor(colors.primary)
                     .frame(width: 28, height: 28)
                     .background(Color.blue.opacity(0.1))
                     .cornerRadius(6)
@@ -21,30 +23,30 @@ struct NotificationRow: View {
                     HStack(spacing: 8) {
                         Text(notification.title)
                             .font(AppFonts.heading)
-                            .foregroundColor(AppColors.textPrimary)
+                            .foregroundColor(colors.textPrimary)
                             .lineLimit(1)
 
                         if !notification.isRead {
                             Circle()
-                                .fill(AppColors.primary)
+                                .fill(colors.primary)
                                 .frame(width: 8, height: 8)
                         }
                     }
 
                     Text(notification.description)
                         .font(AppFonts.body)
-                        .foregroundColor(AppColors.textSecondary)
+                        .foregroundColor(colors.textSecondary)
                         .lineLimit(2)
 
                     HStack(spacing: 12) {
                         Text(DateFormatters.relativeDate(from: notification.timestamp))
                             .font(AppFonts.label)
-                            .foregroundColor(AppColors.textTertiary)
+                            .foregroundColor(colors.textTertiary)
 
                         if let application = notification.application {
                             Text(application.company)
                                 .font(AppFonts.label)
-                                .foregroundColor(AppColors.statusApplied)
+                                .foregroundColor(colors.statusApplied)
                         }
                     }
                 }
@@ -57,22 +59,22 @@ struct NotificationRow: View {
                         Button(action: { onMarkAsRead?() }) {
                             Image(systemName: "circle.fill")
                                 .font(.system(size: 8))
-                                .foregroundColor(AppColors.primary)
+                                .foregroundColor(colors.primary)
                         }
                     }
 
                     Button(action: { onDelete?() }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(AppColors.textTertiary)
+                            .foregroundColor(colors.textTertiary)
                     }
                 }
                 .frame(width: 24)
             }
         }
         .padding(12)
-        .background(AppColors.cardBackground)
-        .border(AppColors.border, width: 0.5)
+        .background(colors.cardBackground)
+        .border(colors.border, width: 0.5)
         .cornerRadius(8)
         .contentShape(Rectangle())
     }
@@ -88,5 +90,5 @@ struct NotificationRow: View {
         )
     )
     .padding()
-    .background(AppColors.sectionBackground)
+    .background(colors.sectionBackground)
 }

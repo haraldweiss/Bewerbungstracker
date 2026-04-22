@@ -4,15 +4,17 @@ import SwiftData
 struct NotificationsView: View {
     @StateObject private var viewModel: NotificationsViewModel
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) var colorScheme
 
     init() {
         _viewModel = StateObject(wrappedValue: NotificationsViewModel(modelContext: ModelContext(ModelConfiguration())))
     }
 
     var body: some View {
+        let colors = AppColors(colorScheme: colorScheme)
         NavigationStack {
             ZStack {
-                AppColors.background
+                colors.background
                     .ignoresSafeArea()
 
                 VStack(spacing: 0) {
@@ -26,13 +28,13 @@ struct NotificationsView: View {
                         VStack(spacing: 12) {
                             Image(systemName: "bell.slash")
                                 .font(.system(size: 48))
-                                .foregroundColor(AppColors.textTertiary)
+                                .foregroundColor(colors.textTertiary)
                             Text("No notifications")
                                 .font(AppFonts.heading)
-                                .foregroundColor(AppColors.textSecondary)
+                                .foregroundColor(colors.textSecondary)
                             Text("You'll see important updates here")
                                 .font(AppFonts.secondary)
-                                .foregroundColor(AppColors.textTertiary)
+                                .foregroundColor(colors.textTertiary)
                         }
                         .frame(maxHeight: .infinity)
                     } else {
@@ -44,11 +46,11 @@ struct NotificationsView: View {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text("Activity Timeline")
                                             .font(AppFonts.title)
-                                            .foregroundColor(AppColors.textPrimary)
+                                            .foregroundColor(colors.textPrimary)
                                         if viewModel.unreadCount > 0 {
                                             Text("\(viewModel.unreadCount) unread")
                                                 .font(AppFonts.label)
-                                                .foregroundColor(AppColors.primary)
+                                                .foregroundColor(colors.primary)
                                         }
                                     }
 
@@ -68,7 +70,7 @@ struct NotificationsView: View {
                                         }
                                     } label: {
                                         Image(systemName: "ellipsis.circle")
-                                            .foregroundColor(AppColors.primary)
+                                            .foregroundColor(colors.primary)
                                     }
                                 }
                                 .padding(.horizontal, 12)
@@ -106,11 +108,13 @@ struct NotificationsView: View {
 struct SearchBar: View {
     @Binding var text: String
     var onSearch: (String) -> Void
+    @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
+        let colors = AppColors(colorScheme: colorScheme)
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(AppColors.textTertiary)
+                .foregroundColor(colors.textTertiary)
 
             TextField("Search notifications", text: $text)
                 .font(AppFonts.body)
@@ -126,12 +130,12 @@ struct SearchBar: View {
                     onSearch("")
                 }) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(AppColors.textTertiary)
+                        .foregroundColor(colors.textTertiary)
                 }
             }
         }
         .padding(8)
-        .background(AppColors.sectionBackground)
+        .background(colors.sectionBackground)
         .cornerRadius(8)
     }
 }

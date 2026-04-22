@@ -2,8 +2,10 @@ import SwiftUI
 
 struct ApplicationFilterView: View {
     @Binding var selectedFilter: ApplicationStatus?
+    @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
+        let colors = AppColors(colorScheme: colorScheme)
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 FilterButton(
@@ -30,15 +32,17 @@ struct FilterButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
+    @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
+        let colors = AppColors(colorScheme: colorScheme)
         Button(action: action) {
             Text(title)
                 .font(AppFonts.body)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(isSelected ? AppColors.primary : AppColors.sectionBackground)
-                .foregroundColor(isSelected ? .white : AppColors.textSecondary)
+                .background(isSelected ? colors.primary : colors.sectionBackground)
+                .foregroundColor(isSelected ? .white : colors.textSecondary)
                 .cornerRadius(4)
         }
     }

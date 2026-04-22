@@ -3,6 +3,7 @@ import SwiftData
 
 struct ApplicationsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) var colorScheme
     @StateObject private var viewModel: ApplicationsViewModel
 
     init() {
@@ -12,19 +13,20 @@ struct ApplicationsView: View {
     }
 
     var body: some View {
+        let colors = AppColors(colorScheme: colorScheme)
         NavigationStack {
             VStack(spacing: 0) {
                 // Search Bar
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(AppColors.textTertiary)
+                        .foregroundColor(colors.textTertiary)
                     TextField("Search applications", text: Binding(
                         get: { viewModel.searchText },
                         set: { viewModel.updateSearch($0) }
                     ))
                 }
                 .padding(12)
-                .background(AppColors.sectionBackground)
+                .background(colors.sectionBackground)
                 .cornerRadius(6)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -40,16 +42,16 @@ struct ApplicationsView: View {
                     VStack(spacing: 12) {
                         Image(systemName: "inbox.fill")
                             .font(.system(size: 48))
-                            .foregroundColor(AppColors.textTertiary)
+                            .foregroundColor(colors.textTertiary)
                         Text("No applications")
                             .font(AppFonts.heading)
-                            .foregroundColor(AppColors.textSecondary)
+                            .foregroundColor(colors.textSecondary)
                         Text("Create your first application to get started")
                             .font(AppFonts.secondary)
-                            .foregroundColor(AppColors.textTertiary)
+                            .foregroundColor(colors.textTertiary)
                     }
                     .frame(maxHeight: .infinity)
-                    .background(AppColors.background)
+                    .background(colors.background)
                 } else {
                     List {
                         ForEach(viewModel.filteredApplications, id: \.id) { app in
@@ -69,12 +71,12 @@ struct ApplicationsView: View {
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(12)
-                            .background(AppColors.primary)
+                            .background(colors.primary)
                             .cornerRadius(6)
                     }
                     .padding(12)
                 }
-                .background(AppColors.background)
+                .background(colors.background)
             }
             .navigationTitle("Applications")
             .navigationBarTitleDisplayMode(.inline)

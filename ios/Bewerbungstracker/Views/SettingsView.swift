@@ -3,6 +3,7 @@ import SwiftData
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) var colorScheme
     @StateObject private var viewModel: SettingsViewModel
     @State private var showLogoutConfirmation = false
 
@@ -14,6 +15,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        let colors = AppColors(colorScheme: colorScheme)
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -24,36 +26,36 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Account")
                             .font(AppFonts.heading)
-                            .foregroundColor(AppColors.textPrimary)
+                            .foregroundColor(colors.textPrimary)
                             .padding(.horizontal, 12)
 
                         NavigationLink(destination: Text("Edit Profile")) {
                             HStack {
                                 Image(systemName: "person.fill")
-                                    .foregroundColor(AppColors.primary)
+                                    .foregroundColor(colors.primary)
                                 Text("Edit Profile")
-                                    .foregroundColor(AppColors.textPrimary)
+                                    .foregroundColor(colors.textPrimary)
                                 Spacer()
                                 Image(systemName: "chevron.right")
-                                    .foregroundColor(AppColors.textTertiary)
+                                    .foregroundColor(colors.textTertiary)
                             }
                             .padding(12)
-                            .background(AppColors.sectionBackground)
+                            .background(colors.sectionBackground)
                             .cornerRadius(6)
                         }
 
                         NavigationLink(destination: Text("Change Password")) {
                             HStack {
                                 Image(systemName: "lock.fill")
-                                    .foregroundColor(AppColors.primary)
+                                    .foregroundColor(colors.primary)
                                 Text("Change Password")
-                                    .foregroundColor(AppColors.textPrimary)
+                                    .foregroundColor(colors.textPrimary)
                                 Spacer()
                                 Image(systemName: "chevron.right")
-                                    .foregroundColor(AppColors.textTertiary)
+                                    .foregroundColor(colors.textTertiary)
                             }
                             .padding(12)
-                            .background(AppColors.sectionBackground)
+                            .background(colors.sectionBackground)
                             .cornerRadius(6)
                         }
                     }
@@ -63,22 +65,22 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Sync")
                             .font(AppFonts.heading)
-                            .foregroundColor(AppColors.textPrimary)
+                            .foregroundColor(colors.textPrimary)
                             .padding(.horizontal, 12)
 
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Last Sync")
                                     .font(AppFonts.body)
-                                    .foregroundColor(AppColors.textSecondary)
+                                    .foregroundColor(colors.textSecondary)
                                 Text(viewModel.lastSyncTime)
                                     .font(AppFonts.body)
-                                    .foregroundColor(AppColors.textTertiary)
+                                    .foregroundColor(colors.textTertiary)
                             }
                             Spacer()
                         }
                         .padding(12)
-                        .background(AppColors.sectionBackground)
+                        .background(colors.sectionBackground)
                         .cornerRadius(6)
 
                         Button(action: {
@@ -87,16 +89,16 @@ struct SettingsView: View {
                             HStack {
                                 if viewModel.isSyncing {
                                     ProgressView()
-                                        .tint(AppColors.primary)
+                                        .tint(colors.primary)
                                 } else {
                                     Image(systemName: "arrow.clockwise")
                                 }
                                 Text(viewModel.isSyncing ? "Syncing..." : "Manual Sync")
                                 Spacer()
                             }
-                            .foregroundColor(AppColors.primary)
+                            .foregroundColor(colors.primary)
                             .padding(12)
-                            .background(AppColors.sectionBackground)
+                            .background(colors.sectionBackground)
                             .cornerRadius(6)
                         }
                         .disabled(viewModel.isSyncing)
@@ -107,13 +109,13 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Appearance")
                             .font(AppFonts.heading)
-                            .foregroundColor(AppColors.textPrimary)
+                            .foregroundColor(colors.textPrimary)
                             .padding(.horizontal, 12)
 
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Theme")
                                 .font(AppFonts.body)
-                                .foregroundColor(AppColors.textSecondary)
+                                .foregroundColor(colors.textSecondary)
 
                             Picker("Theme", selection: $viewModel.appearanceMode) {
                                 Text("System").tag("system")
@@ -121,10 +123,10 @@ struct SettingsView: View {
                                 Text("Dark").tag("dark")
                             }
                             .pickerStyle(.segmented)
-                            .tint(AppColors.primary)
+                            .tint(colors.primary)
                         }
                         .padding(12)
-                        .background(AppColors.sectionBackground)
+                        .background(colors.sectionBackground)
                         .cornerRadius(6)
                     }
                     .padding(.horizontal, 12)
@@ -133,21 +135,21 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Export")
                             .font(AppFonts.heading)
-                            .foregroundColor(AppColors.textPrimary)
+                            .foregroundColor(colors.textPrimary)
                             .padding(.horizontal, 12)
 
                         NavigationLink(destination: Text("Export Data")) {
                             HStack {
                                 Image(systemName: "arrow.down.doc")
-                                    .foregroundColor(AppColors.primary)
+                                    .foregroundColor(colors.primary)
                                 Text("Export Applications")
-                                    .foregroundColor(AppColors.textPrimary)
+                                    .foregroundColor(colors.textPrimary)
                                 Spacer()
                                 Image(systemName: "chevron.right")
-                                    .foregroundColor(AppColors.textTertiary)
+                                    .foregroundColor(colors.textTertiary)
                             }
                             .padding(12)
-                            .background(AppColors.sectionBackground)
+                            .background(colors.sectionBackground)
                             .cornerRadius(6)
                         }
                     }
@@ -157,33 +159,33 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("App Information")
                             .font(AppFonts.heading)
-                            .foregroundColor(AppColors.textPrimary)
+                            .foregroundColor(colors.textPrimary)
                             .padding(.horizontal, 12)
 
                         HStack {
                             Text("Version")
                                 .font(AppFonts.body)
-                                .foregroundColor(AppColors.textSecondary)
+                                .foregroundColor(colors.textSecondary)
                             Spacer()
                             Text("1.0.0")
                                 .font(AppFonts.body)
-                                .foregroundColor(AppColors.textTertiary)
+                                .foregroundColor(colors.textTertiary)
                         }
                         .padding(12)
-                        .background(AppColors.sectionBackground)
+                        .background(colors.sectionBackground)
                         .cornerRadius(6)
 
                         HStack {
                             Text("Build")
                                 .font(AppFonts.body)
-                                .foregroundColor(AppColors.textSecondary)
+                                .foregroundColor(colors.textSecondary)
                             Spacer()
                             Text("1")
                                 .font(AppFonts.body)
-                                .foregroundColor(AppColors.textTertiary)
+                                .foregroundColor(colors.textTertiary)
                         }
                         .padding(12)
-                        .background(AppColors.sectionBackground)
+                        .background(colors.sectionBackground)
                         .cornerRadius(6)
                     }
                     .padding(.horizontal, 12)
@@ -195,14 +197,14 @@ struct SettingsView: View {
                         }) {
                             HStack {
                                 Image(systemName: "arrowshape.turn.up.left")
-                                    .foregroundColor(AppColors.danger)
+                                    .foregroundColor(colors.danger)
                                 Text("Logout")
-                                    .foregroundColor(AppColors.danger)
+                                    .foregroundColor(colors.danger)
                                 Spacer()
                             }
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(AppColors.sectionBackground)
+                            .background(colors.sectionBackground)
                             .cornerRadius(6)
                         }
                     }
@@ -210,7 +212,7 @@ struct SettingsView: View {
                     .padding(.bottom, 20)
                 }
             }
-            .background(AppColors.background)
+            .background(colors.background)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .alert("Logout", isPresented: $showLogoutConfirmation) {

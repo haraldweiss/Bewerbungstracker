@@ -3,11 +3,13 @@ import SwiftUI
 struct ApplicationListItem: View {
     let application: ApplicationModel
     @ObservedObject var viewModel: ApplicationsViewModel
+    @Environment(\.colorScheme) var colorScheme
 
     @State private var showingEditSheet = false
     @State private var showingDeleteConfirmation = false
 
     var body: some View {
+        let colors = AppColors(colorScheme: colorScheme)
         ZStack(alignment: .trailing) {
             // Background action buttons (revealed on swipe)
             HStack(spacing: 0) {
@@ -44,11 +46,11 @@ struct ApplicationListItem: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(application.company)
                             .font(AppFonts.heading)
-                            .foregroundColor(AppColors.textPrimary)
+                            .foregroundColor(colors.textPrimary)
 
                         Text(application.position + (application.location.map { ", \($0)" } ?? ""))
                             .font(AppFonts.body)
-                            .foregroundColor(AppColors.textSecondary)
+                            .foregroundColor(colors.textSecondary)
                     }
 
                     Spacer()
@@ -75,11 +77,11 @@ struct ApplicationListItem: View {
                     Text("\(application.emails.count) emails")
                         .font(AppFonts.secondary)
                 }
-                .foregroundColor(AppColors.textTertiary)
+                .foregroundColor(colors.textTertiary)
             }
             .padding(12)
-            .background(AppColors.cardBackground)
-            .border(AppColors.border, width: 1)
+            .background(colors.cardBackground)
+            .border(colors.border, width: 1)
             .cornerRadius(6)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
