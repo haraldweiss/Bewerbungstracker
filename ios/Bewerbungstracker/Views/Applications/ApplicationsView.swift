@@ -53,7 +53,7 @@ struct ApplicationsView: View {
                 } else {
                     List {
                         ForEach(viewModel.filteredApplications, id: \.id) { app in
-                            ApplicationListItem(application: app)
+                            ApplicationListItem(application: app, viewModel: viewModel)
                                 .listRowSeparator(.hidden)
                                 .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                         }
