@@ -1,0 +1,40 @@
+{
+  "total": 5,
+  "groups": [
+    {
+      "application_id": "550e8400-e29b-41d4-a716-446655440001",
+      "company": "Google",
+      "status": "interview",
+      "emails": [
+        {
+          "id": "msg_001",
+          "subject": "Interview Scheduled",
+          "from": "recruiter@google.com",
+          "timestamp": "2026-04-20T14:22:00Z",
+          "body_preview": "Your interview is scheduled for April 24 at 2:00 PM PST with our engineering team."
+        },
+        {
+          "id": "msg_002",
+          "subject": "Application Received",
+          "from": "noreply@google.com",
+          "timestamp": "2026-04-17T10:30:00Z",
+          "body_preview": "Thank you for applying to Google. We have received your application."
+        }
+      ]
+    },
+    {
+      "application_id": "550e8400-e29b-41d4-a716-446655440002",
+      "company": "Meta",
+      "status": "applied",
+      "emails": [
+        {
+          "id": "msg_003",
+          "subject": "Application Received",
+          "from": "noreply@meta.com",
+          "timestamp": "2026-04-12T09:15:00Z",
+          "body_preview": "Thank you for applying to Meta. We will review your application and contact you soon."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "error": "Request timeout",
+  "code": 504,
+  "message": "The server did not respond within the specified timeout period"
+}

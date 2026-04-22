@@ -1,0 +1,5 @@
+{
+  "error": "Invalid request payload",
+  "code": 400,
+  "details": "Missing required field: company"
+}

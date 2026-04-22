@@ -1,0 +1,7 @@
+{
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "email": "test@example.com",
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJpYXQiOjE1MTYyMzkwMjN9.NewAccessTokenAfterRefresh1234567890",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJ0eXBlIjoicmVmcmVzaCIsImlhdCI6MTUxNjIzOTAyM30.NewRefreshTokenAfterRefresh7890123456",
+  "expires_in": 3600
+}
