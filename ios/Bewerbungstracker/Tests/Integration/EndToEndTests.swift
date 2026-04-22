@@ -2,6 +2,7 @@ import XCTest
 import SwiftData
 @testable import Bewerbungstracker
 
+@MainActor
 class EndToEndTests: XCTestCase {
     var applicationsViewModel: ApplicationsViewModel!
     var emailsViewModel: EmailsViewModel!

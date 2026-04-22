@@ -27,7 +27,7 @@ class EmailsIntegrationTests: XCTestCase {
         modelContext = nil
     }
 
-    func testListEmails_GroupedByApplication() async throws {
+    func testListEmails_GroupedByApplicationStatus() async throws {
         // Create test application
         let app = ApplicationModel(
             company: "Google",
