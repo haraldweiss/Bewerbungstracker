@@ -9,6 +9,7 @@ class ApplicationsViewModel: ObservableObject {
     @Published var searchText: String = ""
     @Published var selectedFilter: ApplicationStatus? = nil
     @Published var showCreateSheet: Bool = false
+    @Published var lastError: Error? = nil
 
     private let modelContext: ModelContext
 
@@ -84,5 +85,22 @@ class ApplicationsViewModel: ObservableObject {
         app.updatedAt = Date()
         try? modelContext.save()
         fetchApplications()
+    }
+
+    func getApplication(id: String) {
+        Task {
+            do {
+                let response = try await apiClient.getApplication(id: id)
+                let app = ApplicationModel(from: response)
+                if let index = applications.firstIndex(where: { $0.id == id }) {
+                    applications[index] = app
+                } else {
+                    applications.append(app)
+                }
+                self.lastError = nil
+            } catch {
+                self.lastError = error
+            }
+        }
     }
 }

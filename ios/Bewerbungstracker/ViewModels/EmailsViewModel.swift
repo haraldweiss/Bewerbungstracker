@@ -11,6 +11,9 @@ class EmailsViewModel: ObservableObject {
     @Published var selectedEmail: EmailModel? = nil
     @Published var showDetailView: Bool = false
     @Published var matchScoreFilter: Double = 0.0
+    @Published var selectedEmailDetail: EmailDetailResponse? = nil
+    @Published var syncStatus: String? = nil
+    @Published var lastSyncTime: Date? = nil
 
     private let modelContext: ModelContext
 
@@ -108,6 +111,17 @@ class EmailsViewModel: ObservableObject {
     private func applyMatchScoreFilter() {
         filteredEmails = emails.filter { email in
             (email.matchScore ?? 0.0) >= matchScoreFilter
+        }
+    }
+
+    func getEmailDetail(id: String) {
+        Task {
+            do {
+                let response = try await apiClient.getEmail(id: id)
+                self.selectedEmailDetail = response
+            } catch {
+                print("Failed to fetch email detail: \(error)")
+            }
         }
     }
 }
