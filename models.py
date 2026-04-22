@@ -2,6 +2,7 @@ from database import db
 from datetime import datetime
 from enum import Enum
 import uuid
+from imap_service import IMAPCredentialManager
 
 
 class User(db.Model):
@@ -21,6 +22,13 @@ class User(db.Model):
     applications = db.relationship('Application', backref='user', cascade='all, delete-orphan')
     emails = db.relationship('Email', backref='user', cascade='all, delete-orphan')
     api_calls = db.relationship('ApiCall', backref='user', cascade='all, delete-orphan')
+
+    @property
+    def decrypted_imap_password(self) -> str:
+        """Get decrypted IMAP password"""
+        if self.imap_password_encrypted:
+            return IMAPCredentialManager.decrypt_password(self.imap_password_encrypted)
+        return None
 
     def __repr__(self):
         return f'<User {self.email}>'
