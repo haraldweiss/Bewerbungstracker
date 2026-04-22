@@ -94,4 +94,14 @@ class NotificationsViewModel: ObservableObject {
     var unreadCount: Int {
         notifications.filter { !$0.isRead }.count
     }
+
+    func filterByType(_ typeString: String) {
+        if let type = NotificationType(rawValue: typeString) {
+            selectedTypeFilter = type
+        } else {
+            // Handle custom type string matching
+            selectedTypeFilter = NotificationType.reminder
+        }
+        applyFilters()
+    }
 }

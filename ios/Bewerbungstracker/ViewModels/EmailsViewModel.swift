@@ -4,10 +4,12 @@ import SwiftData
 @MainActor
 class EmailsViewModel: ObservableObject {
     @Published var emails: [EmailModel] = []
+    @Published var filteredEmails: [EmailModel] = []
     @Published var groupedEmails: [(application: ApplicationModel?, emails: [EmailModel])] = []
     @Published var searchText: String = ""
     @Published var selectedEmail: EmailModel? = nil
     @Published var showDetailView: Bool = false
+    @Published var matchScoreFilter: Double = 0.0
 
     private let modelContext: ModelContext
 
@@ -94,5 +96,16 @@ class EmailsViewModel: ObservableObject {
         modelContext.delete(email)
         try? modelContext.save()
         fetchEmails()
+    }
+
+    func filterByMatchScore(_ threshold: Double) {
+        matchScoreFilter = threshold
+        applyMatchScoreFilter()
+    }
+
+    private func applyMatchScoreFilter() {
+        filteredEmails = emails.filter { email in
+            (email.matchScore ?? 0.0) >= matchScoreFilter
+        }
     }
 }

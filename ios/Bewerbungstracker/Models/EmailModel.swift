@@ -11,6 +11,7 @@ final class EmailModel {
     var timestamp: Date
     var createdAt: Date
     var messageId: String? // IMAP Message-ID
+    var matchScore: Double? // Score for matching to applications (0.0-1.0)
 
     @Relationship(deleteRule: .noAction)
     var matchedApplication: ApplicationModel?
@@ -20,7 +21,8 @@ final class EmailModel {
         subject: String,
         fromAddress: String,
         body: String? = nil,
-        timestamp: Date = Date()
+        timestamp: Date = Date(),
+        matchScore: Double? = nil
     ) {
         self.id = id
         self.subject = subject
@@ -28,6 +30,7 @@ final class EmailModel {
         self.body = body
         self.timestamp = timestamp
         self.createdAt = Date()
+        self.matchScore = matchScore
     }
 }
 
