@@ -11,8 +11,14 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # JWT
-    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-secret-key-change-in-prod')
+    # JWT - VALIDATE IN PRODUCTION
+    _jwt_secret = os.getenv('JWT_SECRET_KEY')
+    if not _jwt_secret:
+        if os.getenv('FLASK_ENV') == 'production':
+            raise ValueError("JWT_SECRET_KEY environment variable MUST be set in production")
+        _jwt_secret = 'dev-secret-key-change-in-prod'
+
+    JWT_SECRET_KEY = _jwt_secret
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
 
