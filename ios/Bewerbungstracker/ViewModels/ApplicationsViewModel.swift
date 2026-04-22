@@ -103,4 +103,44 @@ class ApplicationsViewModel: ObservableObject {
             }
         }
     }
+
+    @MainActor
+    func editApplication(
+        id: UUID,
+        company: String,
+        position: String,
+        location: String?,
+        appliedDate: Date,
+        notes: String?
+    ) {
+        if let existingApp = applications.first(where: { $0.id == id }) {
+            let updatedApp = ApplicationModel(
+                id: id,
+                company: company,
+                position: position,
+                location: location,
+                status: existingApp.status,
+                appliedDate: appliedDate,
+                createdAt: existingApp.createdAt,
+                updatedAt: Date(),
+                notes: notes
+            )
+
+            modelContext.delete(existingApp)
+            modelContext.insert(updatedApp)
+            try? modelContext.save()
+
+            fetchApplications()
+        }
+    }
+
+    @MainActor
+    func deleteApplication(id: UUID) {
+        if let app = applications.first(where: { $0.id == id }) {
+            modelContext.delete(app)
+            try? modelContext.save()
+
+            fetchApplications()
+        }
+    }
 }
