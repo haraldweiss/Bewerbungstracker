@@ -21,6 +21,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import com.example.bewerbungstracker.data.ApplicationEntity
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -30,19 +32,25 @@ import java.util.Locale
 fun EditApplicationDialog(
     application: ApplicationEntity,
     onDismiss: () -> Unit,
-    onSave: (id: String, company: String, position: String, appliedDate: Long) -> Unit,
+    onSave: (id: String, company: String, position: String, location: String?, appliedDate: Long, notes: String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
     // State for form fields
     var company by remember { mutableStateOf(application.company) }
     var position by remember { mutableStateOf(application.position) }
+    var location by remember { mutableStateOf(application.location ?: "") }
     var appliedDate by remember { mutableStateOf(application.appliedDate ?: System.currentTimeMillis()) }
+    var notes by remember { mutableStateOf(application.notes ?: "") }
     var showDatePicker by remember { mutableStateOf(false) }
 
     // Change detection
     val hasChanged = company != application.company ||
             position != application.position ||
-            appliedDate != (application.appliedDate ?: System.currentTimeMillis())
+            location != (application.location ?: "") ||
+            appliedDate != application.appliedDate ||
+            notes != (application.notes ?: "")
 
     // Validation
     val isValid = company.isNotBlank() && position.isNotBlank() && appliedDate > 0
@@ -76,6 +84,15 @@ fun EditApplicationDialog(
                     singleLine = true
                 )
 
+                // Location field
+                OutlinedTextField(
+                    value = location,
+                    onValueChange = { location = it },
+                    label = { Text("Location") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
                 // Applied Date field with date picker
                 val dateFormatter = SimpleDateFormat("MM/dd/yyyy", Locale.getDefault())
                 OutlinedTextField(
@@ -89,12 +106,31 @@ fun EditApplicationDialog(
                     enabled = false,
                     singleLine = true
                 )
+
+                // Notes field
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 80.dp),
+                    maxLines = 4
+                )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    onSave(application.id, company, position, appliedDate)
+                    onSave(
+                        application.id,
+                        company,
+                        position,
+                        location.ifBlank { null },
+                        appliedDate,
+                        notes.ifBlank { null }
+                    )
+                    Toast.makeText(context, "Application updated", Toast.LENGTH_SHORT).show()
                     onDismiss()
                 },
                 enabled = canSave
