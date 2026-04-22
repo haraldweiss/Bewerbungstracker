@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 from config import Config
 from models import User, SessionToken
 from database import db
+from imap_service import IMAPCredentialManager
 
 
 class AuthService:
@@ -97,3 +98,20 @@ class AuthService:
             return False, None, "Invalid password"
 
         return True, user, "Login successful"
+
+    @staticmethod
+    def register_imap_credentials(user_id: str, imap_host: str, imap_user: str, imap_password: str) -> Tuple[bool, str]:
+        """Register IMAP credentials for user"""
+        try:
+            user = User.query.get(user_id)
+            if not user:
+                return False, "User not found"
+
+            user.imap_host = imap_host
+            user.imap_user = imap_user
+            user.imap_password_encrypted = IMAPCredentialManager.encrypt_password(imap_password)
+            db.session.commit()
+            return True, "IMAP credentials registered successfully"
+        except Exception as e:
+            db.session.rollback()
+            return False, str(e)
