@@ -1,5 +1,6 @@
 package com.example.bewerbungstracker.ui.screens.emails
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -35,48 +36,60 @@ import java.util.Locale
 fun EmailsScreen(viewModel: EmailsViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val expandedGroups = remember { mutableStateOf(setOf<String>()) }
+    var selectedEmailId by remember { mutableStateOf<String?>(null) }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // Search Bar
-        TextField(
-            value = uiState.searchText,
-            onValueChange = { viewModel.updateSearch(it) },
-            placeholder = { Text("Search emails") },
-            leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = "Search")
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            colors = TextFieldDefaults.colors(
-                unfocusedContainerColor = SectionBackground,
-                focusedContainerColor = SectionBackground
-            ),
-            singleLine = true
-        )
-
-        // Grouped Emails List
-        if (uiState.groupedEmails.isEmpty()) {
-            Text(
-                "No emails",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(32.dp)
+    if (selectedEmailId != null) {
+        val email = uiState.emails.find { it.id == selectedEmailId }
+        if (email != null) {
+            EmailDetailScreen(
+                email = email,
+                onBack = { selectedEmailId = null }
             )
-        } else {
-            LazyColumn {
-                items(uiState.groupedEmails) { group ->
-                    EmailGroupSection(
-                        group = group,
-                        isExpanded = group.appId in expandedGroups.value,
-                        onExpandToggle = {
-                            expandedGroups.value = if (group.appId in expandedGroups.value) {
-                                expandedGroups.value - group.appId
-                            } else {
-                                expandedGroups.value + group.appId
-                            }
-                        },
-                        onEmailDelete = { email -> viewModel.deleteEmail(email) }
-                    )
+        }
+    } else {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Search Bar
+            TextField(
+                value = uiState.searchText,
+                onValueChange = { viewModel.updateSearch(it) },
+                placeholder = { Text("Search emails") },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = "Search")
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                colors = TextFieldDefaults.colors(
+                    unfocusedContainerColor = SectionBackground,
+                    focusedContainerColor = SectionBackground
+                ),
+                singleLine = true
+            )
+
+            // Grouped Emails List
+            if (uiState.groupedEmails.isEmpty()) {
+                Text(
+                    "No emails",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(32.dp)
+                )
+            } else {
+                LazyColumn {
+                    items(uiState.groupedEmails) { group ->
+                        EmailGroupSection(
+                            group = group,
+                            isExpanded = group.appId in expandedGroups.value,
+                            onExpandToggle = {
+                                expandedGroups.value = if (group.appId in expandedGroups.value) {
+                                    expandedGroups.value - group.appId
+                                } else {
+                                    expandedGroups.value + group.appId
+                                }
+                            },
+                            onEmailDelete = { email -> viewModel.deleteEmail(email) },
+                            onEmailSelect = { email -> selectedEmailId = email.id }
+                        )
+                    }
                 }
             }
         }
@@ -88,7 +101,8 @@ fun EmailGroupSection(
     group: EmailGroup,
     isExpanded: Boolean,
     onExpandToggle: () -> Unit,
-    onEmailDelete: (EmailEntity) -> Unit
+    onEmailDelete: (EmailEntity) -> Unit,
+    onEmailSelect: (EmailEntity) -> Unit = {}
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         // Group Header
@@ -126,7 +140,11 @@ fun EmailGroupSection(
         if (isExpanded) {
             LazyColumn {
                 items(group.emails) { email ->
-                    EmailListItem(email = email, onDelete = { onEmailDelete(email) })
+                    EmailListItem(
+                        email = email,
+                        onDelete = { onEmailDelete(email) },
+                        onClick = { onEmailSelect(email) }
+                    )
                 }
             }
         }
@@ -136,12 +154,14 @@ fun EmailGroupSection(
 @Composable
 fun EmailListItem(
     email: EmailEntity,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onClick: () -> Unit = {}
 ) {
     androidx.compose.material3.Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
