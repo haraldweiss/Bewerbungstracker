@@ -1,0 +1,112 @@
+<h2>Application List Card Design</h2>
+<p class="subtitle">How should each application be displayed in the list?</p>
+
+<div class="cards">
+  <div class="card" data-choice="compact-row" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background: #f5f5f5; padding: 12px; border-radius: 8px; font-size: 12px;">
+        <div style="background: white; padding: 10px; border-left: 4px solid #4CAF50; margin-bottom: 8px; border-radius: 2px;">
+          <div style="font-weight: bold;">Google — Software Engineer</div>
+          <div style="color: #666; font-size: 11px;">Applied 5 days ago</div>
+          <div style="color: #999; font-size: 10px;">Status: Interview</div>
+        </div>
+        <div style="background: white; padding: 10px; border-left: 4px solid #FF9800; margin-bottom: 8px; border-radius: 2px;">
+          <div style="font-weight: bold;">Meta — Product Manager</div>
+          <div style="color: #666; font-size: 11px;">Applied 10 days ago</div>
+          <div style="color: #999; font-size: 10px;">Status: Applied</div>
+        </div>
+        <div style="background: white; padding: 10px; border-left: 4px solid #2196F3; border-radius: 2px;">
+          <div style="font-weight: bold;">Microsoft — Data Scientist</div>
+          <div style="color: #666; font-size: 11px;">Applied 2 days ago</div>
+          <div style="color: #999; font-size: 10px;">Status: Offer</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Compact Row List</h3>
+      <p><strong>Best for:</strong> Quick scanning. Shows company, position, date, and status at a glance.</p>
+      <div class="pros-cons">
+        <div class="pros"><ul><li>Fits many items</li><li>Fast to scan</li><li>Status color-coded</li></ul></div>
+        <div class="cons"><ul><li>Less visual hierarchy</li><li>Small text</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="card-grid" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background: #f5f5f5; padding: 12px; border-radius: 8px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div style="background: white; padding: 12px; border-radius: 6px; border-top: 3px solid #4CAF50;">
+            <div style="font-weight: bold; font-size: 12px;">Google</div>
+            <div style="color: #666; font-size: 11px; margin: 4px 0;">Software Engineer</div>
+            <div style="background: #4CAF50; color: white; padding: 4px 8px; border-radius: 3px; font-size: 10px; text-align: center;">Interview</div>
+          </div>
+          <div style="background: white; padding: 12px; border-radius: 6px; border-top: 3px solid #FF9800;">
+            <div style="font-weight: bold; font-size: 12px;">Meta</div>
+            <div style="color: #666; font-size: 11px; margin: 4px 0;">Product Manager</div>
+            <div style="background: #FF9800; color: white; padding: 4px 8px; border-radius: 3px; font-size: 10px; text-align: center;">Applied</div>
+          </div>
+          <div style="background: white; padding: 12px; border-radius: 6px; border-top: 3px solid #2196F3;">
+            <div style="font-weight: bold; font-size: 12px;">Microsoft</div>
+            <div style="color: #666; font-size: 11px; margin: 4px 0;">Data Scientist</div>
+            <div style="background: #2196F3; color: white; padding: 4px 8px; border-radius: 3px; font-size: 10px; text-align: center;">Offer</div>
+          </div>
+          <div style="background: white; padding: 12px; border-radius: 6px; border-top: 3px solid #9C27B0;">
+            <div style="font-weight: bold; font-size: 12px;">Apple</div>
+            <div style="color: #666; font-size: 11px; margin: 4px 0;">UX Designer</div>
+            <div style="background: #9C27B0; color: white; padding: 4px 8px; border-radius: 3px; font-size: 10px; text-align: center;">Pending</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Card Grid (2 columns)</h3>
+      <p><strong>Best for:</strong> Visual hierarchy. Compact but still readable. Status as badge.</p>
+      <div class="pros-cons">
+        <div class="pros"><ul><li>Visually appealing</li><li>Status badges clear</li><li>Good balance</li></ul></div>
+        <div class="cons"><ul><li>Fewer items per view</li><li>Needs scrolling more</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="detailed-cards" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background: #f5f5f5; padding: 12px; border-radius: 8px;">
+        <div style="background: white; padding: 14px; border-radius: 6px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+            <div>
+              <div style="font-weight: bold; font-size: 13px;">Google</div>
+              <div style="color: #666; font-size: 12px;">Software Engineer, Mountain View</div>
+            </div>
+            <div style="background: #4CAF50; color: white; padding: 4px 10px; border-radius: 4px; font-size: 10px;">Interview</div>
+          </div>
+          <div style="display: flex; gap: 12px; font-size: 11px; color: #999;">
+            <span>📅 Applied 5 days ago</span>
+            <span>📧 2 emails</span>
+          </div>
+        </div>
+        <div style="background: white; padding: 14px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+            <div>
+              <div style="font-weight: bold; font-size: 13px;">Meta</div>
+              <div style="color: #666; font-size: 12px;">Product Manager, Boston</div>
+            </div>
+            <div style="background: #FF9800; color: white; padding: 4px 10px; border-radius: 4px; font-size: 10px;">Applied</div>
+          </div>
+          <div style="display: flex; gap: 12px; font-size: 11px; color: #999;">
+            <span>📅 Applied 10 days ago</span>
+            <span>📧 1 email</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Detailed Cards (Full Width)</h3>
+      <p><strong>Best for:</strong> More info per item. Shows location, emails count, full context.</p>
+      <div class="pros-cons">
+        <div class="pros"><ul><li>Rich context</li><li>Professional look</li><li>Email count visible</li></ul></div>
+        <div class="cons"><ul><li>Fewer items per screen</li><li>More scrolling</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

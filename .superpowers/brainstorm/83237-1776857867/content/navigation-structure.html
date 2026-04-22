@@ -1,0 +1,72 @@
+<h2>App Navigation Structure</h2>
+<p class="subtitle">How should users navigate between Bewerbungen, Emails, and Settings?</p>
+
+<div class="cards">
+  <div class="card" data-choice="tabs" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background: #f5f5f5; padding: 16px; border-radius: 8px;">
+        <div style="background: white; padding: 12px; border-radius: 4px; margin-bottom: 12px; font-size: 12px; text-align: center;">Applications List</div>
+        <div style="background: white; padding: 12px; border-radius: 4px; margin-bottom: 12px; font-size: 12px; text-align: center;">Emails View</div>
+        <div style="background: white; padding: 12px; border-radius: 4px; margin-bottom: 12px; font-size: 12px; text-align: center;">Settings</div>
+        <div style="display: flex; gap: 4px; margin-top: 12px;">
+          <div style="flex: 1; padding: 8px; background: #4CAF50; color: white; text-align: center; border-radius: 4px; font-size: 10px;">Home</div>
+          <div style="flex: 1; padding: 8px; background: #e0e0e0; text-align: center; border-radius: 4px; font-size: 10px;">Emails</div>
+          <div style="flex: 1; padding: 8px; background: #e0e0e0; text-align: center; border-radius: 4px; font-size: 10px;">Settings</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Bottom Tab Navigation</h3>
+      <p><strong>Best for:</strong> Quick switching between 3-4 main sections. Mobile standard.</p>
+      <div class="pros-cons">
+        <div class="pros"><ul><li>Familiar to users</li><li>Always visible</li><li>Easy thumb reach</li></ul></div>
+        <div class="cons"><ul><li>Takes bottom space</li><li>Limited to ~5 tabs</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="drawer" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background: #f5f5f5; padding: 16px; border-radius: 8px;">
+        <div style="display: flex; gap: 8px; height: 200px;">
+          <div style="width: 60px; background: #333; border-radius: 4px; display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 16px; color: white; font-size: 10px;">
+            <div>≡</div>
+            <div>📋</div>
+            <div>✉️</div>
+            <div>⚙️</div>
+          </div>
+          <div style="flex: 1; background: white; border-radius: 4px; padding: 12px;">
+            <div style="font-weight: bold; margin-bottom: 8px;">Applications</div>
+            <div style="font-size: 12px; color: #666;">Main content area</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Sidebar/Navigation Drawer</h3>
+      <p><strong>Best for:</strong> More sections or complex navigation hierarchy. Desktop-friendly.</p>
+      <div class="pros-cons">
+        <div class="pros"><ul><li>Scalable (5+ sections)</li><li>More screen space</li><li>Can show labels</li></ul></div>
+        <div class="cons"><ul><li>Takes side space</li><li>Needs swipe/gesture</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="stack" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background: #f5f5f5; padding: 16px; border-radius: 8px;">
+        <div style="background: #333; color: white; padding: 12px; border-radius: 4px; margin-bottom: 8px; font-weight: bold; font-size: 12px;">Home > Applications > Details</div>
+        <div style="background: white; padding: 12px; border-radius: 4px; margin-bottom: 8px; font-size: 12px;">Back | Application Details | Menu ⋯</div>
+        <div style="background: white; padding: 12px; border-radius: 4px; font-size: 12px; height: 120px; display: flex; align-items: center; justify-content: center; color: #999;">Application Detail Content</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Stack-based Navigation</h3>
+      <p><strong>Best for:</strong> Deep hierarchies. Details accessed via back buttons.</p>
+      <div class="pros-cons">
+        <div class="pros"><ul><li>Clean main view</li><li>Good for hierarchies</li></ul></div>
+        <div class="cons"><ul><li>More taps to navigate</li><li>Need back button logic</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

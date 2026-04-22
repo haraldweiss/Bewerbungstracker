@@ -1,0 +1,169 @@
+<h2>Bewerbungstracker App — Complete Design Overview</h2>
+<p class="subtitle">iOS HIG Native Design with Bottom Tab Navigation</p>
+
+<div style="background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+  <h3>📐 Navigation Architecture</h3>
+  <p><strong>Bottom Tab Navigation (iOS Style)</strong> — 4 Tabs, always visible</p>
+  <div style="display: flex; gap: 20px; margin-top: 16px; font-size: 13px;">
+    <div><strong>1. Applications</strong><br><span style="color: #666;">📋 Main list view</span></div>
+    <div><strong>2. Emails</strong><br><span style="color: #666;">✉️ Grouped by app</span></div>
+    <div><strong>3. Notifications</strong><br><span style="color: #666;">🔔 Activity timeline</span></div>
+    <div><strong>4. Settings</strong><br><span style="color: #666;">⚙️ Account & sync</span></div>
+  </div>
+</div>
+
+<h3>Screen 1: Applications (Main Tab)</h3>
+<div class="mockup">
+  <div class="mockup-header">Applications List</div>
+  <div class="mockup-body">
+    <div style="background: white; padding: 12px; margin-bottom: 8px; border-radius: 6px; border: 1px solid #e0e0e0;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <div style="font-weight: 600; font-size: 14px;">Search applications...</div>
+        <div style="color: #999; font-size: 12px;">⚙️</div>
+      </div>
+    </div>
+    <div style="background: #f5f5f5; padding: 8px 0; margin-bottom: 12px; font-size: 12px; text-align: center;">
+      <button style="background: #f0f0f0; border: 1px solid #ddd; padding: 6px 12px; border-radius: 4px; margin-right: 4px; font-size: 11px;">All</button>
+      <button style="background: #f0f0f0; border: 1px solid #ddd; padding: 6px 12px; border-radius: 4px; margin-right: 4px; font-size: 11px;">Applied</button>
+      <button style="background: #f0f0f0; border: 1px solid #ddd; padding: 6px 12px; border-radius: 4px; margin-right: 4px; font-size: 11px;">Interview</button>
+      <button style="background: #f0f0f0; border: 1px solid #ddd; padding: 6px 12px; border-radius: 4px; font-size: 11px;">Offer</button>
+    </div>
+
+    <div style="background: white; padding: 12px; border-radius: 6px; margin-bottom: 10px; border-left: 3px solid #4CAF50;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+        <strong style="font-size: 13px;">Google</strong>
+        <span style="background: #4CAF50; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px;">Interview</span>
+      </div>
+      <div style="color: #666; font-size: 12px; margin-bottom: 2px;">Software Engineer, Mountain View</div>
+      <div style="color: #999; font-size: 11px; display: flex; gap: 12px;">
+        <span>📅 5 days ago</span>
+        <span>📧 2 emails</span>
+      </div>
+    </div>
+
+    <div style="background: white; padding: 12px; border-radius: 6px; margin-bottom: 10px; border-left: 3px solid #FF9800;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+        <strong style="font-size: 13px;">Meta</strong>
+        <span style="background: #FF9800; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px;">Applied</span>
+      </div>
+      <div style="color: #666; font-size: 12px; margin-bottom: 2px;">Product Manager, Boston</div>
+      <div style="color: #999; font-size: 11px; display: flex; gap: 12px;">
+        <span>📅 10 days ago</span>
+        <span>📧 1 email</span>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 16px; padding: 12px; background: #f5f5f5; border-radius: 6px;">
+      <button style="background: #007AFF; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer;">+ New Application</button>
+    </div>
+  </div>
+</div>
+
+<h3>Screen 2: Emails (Grouped by Application)</h3>
+<div class="mockup">
+  <div class="mockup-header">Emails</div>
+  <div class="mockup-body">
+    <div style="background: white; padding: 12px; margin-bottom: 8px; border-radius: 6px; border: 1px solid #e0e0e0;">
+      <div style="font-size: 13px;">Search emails...</div>
+    </div>
+
+    <div style="margin-bottom: 12px;">
+      <div style="font-weight: 600; font-size: 12px; color: #666; padding: 8px 0; text-transform: uppercase;">Google — Interview</div>
+      <div style="background: white; padding: 12px; border-radius: 6px; margin-bottom: 8px; border-left: 3px solid #4CAF50;">
+        <div style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Interview Scheduled</div>
+        <div style="color: #999; font-size: 11px;">From: recruiter@google.com • 2 days ago</div>
+      </div>
+      <div style="background: white; padding: 12px; border-radius: 6px; border-left: 3px solid #4CAF50;">
+        <div style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Application Received</div>
+        <div style="color: #999; font-size: 11px;">From: noreply@google.com • 5 days ago</div>
+      </div>
+    </div>
+
+    <div style="margin-bottom: 12px;">
+      <div style="font-weight: 600; font-size: 12px; color: #666; padding: 8px 0; text-transform: uppercase;">Meta — Applied</div>
+      <div style="background: white; padding: 12px; border-radius: 6px; border-left: 3px solid #FF9800;">
+        <div style="font-weight: 600; font-size: 12px; margin-bottom: 4px;">Application Received</div>
+        <div style="color: #999; font-size: 11px;">From: noreply@meta.com • 10 days ago</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>Screen 3: Notifications (Activity Timeline)</h3>
+<div class="mockup">
+  <div class="mockup-header">Notifications</div>
+  <div class="mockup-body">
+    <div style="padding: 0; font-size: 13px;">
+      <div style="padding: 12px; border-bottom: 1px solid #e0e0e0;">
+        <div style="font-weight: 600; margin-bottom: 4px;">Google Interview Scheduled</div>
+        <div style="color: #666; font-size: 12px; margin-bottom: 2px;">Tomorrow at 2:00 PM</div>
+        <div style="color: #999; font-size: 11px;">2 hours ago</div>
+      </div>
+
+      <div style="padding: 12px; border-bottom: 1px solid #e0e0e0;">
+        <div style="font-weight: 600; margin-bottom: 4px;">Applied to Meta — Product Manager</div>
+        <div style="color: #666; font-size: 12px; margin-bottom: 2px;">Boston, MA</div>
+        <div style="color: #999; font-size: 11px;">3 days ago</div>
+      </div>
+
+      <div style="padding: 12px; border-bottom: 1px solid #e0e0e0;">
+        <div style="font-weight: 600; margin-bottom: 4px;">Google Application Received</div>
+        <div style="color: #666; font-size: 12px; margin-bottom: 2px;">Confirmation email sent</div>
+        <div style="color: #999; font-size: 11px;">5 days ago</div>
+      </div>
+
+      <div style="padding: 12px;">
+        <div style="font-weight: 600; margin-bottom: 4px;">Follow-up Reminder: Microsoft</div>
+        <div style="color: #666; font-size: 12px; margin-bottom: 2px;">Consider sending follow-up email</div>
+        <div style="color: #999; font-size: 11px;">1 week ago</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>Screen 4: Settings</h3>
+<div class="mockup">
+  <div class="mockup-header">Settings</div>
+  <div class="mockup-body">
+    <div style="padding: 16px; background: #f5f5f5; border-radius: 6px; margin-bottom: 12px; text-align: center;">
+      <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Harald Weiss</div>
+      <div style="color: #666; font-size: 12px;">anubclaw@gmail.com</div>
+    </div>
+
+    <div style="background: white; border-radius: 6px; overflow: hidden;">
+      <div style="padding: 12px; border-bottom: 1px solid #e0e0e0;">
+        <div style="font-weight: 600; font-size: 13px;">Account Settings</div>
+        <div style="color: #666; font-size: 12px;">Change password, email, preferences</div>
+      </div>
+      <div style="padding: 12px; border-bottom: 1px solid #e0e0e0;">
+        <div style="font-weight: 600; font-size: 13px;">Sync & Data</div>
+        <div style="color: #666; font-size: 12px;">Last sync: 5 minutes ago • Manual sync</div>
+      </div>
+      <div style="padding: 12px; border-bottom: 1px solid #e0e0e0;">
+        <div style="font-weight: 600; font-size: 13px;">Data Export & Backup</div>
+        <div style="color: #666; font-size: 12px;">Export data as CSV, backup to cloud</div>
+      </div>
+      <div style="padding: 12px; border-bottom: 1px solid #e0e0e0;">
+        <div style="font-weight: 600; font-size: 13px;">App Info</div>
+        <div style="color: #666; font-size: 12px;">Version 1.0 • Terms & Privacy</div>
+      </div>
+      <div style="padding: 12px; text-align: center;">
+        <button style="background: #FF3B30; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer;">Logout</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>Key Design Decisions (iOS HIG)</h3>
+<div style="background: #e8f5e9; padding: 12px; border-radius: 6px; margin-top: 16px; font-size: 12px;">
+<ul style="margin: 0; padding-left: 20px;">
+<li><strong>Bottom Tab Bar:</strong> iOS standard navigation, always visible</li>
+<li><strong>Detail Cards:</strong> Full-width cards with left border for status, company name prominent</li>
+<li><strong>Color Coding:</strong> Status colors (green=interview, orange=applied, blue=offer, purple=pending)</li>
+<li><strong>Filter Buttons:</strong> Horizontal scroll, pill-shaped, tappable</li>
+<li><strong>Primary Actions:</strong> Bottom position (Create, Logout) for thumb-friendly UX</li>
+<li><strong>Typography:</strong> System fonts (San Francisco), clear hierarchy</li>
+<li><strong>Spacing:</strong> 8px, 12px, 16px grid for consistency</li>
+<li><strong>Rounded Corners:</strong> 6px cards, 3px status indicators</li>
+</ul>
+</div>

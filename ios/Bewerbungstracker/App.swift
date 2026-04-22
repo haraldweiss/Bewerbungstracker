@@ -6,7 +6,7 @@ struct BewerbungstrackerApp: App {
     var body: some Scene {
         WindowGroup {
             MainTabView()
-                .modelContainer(for: [ApplicationModel.self, EmailModel.self])
+                .modelContainer(for: [ApplicationModel.self, EmailModel.self, NotificationModel.self])
         }
     }
 }
