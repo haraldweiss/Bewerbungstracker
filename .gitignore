@@ -31,3 +31,16 @@ build/
 email_config.db
 applications_cache.json
 bewerbungen.db
+# Legacy files
+app_legacy.py
+
+# Database files
+bewerbungstracker.db
+*.db
+
+# Flask instance folder
+instance/
+
+# Pycache
+__pycache__/
+*.pyc

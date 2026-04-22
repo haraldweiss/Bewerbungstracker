@@ -16,9 +16,11 @@ Stop:   Strg+C
 """
 
 import json
+import logging
 import re
 import socket
 import ssl
+import threading
 import imaplib
 import poplib
 import email
@@ -79,6 +81,9 @@ CACHE_TTL_SECONDS = CONFIG['cache']['ttl_seconds']
 
 socket.setdefaulttimeout(TIMEOUT_SECONDS)
 
+# Logger for non-user-facing debug messages (e.g. silent close failures)
+logger = logging.getLogger('imap_proxy')
+
 
 # ── Response Caching ───────────────────────────────────────────────────────────
 
@@ -88,6 +93,7 @@ class ResponseCache:
     def __init__(self, ttl_seconds: int = 300):
         self.cache = {}
         self.ttl_seconds = ttl_seconds
+        self._lock = threading.RLock()
 
     def _make_key(self, host: str, user: str, folder: str, limit: int, offset: int) -> str:
         """Generate cache key from request params (NO passwords)."""
@@ -97,24 +103,27 @@ class ResponseCache:
     def get(self, host: str, user: str, folder: str, limit: int, offset: int) -> dict | None:
         """Return cached response if exists and not expired."""
         key = self._make_key(host, user, folder, limit, offset)
-        if key not in self.cache:
-            return None
+        with self._lock:
+            if key not in self.cache:
+                return None
 
-        data, timestamp = self.cache[key]
-        if time.time() - timestamp > self.ttl_seconds:
-            del self.cache[key]  # Expired
-            return None
+            data, timestamp = self.cache[key]
+            if time.time() - timestamp > self.ttl_seconds:
+                del self.cache[key]  # Expired
+                return None
 
-        return data
+            return data
 
     def set(self, host: str, user: str, folder: str, limit: int, offset: int, data: dict):
         """Store response in cache with current timestamp."""
         key = self._make_key(host, user, folder, limit, offset)
-        self.cache[key] = (data, time.time())
+        with self._lock:
+            self.cache[key] = (data, time.time())
 
     def clear(self):
         """Clear all cache."""
-        self.cache.clear()
+        with self._lock:
+            self.cache.clear()
 
 RESPONSE_CACHE = ResponseCache(ttl_seconds=CACHE_TTL_SECONDS)
 
@@ -311,8 +320,8 @@ def fetch_imap(host: str, port: int, user: str, password: str,
     finally:
         try:
             conn.logout()
-        except Exception:
-            pass
+        except (imaplib.IMAP4.error, OSError) as exc:
+            logger.debug('IMAP logout failed: %s', type(exc).__name__)
 
 
 # ── POP3 fetch ────────────────────────────────────────────────────────────────
@@ -366,8 +375,8 @@ def fetch_pop3(host: str, port: int, user: str, password: str,
     finally:
         try:
             conn.quit()   # QUIT without any DELE = no messages deleted
-        except Exception:
-            pass
+        except (poplib.error_proto, OSError) as exc:
+            logger.debug('POP3 quit failed: %s', type(exc).__name__)
 
 
 # ── HTTP handler ──────────────────────────────────────────────────────────────
@@ -424,6 +433,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self._json({'error': 'Benutzername fehlt'}, 400); return
         if not password:
             self._json({'error': 'Passwort fehlt'}, 400); return
+        # IMAP folder name: only allow alphanumerics + a few safe separators.
+        # Prevents injection of IMAP control characters (CR/LF, quotes, backslashes).
+        if not re.match(r'^[A-Za-z0-9._\-/ ]{1,100}$', folder):
+            self._json({'error': 'Ungültiger Ordner-Name'}, 400); return
 
         try:
             # ── Check cache (use cache key without password) ────────────────────────

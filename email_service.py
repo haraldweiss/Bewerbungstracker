@@ -19,6 +19,7 @@ import imaplib
 import email
 import base64
 import hashlib
+from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -44,6 +45,37 @@ CORS_HEADERS = {
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type'
 }
+
+# ── Rate Limiter ───────────────────────────────────────────────────────
+
+class SlidingWindowRateLimiter:
+    """Simple in-memory sliding-window rate limiter, keyed per client.
+
+    Thread-safe via a single lock. Tracks request timestamps per key in a
+    deque and rejects once `max_requests` have landed inside `window_seconds`.
+    """
+    def __init__(self, max_requests: int, window_seconds: int):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._buckets = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def allow(self, key: str) -> bool:
+        now = time.time()
+        cutoff = now - self.window_seconds
+        with self._lock:
+            bucket = self._buckets[key]
+            # Drop timestamps that have aged out of the window
+            while bucket and bucket[0] < cutoff:
+                bucket.popleft()
+            if len(bucket) >= self.max_requests:
+                return False
+            bucket.append(now)
+            return True
+
+# 5 requests / 60s per client IP for /api/credentials/test
+CREDENTIALS_TEST_LIMITER = SlidingWindowRateLimiter(max_requests=5, window_seconds=60)
+
 
 # ── Helper Classes ─────────────────────────────────────────────────────
 
@@ -133,9 +165,23 @@ def derive_encryption_key(master_password):
     return base64.urlsafe_b64encode(key[:32])  # Fernet requires 32 bytes
 
 def _crypt_operation(data, encryption_key, operation='encrypt'):
-    """Unified encryption/decryption using Fernet (AES)"""
-    if not encryption_key or not Fernet:
-        return data  # Return as-is if no key or cryptography library
+    """Unified encryption/decryption using Fernet (AES).
+
+    SECURITY: If Fernet is unavailable or no key is provided, this raises
+    RuntimeError instead of falling back to plaintext storage. Returning
+    plaintext silently would mean credentials end up unencrypted in the DB.
+    """
+    if not Fernet:
+        print("⚠️  cryptography/Fernet not available – refusing plaintext fallback")
+        raise RuntimeError(
+            "cryptography library (Fernet) is not installed; "
+            "plaintext credential storage is disabled for security."
+        )
+    if not encryption_key:
+        print("⚠️  No encryption key provided – refusing plaintext fallback")
+        raise RuntimeError(
+            "Encryption key is required; plaintext credential storage is disabled."
+        )
     try:
         f = Fernet(encryption_key)
         if operation == 'encrypt':
@@ -145,7 +191,7 @@ def _crypt_operation(data, encryption_key, operation='encrypt'):
     except Exception as e:
         op_name = 'Encryption' if operation == 'encrypt' else 'Decryption'
         print(f"❌ {op_name} error: {e}")
-        return data
+        raise
 
 def encrypt_password(password, encryption_key):
     """Encrypt password using Fernet (AES)"""
@@ -227,15 +273,22 @@ def set_config(key, value):
         return False
 
 def save_credentials(service, host, port, user, password, encryption_key):
-    """Save email credentials with encryption"""
+    """Save email credentials with encryption.
+
+    SECURITY: Refuses to save if no encryption key is provided – plaintext
+    storage is disabled (see _crypt_operation).
+    """
+    if not encryption_key:
+        print("❌ Refusing to save credentials without an encryption key")
+        return False
     try:
-        encrypted_password = encrypt_password(password, encryption_key) if encryption_key else password
+        encrypted_password = encrypt_password(password, encryption_key)
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute('''INSERT OR REPLACE INTO email_credentials
                          (service, host, port, user, password, encrypted, updated_at)
                          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)''',
-                      (service, host, port, user, encrypted_password, 1 if encryption_key else 0))
+                      (service, host, port, user, encrypted_password, 1))
         conn.commit()
         conn.close()
         print(f"✅ {service.upper()} credentials saved and encrypted")
@@ -416,21 +469,25 @@ def check_and_send_summary(html_content='', text_content=''):
 # ── Email Monitoring ──────────────────────────────────────────────────
 
 def fetch_imap_emails():
-    """Fetch recent emails from IMAP for monitoring"""
+    """Fetch recent emails from IMAP for monitoring.
+
+    Uses try/finally to guarantee close()/logout() run even on exception
+    (prevents connection leaks on the IMAP server side).
+    """
+    imap_host = get_config('imap_host')
+    imap_port = get_config('imap_port', '993')
+    imap_user = get_config('imap_user')
+    imap_pass = get_config('imap_pass')
+
+    if not imap_host or not imap_user or not imap_pass:
+        return []
+
+    # Use IMAPConnection helper for consistent connection handling
+    imap_conn = IMAPConnection(imap_host, imap_port, imap_user, imap_pass)
+    if not imap_conn.connect():
+        return []
+
     try:
-        imap_host = get_config('imap_host')
-        imap_port = get_config('imap_port', '993')
-        imap_user = get_config('imap_user')
-        imap_pass = get_config('imap_pass')
-
-        if not imap_host or not imap_user or not imap_pass:
-            return []
-
-        # Use IMAPConnection helper for consistent connection handling
-        imap_conn = IMAPConnection(imap_host, imap_port, imap_user, imap_pass)
-        if not imap_conn.connect():
-            return []
-
         imap_conn.select_folder('INBOX')
         imap = imap_conn.connection
 
@@ -450,12 +507,14 @@ def fetch_imap_emails():
                 'date': msg.get('Date', ''),
             })
 
-        imap_conn.close()
         return emails
 
     except Exception as e:
         print(f"❌ IMAP fetch error: {e}")
         return []
+    finally:
+        # IMAPConnection.close() already swallows inner close/logout errors
+        imap_conn.close()
 
 def get_applications_list():
     """Get list of applications from the Bewerbungstracker app"""
@@ -883,6 +942,16 @@ class EmailServiceHandler(JSONHandler):
 
     def handle_test_credentials(self, data):
         """Test email credentials by attempting connection"""
+        # Rate limit: 5 requests/minute per client IP. Credential-test is the
+        # obvious brute-force surface since it hits real mail servers.
+        client_ip = self.client_address[0] if self.client_address else 'unknown'
+        if not CREDENTIALS_TEST_LIMITER.allow(client_ip):
+            self.send_json_error(
+                'Rate limit exceeded (5 requests/minute). Please wait and retry.',
+                429,
+            )
+            return
+
         service = data.get('service', '').lower()  # 'smtp' or 'imap'
         host = data.get('host', '')
         port = data.get('port', '')

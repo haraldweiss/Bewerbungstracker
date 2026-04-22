@@ -1152,6 +1152,23 @@ async function fetchAPI(url, options = {}) {
     return response;
 }
 
+// Higher-level helper: returns parsed JSON or throws on HTTP-Error.
+// Use for /api/* calls where a 500/4xx should surface cleanly instead of
+// blowing up JSON.parse on an empty/error body.
+async function apiFetch(url, opts = {}) {
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(opts.headers || {})
+    };
+    const res = await fetch(url, { ...opts, headers });
+    if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); if (j && j.message) msg = j.message; } catch(_) {}
+        throw new Error(msg);
+    }
+    return res.json();
+}
+
 // ═══════════════════════════════════════════════════════
 // USER MANAGEMENT FUNCTIONS
 // ═══════════════════════════════════════════════════════
@@ -1194,8 +1211,8 @@ function renderUsersList(users) {
             <td>${user.is_admin ? '👑 Admin' : 'Benutzer'}</td>
             <td>${new Date(user.created_at).toLocaleDateString('de-DE')}</td>
             <td>
-                <button class="btn btn-secondary btn-sm" onclick="editUserModal('${user.id}')">✏️</button>
-                <button class="btn btn-danger btn-sm" onclick="confirmDeleteUser('${user.id}', '${escapeHtml(user.username)}')">🗑️</button>
+                <button class="btn btn-secondary btn-sm" onclick="editUserModal('${escJs(user.id)}')">✏️</button>
+                <button class="btn btn-danger btn-sm" onclick="confirmDeleteUser('${escJs(user.id)}', '${escJs(user.username)}')">🗑️</button>
             </td>
         </tr>
     `).join('');
@@ -1701,8 +1718,8 @@ function showConfigBackups() {
                         <div style="font-size:0.75rem;color:var(--text-muted);">${Object.keys(b.data.settings).length} Einstellungen</div>
                     </div>
                     <div style="display:flex;gap:0.5rem;">
-                        <button class="btn btn-success btn-sm" onclick="restoreConfigBackup('${b.key}');showConfigBackups();">↩️ Wiederherstellen</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteConfigBackup('${b.key}');showConfigBackups();">🗑️</button>
+                        <button class="btn btn-success btn-sm" onclick="restoreConfigBackup('${escJs(b.key)}');showConfigBackups();">↩️ Wiederherstellen</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteConfigBackup('${escJs(b.key)}');showConfigBackups();">🗑️</button>
                     </div>
                 </div>`;
             }).join('')}
@@ -1766,13 +1783,13 @@ async function saveToStorage() {
                 const existing = currentApps.find(a => a.id === app.id);
                 if (existing) {
                     // Update existing
-                    await fetchAPI(`/api/applications/${app.id}`, {
+                    await apiFetch(`/api/applications/${app.id}`, {
                         method: 'PUT',
                         body: JSON.stringify(app)
                     });
                 } else {
                     // Create new
-                    await fetchAPI('/api/applications', {
+                    await apiFetch('/api/applications', {
                         method: 'POST',
                         body: JSON.stringify(app)
                     });
@@ -1780,7 +1797,7 @@ async function saveToStorage() {
             }
 
             // Save settings
-            await fetchAPI('/api/settings', {
+            await apiFetch('/api/settings', {
                 method: 'PUT',
                 body: JSON.stringify(state.settings)
             });
@@ -1954,7 +1971,7 @@ function renderDashboard() {
     document.getElementById('recentList').innerHTML = recent.length === 0
         ? '<p style="color:var(--text-muted);font-size:0.85rem;">Noch keine Bewerbungen</p>'
         : recent.map(r => `
-            <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="showDetail('${r.id}')">
+            <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="showDetail('${escJs(r.id)}')">
                 <div style="flex:1;"><strong>${escHtml(r.firma)}</strong><span style="color:var(--text-muted);font-size:0.8rem;margin-left:0.5rem;">${escHtml(r.position||'')}</span></div>
                 ${getStatusBadge(r.status)}
                 <div style="color:var(--text-muted);font-size:0.8rem;">${formatDate(r.updatedAt||r.createdAt||r.datum)}</div>
@@ -2070,7 +2087,7 @@ function renderBewerbungen() {
     } else {
         empty.style.display = 'none';
         tbody.innerHTML = filtered.map(item => `
-            <tr style="cursor:pointer;" onclick="showDetail('${item.id}')">
+            <tr style="cursor:pointer;" onclick="showDetail('${escJs(item.id)}')">
                 <td><strong>${escHtml(item.firma)}</strong>${item.link ? `<a href="${escHtml(item.link)}" target="_blank" onclick="event.stopPropagation()" style="margin-left:0.4rem;font-size:0.75rem;color:var(--primary-light);">🔗</a>` : ''}</td>
                 <td>${escHtml(item.position||'–')}</td>
                 <td>${getStatusBadge(item.status)}</td>
@@ -2079,8 +2096,8 @@ function renderBewerbungen() {
                 <td style="color:var(--text-muted);font-size:0.8rem;">${getQuelleLabel(item.quelle)}</td>
                 <td onclick="event.stopPropagation()">
                     <div style="display:flex;gap:0.3rem;">
-                        <button class="btn btn-secondary btn-sm" onclick="editBewerbung('${item.id}')">✏️</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteBewerbung('${item.id}')">🗑️</button>
+                        <button class="btn btn-secondary btn-sm" onclick="editBewerbung('${escJs(item.id)}')">✏️</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteBewerbung('${escJs(item.id)}')">🗑️</button>
                     </div>
                 </td>
             </tr>`).join('');
@@ -2337,8 +2354,8 @@ function renderDeletedEntries(deleted) {
                         </div>
                     </div>
                     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                        <button class="btn btn-success btn-sm" onclick="recoverBewerbung('${app.id}')">♻️ Wiederherstellen</button>
-                        <button class="btn btn-danger btn-sm" onclick="permanentlyDeleteBewerbung('${app.id}')">🗑️ Endgültig löschen</button>
+                        <button class="btn btn-success btn-sm" onclick="recoverBewerbung('${escJs(app.id)}')">♻️ Wiederherstellen</button>
+                        <button class="btn btn-danger btn-sm" onclick="permanentlyDeleteBewerbung('${escJs(app.id)}')">🗑️ Endgültig löschen</button>
                     </div>
                 </div>
             `).join('')}
@@ -3231,7 +3248,7 @@ async function testSmtpConnection() {
     // Wait a moment, then check service status
     setTimeout(async () => {
         try {
-            const status = await fetch(EMAIL_SERVICE_URL + '/api/status').then(r => r.json());
+            const status = await apiFetch(EMAIL_SERVICE_URL + '/api/status');
             if (status.smtp_configured) {
                 updateSmtpStatus('✅ SMTP verbunden und konfiguriert');
                 showToast('SMTP-Verbindung erfolgreich!', 'success');
@@ -3769,6 +3786,10 @@ function escHtml(str) {
     return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function escJs(s) {
+    return String(s==null?'':s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/</g, '\\x3c').replace(/>/g, '\\x3e').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+}
+
 function formatDate(str) {
     if (!str) return '–';
     try { return new Date(str).toLocaleDateString('de-DE'); } catch(e) { return str; }
@@ -3823,7 +3844,7 @@ function createStatCardHtml(icon, value, label, variant='blue') {
 }
 
 function createKanbanCardHtml(id, firma, position, days, daysColor) {
-    return `<div class="kanban-card" onclick="showDetail('${escHtml(id)}')"><div class="kanban-firma">${escHtml(firma)}</div><div class="kanban-position">${escHtml(position||'–')}</div><div class="kanban-days" style="color:${daysColor};">⏱ ${days}d</div></div>`;
+    return `<div class="kanban-card" onclick="showDetail('${escJs(id)}')"><div class="kanban-firma">${escHtml(firma)}</div><div class="kanban-position">${escHtml(position||'–')}</div><div class="kanban-days" style="color:${daysColor};">⏱ ${days}d</div></div>`;
 }
 
 function createStatCardCompactHtml(icon, label, value, percentage, color) {
@@ -3831,7 +3852,7 @@ function createStatCardCompactHtml(icon, label, value, percentage, color) {
 }
 
 function createTabsHtml(tabs, activeId) {
-    return `<div class="tabs">${tabs.map(t => `<div class="tab ${t.id === activeId ? 'active' : ''}" onclick="switchTab(this,'${t.id}'${t.callback ? ';' + t.callback + '()' : ''})">${t.icon} ${t.label}</div>`).join('')}</div>`;
+    return `<div class="tabs">${tabs.map(t => `<div class="tab ${t.id === activeId ? 'active' : ''}" onclick="switchTab(this,'${escJs(t.id)}'${t.callback ? ';' + t.callback + '()' : ''})">${t.icon} ${t.label}</div>`).join('')}</div>`;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -4615,7 +4636,7 @@ function renderAIPlatforms() {
                         <div style="font-size:0.8rem;color:var(--text-muted);">Öffne in neuem Tab und füge Prompt ein</div>
                     </div>
                     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                        <button class="btn btn-primary btn-sm" onclick="openAIWithPrompt('${ai.url}')">🚀 Öffnen</button>
+                        <button class="btn btn-primary btn-sm" onclick="openAIWithPrompt('${escJs(ai.url)}')">🚀 Öffnen</button>
                         <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('generatedPrompt')">📋 Kopieren</button>
                     </div>
                 </div>
@@ -4623,7 +4644,7 @@ function renderAIPlatforms() {
         });
         html += '</div>';
     }
-    
+
     // Custom API platforms
     const apiPlatforms = customAIPlatforms.filter(ai => ai.type === 'api');
     if (apiPlatforms.length > 0) {
@@ -4635,13 +4656,13 @@ function renderAIPlatforms() {
                         <div style="font-weight:600;margin-bottom:0.25rem;">${ai.emoji} ${ai.name}</div>
                         <div style="font-size:0.8rem;color:var(--text-muted);">${ai.description || 'Benutzerdefinierte API'}</div>
                     </div>
-                    <button class="btn btn-primary btn-sm" onclick="sendToAPI('${ai.id}')">⚡ Senden</button>
+                    <button class="btn btn-primary btn-sm" onclick="sendToAPI('${escJs(ai.id)}')">⚡ Senden</button>
                 </div>
             `;
         });
         html += '</div>';
     }
-    
+
     // Custom Web platforms
     const webPlatforms = customAIPlatforms.filter(ai => ai.type === 'web');
     if (webPlatforms.length > 0) {
@@ -4654,7 +4675,7 @@ function renderAIPlatforms() {
                         <div style="font-size:0.8rem;color:var(--text-muted);">${ai.description || 'Benutzerdefinierte Plattform'}</div>
                     </div>
                     <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-                        <button class="btn btn-secondary btn-sm" onclick="openAIWithPrompt('${ai.url}')">🚀 Öffnen</button>
+                        <button class="btn btn-secondary btn-sm" onclick="openAIWithPrompt('${escJs(ai.url)}')">🚀 Öffnen</button>
                         <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('generatedPrompt')">📋 Kopieren</button>
                     </div>
                 </div>
@@ -4838,9 +4859,9 @@ function loadCustomAIPlatforms() {
                     </div>
                 </div>
                 <div style="display:flex;gap:0.5rem;flex-wrap:wrap;padding-top:0.5rem;border-top:1px solid var(--border);">
-                    <button class="btn btn-secondary btn-sm" onclick="viewCustomAI('${ai.id}')">👁️ Ansehen</button>
-                    <button class="btn btn-secondary btn-sm" onclick="editCustomAI('${ai.id}')">✏️ Bearbeiten</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteCustomAI('${ai.id}')">🗑️ Löschen</button>
+                    <button class="btn btn-secondary btn-sm" onclick="viewCustomAI('${escJs(ai.id)}')">👁️ Ansehen</button>
+                    <button class="btn btn-secondary btn-sm" onclick="editCustomAI('${escJs(ai.id)}')">✏️ Bearbeiten</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteCustomAI('${escJs(ai.id)}')">🗑️ Löschen</button>
                 </div>
             </div>
         `).join('');
