@@ -88,6 +88,9 @@ dependencies {
     // Security (for encrypted SharedPreferences)
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+    // DataStore (for persistent preferences)
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")

@@ -1,15 +1,18 @@
 package com.example.bewerbungstracker.ui.screens.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
@@ -17,6 +20,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -40,6 +44,7 @@ import java.util.Locale
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel) {
     val uiState by viewModel.uiState.collectAsState()
+    val appearanceMode by viewModel.appearanceMode.collectAsState(initial = "system")
 
     if (uiState.showLogoutConfirmation) {
         LogoutConfirmationDialog(
@@ -103,12 +108,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         }
 
         item {
-            SettingsToggle(
-                icon = Icons.Default.Edit,
-                title = "Dark Mode",
-                subtitle = "Use dark theme",
-                isEnabled = uiState.darkModeEnabled,
-                onToggle = { viewModel.setDarkMode(it) }
+            AppearanceToggle(
+                appearanceMode = appearanceMode,
+                onModeSelected = { viewModel.setAppearanceMode(it) }
             )
         }
 
@@ -267,6 +269,65 @@ fun SettingsRow(
         }
 
         action()
+    }
+}
+
+@Composable
+fun AppearanceToggle(
+    appearanceMode: String,
+    onModeSelected: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SectionBackground)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "Appearance",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                "Choose theme style",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextTertiary,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(4.dp)
+                )
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            listOf("System" to "system", "Light" to "light", "Dark" to "dark").forEach { (label, value) ->
+                Button(
+                    onClick = { onModeSelected(value) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(36.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (appearanceMode == value)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            Color.Transparent,
+                        contentColor = if (appearanceMode == value)
+                            Color.White
+                        else
+                            MaterialTheme.colorScheme.onBackground
+                    )
+                ) {
+                    Text(label, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
     }
 }
 
