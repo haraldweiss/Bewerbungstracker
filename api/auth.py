@@ -97,8 +97,13 @@ def refresh():
 
     payload = AuthService.verify_token(data['refresh_token'])
 
-    if not payload or payload.get('type') != 'refresh':
-        return {'error': 'Invalid refresh token'}, 401
+    # WICHTIG: payload kann None sein bei expired/invalid token
+    if not payload:
+        return {'error': 'Invalid or expired refresh token'}, 401
+
+    # WICHTIG: Überprüfe token type NACH payload check
+    if payload.get('type') != 'refresh':
+        return {'error': 'Invalid token type - not a refresh token'}, 401
 
     new_access_token = AuthService.create_access_token(payload['user_id'])
 
