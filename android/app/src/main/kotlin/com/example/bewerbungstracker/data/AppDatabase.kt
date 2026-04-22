@@ -44,6 +44,25 @@ data class EmailEntity(
     val matchedApplicationId: String? = null // FK to ApplicationEntity
 )
 
+/**
+ * Notification entity for activity timeline
+ */
+@Entity(
+    tableName = "notifications",
+    indices = [
+        Index(value = ["userId"]),
+        Index(value = ["timestamp"])
+    ]
+)
+data class NotificationEntity(
+    @PrimaryKey val id: String = UUID.randomUUID().toString(),
+    val userId: String,
+    val title: String,
+    val description: String,
+    val timestamp: Long = System.currentTimeMillis(),
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 // MARK: - DAOs
 
 /**
@@ -129,14 +148,42 @@ interface EmailDao {
  * Main entry point for database access with application data and email entities.
  * Uses singleton pattern via companion object for thread-safe access.
  */
+/**
+ * Data Access Object for Notification entities
+ */
+@Dao
+interface NotificationDao {
+    @Query("SELECT * FROM notifications WHERE userId = :userId ORDER BY timestamp DESC")
+    suspend fun getAllNotifications(userId: String): List<NotificationEntity>
+
+    @Query("SELECT * FROM notifications WHERE userId = :userId AND id = :id")
+    suspend fun getNotificationById(userId: String, id: String): NotificationEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNotification(notification: NotificationEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNotifications(notifications: List<NotificationEntity>)
+
+    @Delete
+    suspend fun deleteNotification(notification: NotificationEntity)
+
+    @Query("DELETE FROM notifications WHERE userId = :userId AND id = :id")
+    suspend fun deleteNotificationById(userId: String, id: String)
+
+    @Query("SELECT COUNT(*) FROM notifications WHERE userId = :userId")
+    suspend fun getNotificationCount(userId: String): Int
+}
+
 @Database(
-    entities = [ApplicationEntity::class, EmailEntity::class],
+    entities = [ApplicationEntity::class, EmailEntity::class, NotificationEntity::class],
     version = 1,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun applicationDao(): ApplicationDao
     abstract fun emailDao(): EmailDao
+    abstract fun notificationDao(): NotificationDao
 
     companion object {
         @Volatile
@@ -182,6 +229,7 @@ abstract class AppDatabase : RoomDatabase() {
 class BewerbungstrackerRepository(private val database: AppDatabase) {
     private val applicationDao = database.applicationDao()
     private val emailDao = database.emailDao()
+    private val notificationDao = database.notificationDao()
 
     // Applications
     suspend fun getApplication(userId: String, id: String) =
@@ -229,6 +277,22 @@ class BewerbungstrackerRepository(private val database: AppDatabase) {
 
     suspend fun matchEmailToApplication(userId: String, emailId: String, appId: String) =
         emailDao.matchEmailToApplication(userId, emailId, appId)
+
+    // Notifications
+    suspend fun getAllNotifications(userId: String) =
+        notificationDao.getAllNotifications(userId)
+
+    suspend fun getNotification(userId: String, id: String) =
+        notificationDao.getNotificationById(userId, id)
+
+    suspend fun insertNotification(notification: NotificationEntity) =
+        notificationDao.insertNotification(notification)
+
+    suspend fun insertNotifications(notifications: List<NotificationEntity>) =
+        notificationDao.insertNotifications(notifications)
+
+    suspend fun deleteNotification(notification: NotificationEntity) =
+        notificationDao.deleteNotification(notification)
 
     // Combined operations
     suspend fun getAllData(userId: String): Pair<List<ApplicationEntity>, List<EmailEntity>> {
