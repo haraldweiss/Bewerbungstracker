@@ -30,9 +30,7 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG = False
-    # Force PostgreSQL in production
-    if 'DATABASE_URL' not in os.environ:
-        raise ValueError("DATABASE_URL must be set in production")
+    # Note: DATABASE_URL validation should happen at runtime, not at class definition time
 
 
 class TestingConfig(Config):
