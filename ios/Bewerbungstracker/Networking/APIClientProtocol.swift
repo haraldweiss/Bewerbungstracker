@@ -63,6 +63,11 @@ struct ErrorResponse: Codable {
     let code: Int
 }
 
+struct MatchResult: Codable {
+    let matched: Bool
+    let confidence: Double?
+}
+
 // MARK: - Request Models
 
 struct RegisterRequest: Codable {
@@ -102,16 +107,16 @@ protocol APIClientProtocol {
     func getCurrentUser() async throws -> AuthResponse
 
     // Applications endpoints
-    func listApplications() async throws -> ApplicationsListResponse
+    func listApplications() async throws -> [ApplicationResponse]
     func createApplication(_ request: CreateApplicationRequest) async throws -> ApplicationResponse
-    func getApplication(id: String) async throws -> ApplicationResponse
-    func updateApplication(id: String, request: UpdateApplicationRequest) async throws -> ApplicationResponse
-    func deleteApplication(id: String) async throws -> Void
+    func getApplication(id: UUID) async throws -> ApplicationResponse
+    func updateApplication(id: UUID, request: UpdateApplicationRequest) async throws -> ApplicationResponse
+    func deleteApplication(id: UUID) async throws -> Void
 
     // Emails endpoints
     func listEmails() async throws -> [EmailResponse]
-    func getEmail(id: String) async throws -> EmailDetailResponse
-    func matchEmail(id: String, applicationId: String) async throws -> [String: String]
+    func getEmail(id: UUID) async throws -> EmailDetailResponse
+    func matchEmail(id: UUID, applicationId: UUID) async throws -> MatchResult
     func syncEmails() async throws -> SyncResponse
     func syncStatus() async throws -> SyncStatusResponse
 }
