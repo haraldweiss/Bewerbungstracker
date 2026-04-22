@@ -250,6 +250,9 @@ class BewerbungstrackerRepository(private val database: AppDatabase) {
     suspend fun deleteApplication(application: ApplicationEntity) =
         applicationDao.deleteApplication(application)
 
+    suspend fun deleteApplicationById(userId: String, id: String) =
+        applicationDao.deleteApplicationById(userId, id)
+
     // Emails
     suspend fun getEmail(userId: String, id: String) =
         emailDao.getEmailById(userId, id)

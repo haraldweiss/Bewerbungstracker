@@ -44,7 +44,7 @@ class ApplicationsViewModel(
                 applyFiltersAndSearch()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = e.message,
+                    errorMessage = e.message ?: "Loading failed",
                     isLoading = false
                 )
             }
@@ -95,7 +95,7 @@ class ApplicationsViewModel(
                 _uiState.value = _uiState.value.copy(showCreateDialog = false)
                 loadApplications()
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = e.message)
+                _uiState.value = _uiState.value.copy(errorMessage = e.message ?: "Creation failed")
             }
         }
     }
@@ -108,7 +108,7 @@ class ApplicationsViewModel(
                 )
                 loadApplications()
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = e.message)
+                _uiState.value = _uiState.value.copy(errorMessage = e.message ?: "Update failed")
             }
         }
     }
@@ -120,6 +120,20 @@ class ApplicationsViewModel(
         appliedDate: Long,
         status: String? = null
     ) {
+        // Input validation
+        if (company.isBlank()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Company name required")
+            return
+        }
+        if (position.isBlank()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Position title required")
+            return
+        }
+        if (appliedDate <= 0) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Valid date required")
+            return
+        }
+
         viewModelScope.launch {
             try {
                 val existing = repository.getApplication(userId, id)
@@ -148,7 +162,7 @@ class ApplicationsViewModel(
                 repository.deleteApplication(application)
                 loadApplications()
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = e.message)
+                _uiState.value = _uiState.value.copy(errorMessage = e.message ?: "Delete failed")
             }
         }
     }
@@ -156,15 +170,12 @@ class ApplicationsViewModel(
     fun deleteApplicationById(id: String) {
         viewModelScope.launch {
             try {
-                val existing = repository.getApplication(userId, id)
-                if (existing != null) {
-                    repository.deleteApplication(existing)
-                    loadApplications()
-                } else {
-                    _uiState.value = _uiState.value.copy(errorMessage = "Application not found")
-                }
+                repository.deleteApplicationById(userId, id)
+                loadApplications()
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(errorMessage = e.message ?: "Delete failed")
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = e.message ?: "Delete failed"
+                )
             }
         }
     }
