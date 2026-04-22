@@ -1,5 +1,11 @@
-Flask==2.3.2
-Flask-CORS==4.0.0
-Werkzeug==2.3.6
-cryptography==41.0.0
-gunicorn==21.2.0
+Flask>=3.0,<4.0
+Flask-CORS>=4.0
+Flask-SQLAlchemy>=3.1.0
+Werkzeug>=3.0,<4.0
+cryptography>=42.0
+gunicorn>=22.0
+SQLAlchemy==2.0.23
+Alembic==1.12.1
+bcrypt==4.1.1
+PyJWT==2.8.1
+python-dotenv==1.0.0
