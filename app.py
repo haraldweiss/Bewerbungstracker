@@ -25,7 +25,13 @@ def create_app(config_class=None):
     app.config.from_object(config_class)
 
     # Configure CORS for API endpoints
-    cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
+    # Note: Config class is selected based on FLASK_ENV at import time.
+    # CORS defaults to localhost:3000 in development only, empty list in production (requires explicit CORS_ORIGINS env var).
+    env = os.getenv('FLASK_ENV', 'development')
+    default_origins = 'http://localhost:3000' if env != 'production' else ''
+    cors_origins_str = os.getenv('CORS_ORIGINS', default_origins)
+    cors_origins = [o.strip() for o in cors_origins_str.split(',') if o.strip()]
+
     CORS(app, resources={
         '/api/*': {
             'origins': cors_origins,
