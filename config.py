@@ -5,10 +5,15 @@ from datetime import timedelta
 class Config:
     """Base configuration"""
     # Database
-    SQLALCHEMY_DATABASE_URI = os.getenv(
+    _database_url = os.getenv(
         'DATABASE_URL',
-        'sqlite:///bewerbungstracker.db'
+        'sqlite:///bewerbungstracker.db' if os.getenv('FLASK_ENV') != 'production' else None
     )
+
+    if os.getenv('FLASK_ENV') == 'production' and not _database_url:
+        raise ValueError('DATABASE_URL must be set in production')
+
+    SQLALCHEMY_DATABASE_URI = _database_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # JWT - VALIDATE IN PRODUCTION

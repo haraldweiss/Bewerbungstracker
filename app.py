@@ -4,10 +4,15 @@ Bewerbungstracker - Modernized Flask App with SQLAlchemy & JWT Auth
 Factory pattern for Flask application creation
 """
 
+from dotenv import load_dotenv
 from flask import Flask, jsonify, send_file
+from flask_cors import CORS
 from config import config
 import os
 from database import db
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 def create_app(config_class=None):
@@ -18,6 +23,17 @@ def create_app(config_class=None):
 
     app = Flask(__name__, static_folder='components', static_url_path='/components')
     app.config.from_object(config_class)
+
+    # Configure CORS for API endpoints
+    cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
+    CORS(app, resources={
+        '/api/*': {
+            'origins': cors_origins,
+            'methods': ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+            'allow_headers': ['Content-Type', 'Authorization'],
+            'supports_credentials': True
+        }
+    })
 
     # Initialize database
     db.init_app(app)
