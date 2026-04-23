@@ -1,9 +1,13 @@
 from flask import Blueprint, request, jsonify
 from functools import wraps
 import jwt
+import secrets
+from datetime import datetime, timedelta
 from config import Config
 from auth_service import AuthService
-from models import User
+from models import User, EmailConfirmationToken
+from services.email_service import send_confirmation_email
+from extensions import db
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
@@ -37,27 +41,91 @@ def token_required(f):
     return decorated
 
 
+def admin_required(f):
+    """Decorator to require admin user"""
+    @wraps(f)
+    def decorated(user, *args, **kwargs):
+        if not user.is_admin:
+            return {'error': 'Admin access required'}, 403
+        return f(user, *args, **kwargs)
+    return decorated
+
+
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    """Register new user"""
+    """Register new user - creates inactive user and sends confirmation email"""
     data = request.get_json()
 
     if not data or not data.get('email') or not data.get('password'):
         return {'error': 'Email and password required'}, 400
 
-    success, user, message = AuthService.register_user(
-        data['email'],
-        data['password']
-    )
+    # Check if email already exists
+    if User.query.filter_by(email=data['email']).first():
+        return {'error': 'Email already registered'}, 400
 
-    if not success:
-        return {'error': message}, 400
+    try:
+        password_hash = AuthService.hash_password(data['password'])
+        user = User(
+            email=data['email'],
+            password_hash=password_hash,
+            email_confirmed=False,
+            is_active=False
+        )
+        db.session.add(user)
+        db.session.flush()  # Get user ID
+
+        # Create confirmation token
+        confirmation_token = secrets.token_urlsafe(32)
+        token_record = EmailConfirmationToken(
+            token=confirmation_token,
+            user_id=user.id,
+            expires_at=datetime.utcnow() + timedelta(hours=24)
+        )
+        db.session.add(token_record)
+        db.session.commit()
+
+        # Send confirmation email
+        from flask import current_app
+        confirmation_link = f"{current_app.config['APP_URL']}/api/auth/confirm-email?token={confirmation_token}"
+        send_confirmation_email(user.email, confirmation_link)
+
+        return {
+            'id': user.id,
+            'email': user.email,
+            'message': 'Registration successful! Please confirm your email to activate your account.'
+        }, 201
+    except Exception as e:
+        db.session.rollback()
+        return {'error': str(e)}, 400
+
+
+@auth_bp.route('/confirm-email', methods=['GET'])
+def confirm_email():
+    """Confirm email with token"""
+    token = request.args.get('token')
+
+    if not token:
+        return {'error': 'Confirmation token required'}, 400
+
+    token_record = EmailConfirmationToken.query.filter_by(token=token).first()
+
+    if not token_record:
+        return {'error': 'Invalid or expired confirmation token'}, 400
+
+    if token_record.expires_at < datetime.utcnow():
+        db.session.delete(token_record)
+        db.session.commit()
+        return {'error': 'Confirmation token has expired'}, 400
+
+    user = User.query.get(token_record.user_id)
+    user.email_confirmed = True
+    db.session.delete(token_record)
+    db.session.commit()
 
     return {
-        'id': user.id,
-        'email': user.email,
-        'message': message
-    }, 201
+        'message': 'Email confirmed! Your account is pending admin approval.',
+        'email': user.email
+    }, 200
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -75,6 +143,14 @@ def login():
 
     if not success:
         return {'error': message}, 401
+
+    # Check if email is confirmed
+    if not user.email_confirmed:
+        return {'error': 'Please confirm your email before logging in'}, 401
+
+    # Check if account is approved
+    if not user.is_active:
+        return {'error': 'Your account is pending admin approval'}, 401
 
     access_token = AuthService.create_access_token(user.id)
     refresh_token = AuthService.create_refresh_token(user.id)
