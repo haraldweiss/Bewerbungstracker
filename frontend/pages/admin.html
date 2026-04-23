@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="description" content="📋 Bewerbungs-Tracker Admin Dashboard">
+    <meta name="theme-color" content="#4CAF50">
+    <title>📋 Bewerbungs-Tracker - Admin Dashboard</title>
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --primary-light: #818CF8;
+            --primary-dark: #3730A3;
+            --secondary: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --info: #3B82F6;
+            --bg: #0F172A;
+            --bg-card: #1E293B;
+            --bg-card2: #263548;
+            --text: #E2E8F0;
+            --text-muted: #94A3B8;
+            --border: #334155;
+            --shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+
+        :root[data-scheme="light"] {
+            --primary: #4F46E5;
+            --primary-light: #818CF8;
+            --primary-dark: #3730A3;
+            --secondary: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --info: #3B82F6;
+            --bg: #F8FAFC;
+            --bg-card: #FFFFFF;
+            --bg-card2: #F1F5F9;
+            --text: #0F172A;
+            --text-muted: #64748B;
+            --border: #E2E8F0;
+            --shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        .admin-container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .admin-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .admin-logo {
+            font-size: 2.5rem;
+        }
+
+        .admin-header h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .admin-header p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 0.25rem;
+        }
+
+        .admin-controls {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .alert {
+            padding: 0.85rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+            display: none;
+            animation: slideIn 0.3s ease;
+            border: 1px solid;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-16px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .alert.active {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .alert.error {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #FCA5A5;
+        }
+
+        .alert.success {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.3);
+            color: #86EFAC;
+        }
+
+        .alert.info {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.3);
+            color: #93C5FD;
+        }
+
+        .table-wrapper {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: var(--bg-card2);
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody tr {
+            transition: background-color 0.2s;
+        }
+
+        tbody tr:hover {
+            background: var(--bg-card2);
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .email-cell {
+            font-weight: 500;
+        }
+
+        .date-cell {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.3rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .badge-pending-email {
+            background: rgba(245, 158, 11, 0.15);
+            color: #FCD34D;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .badge-confirmed {
+            background: rgba(16, 185, 129, 0.15);
+            color: #86EFAC;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-pending-account {
+            background: rgba(59, 130, 246, 0.15);
+            color: #93C5FD;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .badge-active {
+            background: rgba(16, 185, 129, 0.15);
+            color: #86EFAC;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-user {
+            background: rgba(148, 163, 184, 0.15);
+            color: #CBD5E1;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+
+        .badge-admin {
+            background: rgba(79, 70, 229, 0.15);
+            color: #A5B4FC;
+            border: 1px solid rgba(79, 70, 229, 0.3);
+        }
+
+        .app-count {
+            text-align: center;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .actions-cell {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.5rem 0.85rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: var(--bg-card2);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: #FCA5A5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: #86EFAC;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-success:hover {
+            background: rgba(16, 185, 129, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .loading-state {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(226, 232, 240, 0.3);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            padding: 3rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            opacity: 0.5;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(2px);
+            z-index: 1000;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        .modal-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            padding: 2rem;
+            width: 100%;
+            max-width: 400px;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-header h2 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+        }
+
+        .modal-header p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .modal-body {
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-body p {
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+        }
+
+        .modal-footer .btn {
+            padding: 0.75rem 1.5rem;
+        }
+
+        .theme-toggle {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            width: 44px;
+            height: 44px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            transition: all 0.2s;
+            z-index: 100;
+        }
+
+        .theme-toggle:hover {
+            background: var(--bg-card2);
+        }
+
+        .logout-btn {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            padding: 0.75rem 1.5rem;
+            background: var(--bg-card2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #FCA5A5;
+        }
+
+        @media (max-width: 768px) {
+            .admin-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+
+            .admin-header h1 {
+                font-size: 1.5rem;
+            }
+
+            .admin-logo {
+                font-size: 2rem;
+            }
+
+            .actions-cell {
+                flex-direction: column;
+                gap: 0.35rem;
+            }
+
+            .btn {
+                padding: 0.4rem 0.7rem;
+                font-size: 0.75rem;
+            }
+
+            th, td {
+                padding: 0.75rem 0.5rem;
+                font-size: 0.85rem;
+            }
+
+            .table-wrapper {
+                border-radius: 12px;
+            }
+
+            .modal-content {
+                margin: 1rem;
+                padding: 1.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 0.5rem;
+            }
+
+            .admin-header {
+                margin-bottom: 1.5rem;
+            }
+
+            th, td {
+                padding: 0.6rem 0.4rem;
+                font-size: 0.8rem;
+            }
+
+            .badge {
+                padding: 0.25rem 0.5rem;
+                font-size: 0.65rem;
+            }
+
+            .btn {
+                padding: 0.4rem 0.6rem;
+                font-size: 0.7rem;
+            }
+
+            .theme-toggle {
+                width: 40px;
+                height: 40px;
+                font-size: 1.1rem;
+                top: 0.5rem;
+                right: 0.5rem;
+            }
+
+            .logout-btn {
+                bottom: 0.5rem;
+                right: 0.5rem;
+                padding: 0.6rem 1rem;
+                font-size: 0.85rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Theme Toggle Button -->
+    <button class="theme-toggle" onclick="toggleTheme()" title="Theme umschalten">
+        <span id="themeIcon">🌙</span>
+    </button>
+
+    <!-- Logout Button -->
+    <button class="logout-btn" onclick="handleLogout()">Abmelden</button>
+
+    <div class="admin-container">
+        <!-- Header -->
+        <div class="admin-header">
+            <div>
+                <div class="admin-logo">📋</div>
+            </div>
+            <div>
+                <h1>Admin Dashboard</h1>
+                <p>Benutzerverwaltung und Anwendungsverwaltung</p>
+            </div>
+        </div>
+
+        <!-- Alert Container -->
+        <div id="alertContainer"></div>
+
+        <!-- Users Table -->
+        <div class="table-wrapper">
+            <div class="table-responsive">
+                <table id="usersTable">
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Erstellt</th>
+                            <th>Email-Status</th>
+                            <th>Konto-Status</th>
+                            <th>Rolle</th>
+                            <th>Anwendungen</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <tr>
+                            <td colspan="7">
+                                <div class="loading-state">
+                                    <div class="spinner"></div>
+                                    <span>Benutzer werden geladen...</span>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+
+    <!-- View Applications Modal -->
+    <div id="viewAppsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Anwendungen</h2>
+                <p id="viewAppsEmail"></p>
+            </div>
+            <div class="modal-body">
+                <div id="appsList"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('viewAppsModal')">Schließen</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reset Password Modal -->
+    <div id="resetPasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Passwort zurücksetzen</h2>
+                <p id="resetPasswordEmail"></p>
+            </div>
+            <div class="modal-body">
+                <p>Ein Passwort-Zurücksetzen-Link wird an die E-Mail-Adresse des Benutzers gesendet.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('resetPasswordModal')">Abbrechen</button>
+                <button class="btn btn-primary" onclick="confirmResetPassword()">Bestätigen</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approve User Modal -->
+    <div id="approveUserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Benutzer genehmigen</h2>
+                <p id="approveUserEmail"></p>
+            </div>
+            <div class="modal-body">
+                <p>Dieser Benutzer wird aktiviert und kann sich anmelden.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('approveUserModal')">Abbrechen</button>
+                <button class="btn btn-success" onclick="confirmApproveUser()">Genehmigen</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Promote to Admin Modal -->
+    <div id="promoteAdminModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Zu Admin befördern</h2>
+                <p id="promoteAdminEmail"></p>
+            </div>
+            <div class="modal-body">
+                <p>Dieser Benutzer erhält Administratorrechte und kann Admin-Funktionen nutzen.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('promoteAdminModal')">Abbrechen</button>
+                <button class="btn btn-primary" onclick="confirmPromoteAdmin()">Befördern</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete User Modal -->
+    <div id="deleteUserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Benutzer löschen</h2>
+                <p id="deleteUserEmail"></p>
+            </div>
+            <div class="modal-body">
+                <p>Diese Aktion kann nicht rückgängig gemacht werden. Alle Daten dieses Benutzers werden gelöscht.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('deleteUserModal')">Abbrechen</button>
+                <button class="btn btn-danger" onclick="confirmDeleteUser()">Löschen</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/frontend/auth.js"></script>
+    <script>
+        /**
+         * Store current user data for modal actions
+         */
+        let currentUserAction = {};
+
+        /**
+         * Initialize admin dashboard
+         */
+        function init() {
+            // Check if user is authenticated and is admin
+            if (!Auth.isAuthenticated()) {
+                window.location.href = '/login.html';
+                return;
+            }
+
+            // Load theme preference
+            loadTheme();
+
+            // Load users
+            loadUsers();
+        }
+
+        /**
+         * Load users from API
+         */
+        async function loadUsers() {
+            try {
+                const response = await Auth.apiCall('/api/admin/users', 'GET');
+                renderUsers(response);
+            } catch (error) {
+                showAlert('API Fehler: ' + error.message, 'error');
+                renderEmpty();
+            }
+        }
+
+        /**
+         * Render users in table
+         */
+        function renderUsers(users) {
+            const tbody = document.getElementById('usersTableBody');
+
+            if (!users || users.length === 0) {
+                renderEmpty();
+                return;
+            }
+
+            tbody.innerHTML = users.map(user => {
+                const createdDate = new Date(user.created_at).toLocaleDateString('de-DE');
+                const emailStatus = user.email_confirmed ? 'confirmed' : 'pending';
+                const accountStatus = user.is_active ? 'active' : 'pending';
+                const role = user.is_admin ? 'admin' : 'user';
+
+                return `
+                    <tr>
+                        <td class="email-cell">${escapeHtml(user.email)}</td>
+                        <td class="date-cell">${createdDate}</td>
+                        <td>
+                            <span class="badge badge-${emailStatus === 'confirmed' ? 'confirmed' : 'pending-email'}">
+                                ${emailStatus === 'confirmed' ? '✓ Bestätigt' : '⏳ Ausstehend'}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge badge-${accountStatus === 'active' ? 'active' : 'pending-account'}">
+                                ${accountStatus === 'active' ? '✓ Aktiv' : '⏳ Ausstehend'}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge badge-${role === 'admin' ? 'admin' : 'user'}">
+                                ${role === 'admin' ? '👑 Admin' : '👤 Benutzer'}
+                            </span>
+                        </td>
+                        <td class="app-count">${user.applications_count || 0}</td>
+                        <td>
+                            <div class="actions-cell">
+                                <button class="btn btn-secondary" onclick="openViewApps(${user.id}, '${escapeHtml(user.email)}')">
+                                    Anwendungen
+                                </button>
+                                <button class="btn btn-secondary" onclick="openResetPassword(${user.id}, '${escapeHtml(user.email)}')">
+                                    Passwort
+                                </button>
+                                ${user.email_confirmed && !user.is_active ? `
+                                    <button class="btn btn-success" onclick="openApproveUser(${user.id}, '${escapeHtml(user.email)}')">
+                                        Genehmigen
+                                    </button>
+                                ` : ''}
+                                ${!user.is_admin ? `
+                                    <button class="btn btn-primary" onclick="openPromoteAdmin(${user.id}, '${escapeHtml(user.email)}')">
+                                        Admin
+                                    </button>
+                                ` : ''}
+                                <button class="btn btn-danger" onclick="openDeleteUser(${user.id}, '${escapeHtml(user.email)}')">
+                                    Löschen
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        /**
+         * Render empty state
+         */
+        function renderEmpty() {
+            const tbody = document.getElementById('usersTableBody');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">👤</div>
+                            <div>Keine Benutzer gefunden</div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        /**
+         * Show alert message
+         */
+        function showAlert(message, type) {
+            const container = document.getElementById('alertContainer');
+            const alertId = 'alert-' + Date.now();
+
+            const alertEl = document.createElement('div');
+            alertEl.id = alertId;
+            alertEl.className = `alert ${type} active`;
+            alertEl.textContent = message;
+
+            container.appendChild(alertEl);
+
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                alertEl.remove();
+            }, 5000);
+        }
+
+        /**
+         * Escape HTML special characters
+         */
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        /**
+         * Open View Applications Modal
+         */
+        function openViewApps(userId, email) {
+            currentUserAction = { userId, email };
+            document.getElementById('viewAppsEmail').textContent = email;
+            document.getElementById('appsList').innerHTML = '<div class="spinner"></div>';
+            document.getElementById('viewAppsModal').classList.add('active');
+
+            // Load applications (placeholder - Task 9)
+            document.getElementById('appsList').innerHTML = '<p style="color: var(--text-muted); text-align: center;">Anwendungen werden geladen...</p>';
+        }
+
+        /**
+         * Open Reset Password Modal
+         */
+        function openResetPassword(userId, email) {
+            currentUserAction = { userId, email };
+            document.getElementById('resetPasswordEmail').textContent = email;
+            document.getElementById('resetPasswordModal').classList.add('active');
+        }
+
+        /**
+         * Confirm Reset Password
+         */
+        function confirmResetPassword() {
+            closeModal('resetPasswordModal');
+            showAlert('✓ Passwort-Zurücksetzen-Link wurde gesendet', 'success');
+            // Task 9: API call to reset password
+        }
+
+        /**
+         * Open Approve User Modal
+         */
+        function openApproveUser(userId, email) {
+            currentUserAction = { userId, email };
+            document.getElementById('approveUserEmail').textContent = email;
+            document.getElementById('approveUserModal').classList.add('active');
+        }
+
+        /**
+         * Confirm Approve User
+         */
+        function confirmApproveUser() {
+            closeModal('approveUserModal');
+            showAlert('✓ Benutzer wurde genehmigt', 'success');
+            // Task 9: API call to approve user
+            loadUsers();
+        }
+
+        /**
+         * Open Promote to Admin Modal
+         */
+        function openPromoteAdmin(userId, email) {
+            currentUserAction = { userId, email };
+            document.getElementById('promoteAdminEmail').textContent = email;
+            document.getElementById('promoteAdminModal').classList.add('active');
+        }
+
+        /**
+         * Confirm Promote to Admin
+         */
+        function confirmPromoteAdmin() {
+            closeModal('promoteAdminModal');
+            showAlert('✓ Benutzer wurde zu Admin befördert', 'success');
+            // Task 9: API call to promote user
+            loadUsers();
+        }
+
+        /**
+         * Open Delete User Modal
+         */
+        function openDeleteUser(userId, email) {
+            currentUserAction = { userId, email };
+            document.getElementById('deleteUserEmail').textContent = email;
+            document.getElementById('deleteUserModal').classList.add('active');
+        }
+
+        /**
+         * Confirm Delete User
+         */
+        function confirmDeleteUser() {
+            closeModal('deleteUserModal');
+            showAlert('✓ Benutzer wurde gelöscht', 'success');
+            // Task 9: API call to delete user
+            loadUsers();
+        }
+
+        /**
+         * Close modal
+         */
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        /**
+         * Close modal when clicking outside
+         */
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) {
+                e.target.classList.remove('active');
+            }
+        });
+
+        /**
+         * Load theme preference
+         */
+        function loadTheme() {
+            const isDark = localStorage.getItem('theme') !== 'light';
+            if (isDark) {
+                document.documentElement.removeAttribute('data-scheme');
+                document.getElementById('themeIcon').textContent = '🌙';
+            } else {
+                document.documentElement.setAttribute('data-scheme', 'light');
+                document.getElementById('themeIcon').textContent = '☀️';
+            }
+        }
+
+        /**
+         * Toggle theme
+         */
+        function toggleTheme() {
+            const isDark = !document.documentElement.hasAttribute('data-scheme');
+            if (isDark) {
+                document.documentElement.setAttribute('data-scheme', 'light');
+                localStorage.setItem('theme', 'light');
+                document.getElementById('themeIcon').textContent = '☀️';
+            } else {
+                document.documentElement.removeAttribute('data-scheme');
+                localStorage.setItem('theme', 'dark');
+                document.getElementById('themeIcon').textContent = '🌙';
+            }
+        }
+
+        /**
+         * Handle logout
+         */
+        function handleLogout() {
+            Auth.logout();
+            window.location.href = '/login.html';
+        }
+
+        // Initialize on load
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
