@@ -1,0 +1,23 @@
+# Production Dependencies for Bewerbungstracker
+# Install with: pip install -r requirements-prod.txt
+
+# Web Framework
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+Flask-CORS==4.0.0
+
+# Configuration & Environment
+python-dotenv==1.0.0
+
+# Authentication
+PyJWT==2.8.0
+cryptography==41.0.3
+
+# Database
+psycopg2-binary==2.9.7
+
+# Production Server
+gunicorn==21.2.0
+
+# HTTP & APIs
+requests==2.31.0
