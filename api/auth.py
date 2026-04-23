@@ -7,7 +7,7 @@ from config import Config
 from auth_service import AuthService
 from models import User, EmailConfirmationToken
 from services.email_service import send_confirmation_email
-from extensions import db
+from database import db
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
