@@ -441,6 +441,17 @@
             padding: 0.75rem 1.5rem;
         }
 
+        .modal-placeholder-text {
+            color: var(--text-muted);
+            text-align: center;
+            padding: 1rem;
+        }
+
+        .btn:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+        }
+
         .theme-toggle {
             position: fixed;
             top: 1rem;
@@ -567,12 +578,12 @@
 </head>
 <body>
     <!-- Theme Toggle Button -->
-    <button class="theme-toggle" onclick="toggleTheme()" title="Theme umschalten">
+    <button id="theme-toggle" class="theme-toggle" title="Theme umschalten" aria-label="Design-Modus umschalten">
         <span id="themeIcon">🌙</span>
     </button>
 
     <!-- Logout Button -->
-    <button class="logout-btn" onclick="handleLogout()">Abmelden</button>
+    <button id="logout-btn" class="logout-btn" aria-label="Benutzer abmelden und zur Anmeldung wechseln">Abmelden</button>
 
     <div class="admin-container">
         <!-- Header -->
@@ -622,85 +633,85 @@
     <!-- Modals -->
 
     <!-- View Applications Modal -->
-    <div id="viewAppsModal" class="modal">
+    <div id="viewAppsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="viewAppsTitle">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Anwendungen</h2>
+                <h2 id="viewAppsTitle">Anwendungen</h2>
                 <p id="viewAppsEmail"></p>
             </div>
             <div class="modal-body">
                 <div id="appsList"></div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('viewAppsModal')">Schließen</button>
+                <button class="btn btn-secondary" data-action="close-modal" data-modal-id="viewAppsModal">Schließen</button>
             </div>
         </div>
     </div>
 
     <!-- Reset Password Modal -->
-    <div id="resetPasswordModal" class="modal">
+    <div id="resetPasswordModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="resetPasswordTitle">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Passwort zurücksetzen</h2>
+                <h2 id="resetPasswordTitle">Passwort zurücksetzen</h2>
                 <p id="resetPasswordEmail"></p>
             </div>
             <div class="modal-body">
                 <p>Ein Passwort-Zurücksetzen-Link wird an die E-Mail-Adresse des Benutzers gesendet.</p>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('resetPasswordModal')">Abbrechen</button>
-                <button class="btn btn-primary" onclick="confirmResetPassword()">Bestätigen</button>
+                <button class="btn btn-secondary" data-action="close-modal" data-modal-id="resetPasswordModal">Abbrechen</button>
+                <button class="btn btn-primary" data-action="confirm-reset-password">Bestätigen</button>
             </div>
         </div>
     </div>
 
     <!-- Approve User Modal -->
-    <div id="approveUserModal" class="modal">
+    <div id="approveUserModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="approveUserTitle">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Benutzer genehmigen</h2>
+                <h2 id="approveUserTitle">Benutzer genehmigen</h2>
                 <p id="approveUserEmail"></p>
             </div>
             <div class="modal-body">
                 <p>Dieser Benutzer wird aktiviert und kann sich anmelden.</p>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('approveUserModal')">Abbrechen</button>
-                <button class="btn btn-success" onclick="confirmApproveUser()">Genehmigen</button>
+                <button class="btn btn-secondary" data-action="close-modal" data-modal-id="approveUserModal">Abbrechen</button>
+                <button class="btn btn-success" data-action="confirm-approve-user">Genehmigen</button>
             </div>
         </div>
     </div>
 
     <!-- Promote to Admin Modal -->
-    <div id="promoteAdminModal" class="modal">
+    <div id="promoteAdminModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="promoteAdminTitle">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Zu Admin befördern</h2>
+                <h2 id="promoteAdminTitle">Zu Admin befördern</h2>
                 <p id="promoteAdminEmail"></p>
             </div>
             <div class="modal-body">
                 <p>Dieser Benutzer erhält Administratorrechte und kann Admin-Funktionen nutzen.</p>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('promoteAdminModal')">Abbrechen</button>
-                <button class="btn btn-primary" onclick="confirmPromoteAdmin()">Befördern</button>
+                <button class="btn btn-secondary" data-action="close-modal" data-modal-id="promoteAdminModal">Abbrechen</button>
+                <button class="btn btn-primary" data-action="confirm-promote-admin">Befördern</button>
             </div>
         </div>
     </div>
 
     <!-- Delete User Modal -->
-    <div id="deleteUserModal" class="modal">
+    <div id="deleteUserModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="deleteUserTitle">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Benutzer löschen</h2>
+                <h2 id="deleteUserTitle">Benutzer löschen</h2>
                 <p id="deleteUserEmail"></p>
             </div>
             <div class="modal-body">
                 <p>Diese Aktion kann nicht rückgängig gemacht werden. Alle Daten dieses Benutzers werden gelöscht.</p>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('deleteUserModal')">Abbrechen</button>
-                <button class="btn btn-danger" onclick="confirmDeleteUser()">Löschen</button>
+                <button class="btn btn-secondary" data-action="close-modal" data-modal-id="deleteUserModal">Abbrechen</button>
+                <button class="btn btn-danger" data-action="confirm-delete-user">Löschen</button>
             </div>
         </div>
     </div>
@@ -716,17 +727,27 @@
          * Initialize admin dashboard
          */
         function init() {
-            // Check if user is authenticated and is admin
+            // Check if user is authenticated
             if (!Auth.isAuthenticated()) {
-                window.location.href = '/login.html';
+                window.location.href = '/login';
                 return;
             }
+
+            // TODO: Add admin role check when Auth.isAdmin() is available
+            // if (!Auth.isAdmin()) {
+            //     showAlert('Nur Admins können diese Seite sehen', 'error');
+            //     window.location.href = '/';
+            //     return;
+            // }
 
             // Load theme preference
             loadTheme();
 
             // Load users
             loadUsers();
+
+            // Attach event listeners
+            attachEventListeners();
         }
 
         /**
@@ -781,23 +802,23 @@
                         <td class="app-count">${user.applications_count || 0}</td>
                         <td>
                             <div class="actions-cell">
-                                <button class="btn btn-secondary" onclick="openViewApps(${user.id}, '${escapeHtml(user.email)}')">
+                                <button class="btn btn-secondary" data-action="view-apps" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">
                                     Anwendungen
                                 </button>
-                                <button class="btn btn-secondary" onclick="openResetPassword(${user.id}, '${escapeHtml(user.email)}')">
+                                <button class="btn btn-secondary" data-action="reset-password" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">
                                     Passwort
                                 </button>
                                 ${user.email_confirmed && !user.is_active ? `
-                                    <button class="btn btn-success" onclick="openApproveUser(${user.id}, '${escapeHtml(user.email)}')">
+                                    <button class="btn btn-success" data-action="approve-user" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">
                                         Genehmigen
                                     </button>
                                 ` : ''}
                                 ${!user.is_admin ? `
-                                    <button class="btn btn-primary" onclick="openPromoteAdmin(${user.id}, '${escapeHtml(user.email)}')">
+                                    <button class="btn btn-primary" data-action="promote-admin" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">
                                         Admin
                                     </button>
                                 ` : ''}
-                                <button class="btn btn-danger" onclick="openDeleteUser(${user.id}, '${escapeHtml(user.email)}')">
+                                <button class="btn btn-danger" data-action="delete-user" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">
                                     Löschen
                                 </button>
                             </div>
@@ -863,7 +884,7 @@
             document.getElementById('viewAppsModal').classList.add('active');
 
             // Load applications (placeholder - Task 9)
-            document.getElementById('appsList').innerHTML = '<p style="color: var(--text-muted); text-align: center;">Anwendungen werden geladen...</p>';
+            document.getElementById('appsList').innerHTML = '<p class="modal-placeholder-text">Anwendungen werden geladen...</p>';
         }
 
         /**
@@ -880,8 +901,8 @@
          */
         function confirmResetPassword() {
             closeModal('resetPasswordModal');
-            showAlert('✓ Passwort-Zurücksetzen-Link wurde gesendet', 'success');
-            // Task 9: API call to reset password
+            // TODO: Task 9 - Wire actual API call for password reset
+            showAlert('🚧 Passwort-Reset wird in Task 9 implementiert', 'info');
         }
 
         /**
@@ -898,9 +919,9 @@
          */
         function confirmApproveUser() {
             closeModal('approveUserModal');
-            showAlert('✓ Benutzer wurde genehmigt', 'success');
-            // Task 9: API call to approve user
-            loadUsers();
+            // TODO: Task 9 - Wire actual API call for user approval
+            showAlert('🚧 Genehmigung wird in Task 9 implementiert', 'info');
+            // loadUsers() will be called after API integration in Task 9
         }
 
         /**
@@ -917,9 +938,9 @@
          */
         function confirmPromoteAdmin() {
             closeModal('promoteAdminModal');
-            showAlert('✓ Benutzer wurde zu Admin befördert', 'success');
-            // Task 9: API call to promote user
-            loadUsers();
+            // TODO: Task 9 - Wire actual API call for admin promotion
+            showAlert('🚧 Beförderung wird in Task 9 implementiert', 'info');
+            // loadUsers() will be called after API integration in Task 9
         }
 
         /**
@@ -936,9 +957,9 @@
          */
         function confirmDeleteUser() {
             closeModal('deleteUserModal');
-            showAlert('✓ Benutzer wurde gelöscht', 'success');
-            // Task 9: API call to delete user
-            loadUsers();
+            // TODO: Task 9 - Wire actual API call for user deletion
+            showAlert('🚧 Löschung wird in Task 9 implementiert', 'info');
+            // loadUsers() will be called after API integration in Task 9
         }
 
         /**
@@ -949,25 +970,82 @@
         }
 
         /**
-         * Close modal when clicking outside
+         * Attach all event listeners (replaces inline onclick handlers)
          */
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('modal')) {
-                e.target.classList.remove('active');
+        function attachEventListeners() {
+            // Theme toggle
+            const themeToggle = document.getElementById('theme-toggle');
+            if (themeToggle) {
+                themeToggle.addEventListener('click', toggleTheme);
             }
-        });
+
+            // Logout button
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', handleLogout);
+            }
+
+            // Delegated click handler for table actions and modals
+            document.addEventListener('click', (e) => {
+                const action = e.target.getAttribute('data-action');
+                const modalId = e.target.getAttribute('data-modal-id');
+                const userId = e.target.getAttribute('data-user-id');
+                const userEmail = e.target.getAttribute('data-user-email');
+
+                if (action === 'close-modal' && modalId) {
+                    closeModal(modalId);
+                } else if (action === 'view-apps') {
+                    openViewApps(userId, userEmail);
+                } else if (action === 'reset-password') {
+                    openResetPassword(userId, userEmail);
+                } else if (action === 'approve-user') {
+                    openApproveUser(userId, userEmail);
+                } else if (action === 'promote-admin') {
+                    openPromoteAdmin(userId, userEmail);
+                } else if (action === 'delete-user') {
+                    openDeleteUser(userId, userEmail);
+                } else if (action === 'confirm-reset-password') {
+                    confirmResetPassword();
+                } else if (action === 'confirm-approve-user') {
+                    confirmApproveUser();
+                } else if (action === 'confirm-promote-admin') {
+                    confirmPromoteAdmin();
+                } else if (action === 'confirm-delete-user') {
+                    confirmDeleteUser();
+                } else if (e.target.classList.contains('modal')) {
+                    // Close modal when clicking outside
+                    e.target.classList.remove('active');
+                }
+            });
+
+            // Escape key to close modals
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    document.querySelectorAll('.modal.active').forEach(modal => {
+                        modal.classList.remove('active');
+                    });
+                }
+            });
+        }
 
         /**
-         * Load theme preference
+         * Load theme preference (respects OS preference on first visit)
          */
         function loadTheme() {
-            const isDark = localStorage.getItem('theme') !== 'light';
-            if (isDark) {
-                document.documentElement.removeAttribute('data-scheme');
-                document.getElementById('themeIcon').textContent = '🌙';
-            } else {
+            let theme = localStorage.getItem('theme');
+
+            // If no saved preference, check OS preference
+            if (theme === null) {
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                theme = prefersDark ? 'dark' : 'light';
+            }
+
+            if (theme === 'light') {
                 document.documentElement.setAttribute('data-scheme', 'light');
                 document.getElementById('themeIcon').textContent = '☀️';
+            } else {
+                document.documentElement.removeAttribute('data-scheme');
+                document.getElementById('themeIcon').textContent = '🌙';
             }
         }
 
@@ -992,7 +1070,7 @@
          */
         function handleLogout() {
             Auth.logout();
-            window.location.href = '/login.html';
+            window.location.href = '/login';
         }
 
         // Initialize on load
