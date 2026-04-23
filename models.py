@@ -14,6 +14,9 @@ class User(db.Model):
     imap_host = db.Column(db.String(255))
     imap_user = db.Column(db.String(255))
     imap_password_encrypted = db.Column(db.Text)  # Fernet encrypted
+    is_admin = db.Column(db.Boolean, default=False)
+    email_confirmed = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -22,6 +25,7 @@ class User(db.Model):
     applications = db.relationship('Application', backref='user', cascade='all, delete-orphan')
     emails = db.relationship('Email', backref='user', cascade='all, delete-orphan')
     api_calls = db.relationship('ApiCall', backref='user', cascade='all, delete-orphan')
+    confirmation_tokens = db.relationship('EmailConfirmationToken', backref='user', cascade='all, delete-orphan')
 
     @property
     def decrypted_imap_password(self) -> str:
@@ -44,6 +48,18 @@ class SessionToken(db.Model):
 
     def __repr__(self):
         return f'<SessionToken {self.token[:20]}...>'
+
+
+class EmailConfirmationToken(db.Model):
+    __tablename__ = 'email_confirmation_tokens'
+
+    token = db.Column(db.String(255), primary_key=True)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+    def __repr__(self):
+        return f'<EmailConfirmationToken {self.token[:20]}...>'
 
 
 class ApplicationStatus(str, Enum):
