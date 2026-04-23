@@ -4,7 +4,7 @@ Bewerbungstracker - Modernized Flask App with SQLAlchemy & JWT Auth
 Factory pattern for Flask application creation
 """
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_file
 from config import config
 import os
 from database import db
@@ -16,11 +16,16 @@ def create_app(config_class=None):
         env = os.getenv('FLASK_ENV', 'development')
         config_class = config.get(env, config['development'])
 
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder='components', static_url_path='/components')
     app.config.from_object(config_class)
 
     # Initialize database
     db.init_app(app)
+
+    # Root route - serve index.html
+    @app.route('/')
+    def index():
+        return send_file('index.html')
 
     # Register blueprints
     from api.auth import auth_bp
