@@ -54,6 +54,11 @@ def create_app(config_class=None):
     def login_page():
         return send_file('frontend/pages/login.html')
 
+    # Login page route - alternative path
+    @app.route('/pages/login.html')
+    def login_page_alt():
+        return send_file('frontend/pages/login.html')
+
     # Register blueprints
     from api.auth import auth_bp
     from api.applications import apps_bp

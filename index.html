@@ -20,6 +20,8 @@
     <!-- Encryption: TweetNaCl.js for secure password encryption -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tweetnacl.js/1.0.3/nacl.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tweetnacl.js/1.0.3/nacl-util.min.js"></script>
+    <!-- Authentication Module - must load before main script -->
+    <script src="/frontend/auth.js"></script>
     <style>
         :root {
             --primary: #4F46E5; --primary-light: #818CF8; --primary-dark: #3730A3;
@@ -158,6 +160,7 @@
         </div>
         <button id="colorSchemeToggle" class="btn btn-secondary btn-sm" onclick="toggleColorScheme()" title="Dark/Light Mode">🌙</button>
         <button class="btn btn-success btn-sm" onclick="openAddModal()">+ Bewerbung</button>
+        <button class="btn btn-secondary btn-sm" onclick="Auth.logout()" title="Logout">🚪 Logout</button>
     </div>
 </header>
 
@@ -1060,6 +1063,11 @@
 <input type="file" id="importInput" accept=".json" style="display:none;" onchange="handleImport(event)">
 
 <script>
+// ═══════════════════════════════════════════════════════
+// AUTHENTICATION CHECK - Require auth before app loads
+// ═══════════════════════════════════════════════════════
+Auth.requireAuth();
+
 /* ═══════════════════════════════════════════════════════
    APPS SCRIPT CODE TEMPLATE
 ═══════════════════════════════════════════════════════ */
@@ -1152,22 +1160,8 @@ async function fetchAPI(url, options = {}) {
     return response;
 }
 
-// Higher-level helper: returns parsed JSON or throws on HTTP-Error.
-// Use for /api/* calls where a 500/4xx should surface cleanly instead of
-// blowing up JSON.parse on an empty/error body.
-async function apiFetch(url, opts = {}) {
-    const headers = {
-        'Content-Type': 'application/json',
-        ...(opts.headers || {})
-    };
-    const res = await fetch(url, { ...opts, headers });
-    if (!res.ok) {
-        let msg = `HTTP ${res.status}`;
-        try { const j = await res.json(); if (j && j.message) msg = j.message; } catch(_) {}
-        throw new Error(msg);
-    }
-    return res.json();
-}
+// Note: apiFetch has been replaced with Auth.fetch from frontend/auth.js
+// Auth.fetch handles authentication headers and token refresh automatically
 
 // ═══════════════════════════════════════════════════════
 // USER MANAGEMENT FUNCTIONS
@@ -1783,13 +1777,13 @@ async function saveToStorage() {
                 const existing = currentApps.find(a => a.id === app.id);
                 if (existing) {
                     // Update existing
-                    await apiFetch(`/api/applications/${app.id}`, {
+                    await Auth.fetch(`/api/applications/${app.id}`, {
                         method: 'PUT',
                         body: JSON.stringify(app)
                     });
                 } else {
                     // Create new
-                    await apiFetch('/api/applications', {
+                    await Auth.fetch('/api/applications', {
                         method: 'POST',
                         body: JSON.stringify(app)
                     });
@@ -1797,7 +1791,7 @@ async function saveToStorage() {
             }
 
             // Save settings
-            await apiFetch('/api/settings', {
+            await Auth.fetch('/api/settings', {
                 method: 'PUT',
                 body: JSON.stringify(state.settings)
             });
@@ -3249,7 +3243,7 @@ async function testSmtpConnection() {
     // Wait a moment, then check service status
     setTimeout(async () => {
         try {
-            const status = await apiFetch(EMAIL_SERVICE_URL + '/api/status');
+            const status = await Auth.fetch(EMAIL_SERVICE_URL + '/api/status');
             if (status.smtp_configured) {
                 updateSmtpStatus('✅ SMTP verbunden und konfiguriert');
                 showToast('SMTP-Verbindung erfolgreich!', 'success');
