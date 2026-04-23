@@ -23,3 +23,6 @@ gunicorn==21.2.0
 
 # HTTP & APIs
 requests==2.31.0
+
+# Email & Notifications
+Flask-Mail==0.9.1
