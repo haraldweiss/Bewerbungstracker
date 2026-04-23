@@ -33,6 +33,15 @@ class Config:
     # Claude API (Phase 2)
     CLAUDE_API_KEY = os.getenv('CLAUDE_API_KEY', '')
 
+    # Email Configuration
+    MAIL_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+    MAIL_PORT = int(os.getenv('MAIL_PORT', '587'))
+    MAIL_USE_TLS = os.getenv('MAIL_USE_TLS', 'True').lower() == 'true'
+    MAIL_USERNAME = os.getenv('MAIL_USERNAME', '')
+    MAIL_PASSWORD = os.getenv('MAIL_PASSWORD', '')
+    MAIL_DEFAULT_SENDER = os.getenv('MAIL_DEFAULT_SENDER', 'noreply@bewerbungstracker.de')
+    APP_URL = os.getenv('APP_URL', 'https://bewerbungen.wolfinisoftware.de')
+
 
 class DevelopmentConfig(Config):
     DEBUG = True
