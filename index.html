@@ -160,6 +160,7 @@
         </div>
         <button id="colorSchemeToggle" class="btn btn-secondary btn-sm" onclick="toggleColorScheme()" title="Dark/Light Mode">🌙</button>
         <button class="btn btn-success btn-sm" onclick="openAddModal()">+ Bewerbung</button>
+        <button id="adminDashboardBtn" class="btn btn-primary btn-sm" onclick="goToAdminDashboard()" title="Admin Dashboard" style="display:none;">👑 Admin</button>
         <button class="btn btn-secondary btn-sm" onclick="Auth.logout()" title="Logout">🚪 Logout</button>
     </div>
 </header>
@@ -1505,6 +1506,32 @@ function validateMasterPassword(password) {
     return { valid: true };
 }
 
+/* ═══════════════════════════════════════════════════════
+   ADMIN DASHBOARD
+═══════════════════════════════════════════════════════ */
+
+/**
+ * Update admin button visibility based on user's admin status
+ */
+async function updateAdminButtonVisibility() {
+    try {
+        const isUserAdmin = await Auth.isAdmin();
+        const adminBtn = document.getElementById('adminDashboardBtn');
+        if (adminBtn) {
+            adminBtn.style.display = isUserAdmin ? 'block' : 'none';
+        }
+    } catch (error) {
+        console.error('Error checking admin status:', error);
+    }
+}
+
+/**
+ * Navigate to admin dashboard
+ */
+function goToAdminDashboard() {
+    window.location.href = '/admin';
+}
+
 async function init() {
     // Request master password first if email settings are configured
     const hasEmailSettings = localStorage.getItem('bewerbungsTrackerV3')?.includes('smtp') ||
@@ -1542,6 +1569,9 @@ async function init() {
             }
         }
     }
+
+    // Check if user is admin and show admin button
+    await updateAdminButtonVisibility();
 
     await loadFromStorage();
     renderAll();

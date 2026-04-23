@@ -204,5 +204,6 @@ def get_current_user(user):
     return {
         'id': user.id,
         'email': user.email,
+        'is_admin': user.is_admin,
         'created_at': user.created_at.isoformat()
     }, 200

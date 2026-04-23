@@ -726,19 +726,22 @@
         /**
          * Initialize admin dashboard
          */
-        function init() {
+        async function init() {
             // Check if user is authenticated
             if (!Auth.isAuthenticated()) {
                 window.location.href = '/login';
                 return;
             }
 
-            // TODO: Add admin role check when Auth.isAdmin() is available
-            // if (!Auth.isAdmin()) {
-            //     showAlert('Nur Admins können diese Seite sehen', 'error');
-            //     window.location.href = '/';
-            //     return;
-            // }
+            // Check if user has admin role
+            const isUserAdmin = await Auth.isAdmin();
+            if (!isUserAdmin) {
+                showAlert('Nur Admins können diese Seite sehen', 'error');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1500);
+                return;
+            }
 
             // Load theme preference
             loadTheme();

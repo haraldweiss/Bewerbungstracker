@@ -195,6 +195,30 @@ const Auth = (() => {
         return data;
     };
 
+    /**
+     * Get current user data
+     * Fetches user info from /api/auth/me endpoint
+     * @returns {Promise<Object>} User object with id, email, is_admin, created_at
+     * @throws {Error} Throws error if not authenticated or API error
+     */
+    const getCurrentUser = async () => {
+        return await fetch('/auth/me');
+    };
+
+    /**
+     * Check if current user is admin
+     * First fetches user data, then returns is_admin flag
+     * @returns {Promise<boolean>} True if user is admin
+     */
+    const isAdmin = async () => {
+        try {
+            const user = await getCurrentUser();
+            return user.is_admin === true;
+        } catch (error) {
+            return false;
+        }
+    };
+
     // Public API
     return {
         getToken,
@@ -204,7 +228,9 @@ const Auth = (() => {
         login,
         logout,
         refreshToken,
-        fetch
+        fetch,
+        getCurrentUser,
+        isAdmin
     };
 })();
 
