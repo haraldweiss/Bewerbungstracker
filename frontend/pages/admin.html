@@ -755,12 +755,40 @@
          */
         async function loadUsers() {
             try {
-                const response = await Auth.apiCall('/api/admin/users', 'GET');
-                renderUsers(response);
+                const response = await Auth.fetch('/admin/users', { method: 'GET' });
+                // API returns { users: [...] }; also handle raw array defensively
+                const users = Array.isArray(response) ? response : (response.users || []);
+                renderUsers(users);
             } catch (error) {
-                showAlert('API Fehler: ' + error.message, 'error');
+                handleApiError(error, 'Fehler beim Laden der Benutzer');
                 renderEmpty();
             }
+        }
+
+        /**
+         * Handle API errors with appropriate user feedback
+         * Detects 401/403 scenarios by inspecting the error message
+         */
+        function handleApiError(error, fallbackMessage) {
+            const msg = (error && error.message) || '';
+
+            // 401 Unauthorized - redirect to login
+            if (msg.includes('401') || /not authenticated/i.test(msg) || /please login/i.test(msg)) {
+                showAlert('Sitzung abgelaufen - Anmeldung erforderlich', 'error');
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 1500);
+                return;
+            }
+
+            // 403 Forbidden - admin permission required
+            if (msg.includes('403') || /forbidden/i.test(msg) || (/admin/i.test(msg) && /permission|berechtigung/i.test(msg))) {
+                showAlert('Keine Admin-Berechtigung', 'error');
+                return;
+            }
+
+            // Generic error
+            showAlert((fallbackMessage || 'API Fehler') + ': ' + msg, 'error');
         }
 
         /**
@@ -802,23 +830,23 @@
                         <td class="app-count">${user.applications_count || 0}</td>
                         <td>
                             <div class="actions-cell">
-                                <button class="btn btn-secondary" data-action="view-apps" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">
+                                <button class="btn btn-secondary" data-action="view-apps" data-user-id="${user.id}" data-user-email="${escapeAttr(user.email)}">
                                     Anwendungen
                                 </button>
-                                <button class="btn btn-secondary" data-action="reset-password" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">
+                                <button class="btn btn-secondary" data-action="reset-password" data-user-id="${user.id}" data-user-email="${escapeAttr(user.email)}">
                                     Passwort
                                 </button>
                                 ${user.email_confirmed && !user.is_active ? `
-                                    <button class="btn btn-success" data-action="approve-user" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">
+                                    <button class="btn btn-success" data-action="approve-user" data-user-id="${user.id}" data-user-email="${escapeAttr(user.email)}">
                                         Genehmigen
                                     </button>
                                 ` : ''}
                                 ${!user.is_admin ? `
-                                    <button class="btn btn-primary" data-action="promote-admin" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">
+                                    <button class="btn btn-primary" data-action="promote-admin" data-user-id="${user.id}" data-user-email="${escapeAttr(user.email)}">
                                         Admin
                                     </button>
                                 ` : ''}
-                                <button class="btn btn-danger" data-action="delete-user" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">
+                                <button class="btn btn-danger" data-action="delete-user" data-user-id="${user.id}" data-user-email="${escapeAttr(user.email)}">
                                     Löschen
                                 </button>
                             </div>
@@ -868,6 +896,9 @@
         /**
          * Escape HTML special characters
          */
+        /**
+         * Escape for HTML text content
+         */
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
@@ -875,16 +906,83 @@
         }
 
         /**
+         * Escape for HTML attribute values (more strict than escapeHtml)
+         * Escapes: &, <, >, ", '
+         */
+        function escapeAttr(text) {
+            if (!text) return '';
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        /**
          * Open View Applications Modal
          */
-        function openViewApps(userId, email) {
+        async function openViewApps(userId, email) {
             currentUserAction = { userId, email };
             document.getElementById('viewAppsEmail').textContent = email;
-            document.getElementById('appsList').innerHTML = '<div class="spinner"></div>';
+            const appsList = document.getElementById('appsList');
+            appsList.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Anwendungen werden geladen...</span></div>';
             document.getElementById('viewAppsModal').classList.add('active');
 
-            // Load applications (placeholder - Task 9)
-            document.getElementById('appsList').innerHTML = '<p class="modal-placeholder-text">Anwendungen werden geladen...</p>';
+            try {
+                const response = await Auth.fetch(`/admin/users/${userId}/applications`, { method: 'GET' });
+                // API returns { email: ..., applications: [...] }; also handle raw array defensively
+                const applications = Array.isArray(response) ? response : (response.applications || []);
+                renderApplications(applications);
+            } catch (error) {
+                handleApiError(error, 'Fehler beim Laden der Anwendungen');
+                appsList.innerHTML = '<p class="modal-placeholder-text">Fehler beim Laden der Anwendungen.</p>';
+            }
+        }
+
+        /**
+         * Render applications list in modal
+         */
+        function renderApplications(applications) {
+            const appsList = document.getElementById('appsList');
+
+            if (!applications || applications.length === 0) {
+                appsList.innerHTML = '<p class="modal-placeholder-text">Keine Anwendungen gefunden</p>';
+                return;
+            }
+
+            const rows = applications.map(app => {
+                const company = escapeHtml(app.company || '—');
+                const position = escapeHtml(app.position || '—');
+                const status = escapeHtml(app.status || '—');
+                const appliedDate = app.applied_date
+                    ? new Date(app.applied_date).toLocaleDateString('de-DE')
+                    : '—';
+                return `
+                    <tr>
+                        <td>${company}</td>
+                        <td>${position}</td>
+                        <td><span class="badge badge-user">${status}</span></td>
+                        <td class="date-cell">${appliedDate}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            appsList.innerHTML = `
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Firma</th>
+                                <th>Position</th>
+                                <th>Status</th>
+                                <th>Datum</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `;
         }
 
         /**
@@ -899,10 +997,98 @@
         /**
          * Confirm Reset Password
          */
-        function confirmResetPassword() {
+        async function confirmResetPassword() {
+            const { userId, email } = currentUserAction;
             closeModal('resetPasswordModal');
-            // TODO: Task 9 - Wire actual API call for password reset
-            showAlert('🚧 Passwort-Reset wird in Task 9 implementiert', 'info');
+
+            try {
+                const response = await Auth.fetch(`/admin/users/${userId}/reset-password`, {
+                    method: 'POST'
+                });
+                const tempPassword = response.temporary_password || response.temp_password || response.password;
+
+                if (tempPassword) {
+                    showTempPasswordModal(email, tempPassword);
+                } else {
+                    showAlert('Passwort-Zurücksetzung erfolgreich', 'success');
+                }
+            } catch (error) {
+                handleApiError(error, 'Fehler beim Zurücksetzen des Passworts');
+            }
+        }
+
+        /**
+         * Show temporary password in a dynamically-created modal with copy button
+         */
+        function showTempPasswordModal(email, tempPassword) {
+            // Remove any existing temp password modal
+            const existing = document.getElementById('tempPasswordModal');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'tempPasswordModal';
+            modal.className = 'modal active';
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Temporäres Passwort</h2>
+                        <p>${escapeHtml(email)}</p>
+                    </div>
+                    <div class="modal-body">
+                        <p>Bitte teilen Sie dem Benutzer dieses temporäre Passwort sicher mit. Der Benutzer sollte es nach dem ersten Login ändern.</p>
+                        <div style="margin-top: 1rem; padding: 0.85rem; background: var(--bg-card2); border: 1px solid var(--border); border-radius: 8px; display: flex; align-items: center; gap: 0.5rem;">
+                            <code id="tempPasswordValue" style="flex: 1; font-family: monospace; font-size: 1rem; user-select: all; word-break: break-all;">${escapeHtml(tempPassword)}</code>
+                            <button class="btn btn-primary" data-action="copy-temp-password" aria-label="Passwort kopieren">Kopieren</button>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" data-action="close-temp-password">Schließen</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            // Wire close/copy buttons for this ad-hoc modal
+            modal.addEventListener('click', (e) => {
+                const action = e.target.getAttribute('data-action');
+                if (action === 'close-temp-password' || e.target === modal) {
+                    modal.remove();
+                } else if (action === 'copy-temp-password') {
+                    copyToClipboard(tempPassword, e.target);
+                }
+            });
+        }
+
+        /**
+         * Copy text to clipboard with visual feedback
+         */
+        async function copyToClipboard(text, buttonEl) {
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    // Fallback for older browsers
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+                if (buttonEl) {
+                    const original = buttonEl.textContent;
+                    buttonEl.textContent = '✓ Kopiert';
+                    setTimeout(() => { buttonEl.textContent = original; }, 1500);
+                }
+            } catch (error) {
+                showAlert('Kopieren fehlgeschlagen: ' + error.message, 'error');
+            }
         }
 
         /**
@@ -917,11 +1103,17 @@
         /**
          * Confirm Approve User
          */
-        function confirmApproveUser() {
+        async function confirmApproveUser() {
+            const { userId, email } = currentUserAction;
             closeModal('approveUserModal');
-            // TODO: Task 9 - Wire actual API call for user approval
-            showAlert('🚧 Genehmigung wird in Task 9 implementiert', 'info');
-            // loadUsers() will be called after API integration in Task 9
+
+            try {
+                await Auth.fetch(`/admin/users/${userId}/approve`, { method: 'POST' });
+                showAlert(`Benutzer ${email} wurde genehmigt`, 'success');
+                loadUsers();
+            } catch (error) {
+                handleApiError(error, 'Fehler bei der Benutzergenehmigung');
+            }
         }
 
         /**
@@ -936,11 +1128,17 @@
         /**
          * Confirm Promote to Admin
          */
-        function confirmPromoteAdmin() {
+        async function confirmPromoteAdmin() {
+            const { userId, email } = currentUserAction;
             closeModal('promoteAdminModal');
-            // TODO: Task 9 - Wire actual API call for admin promotion
-            showAlert('🚧 Beförderung wird in Task 9 implementiert', 'info');
-            // loadUsers() will be called after API integration in Task 9
+
+            try {
+                await Auth.fetch(`/admin/users/${userId}/promote`, { method: 'PATCH' });
+                showAlert(`Benutzer ${email} wurde zum Admin befördert`, 'success');
+                loadUsers();
+            } catch (error) {
+                handleApiError(error, 'Fehler bei der Admin-Beförderung');
+            }
         }
 
         /**
@@ -955,11 +1153,17 @@
         /**
          * Confirm Delete User
          */
-        function confirmDeleteUser() {
+        async function confirmDeleteUser() {
+            const { userId, email } = currentUserAction;
             closeModal('deleteUserModal');
-            // TODO: Task 9 - Wire actual API call for user deletion
-            showAlert('🚧 Löschung wird in Task 9 implementiert', 'info');
-            // loadUsers() will be called after API integration in Task 9
+
+            try {
+                await Auth.fetch(`/admin/users/${userId}`, { method: 'DELETE' });
+                showAlert(`Benutzer ${email} wurde gelöscht`, 'success');
+                loadUsers();
+            } catch (error) {
+                handleApiError(error, 'Fehler beim Löschen des Benutzers');
+            }
         }
 
         /**
