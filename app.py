@@ -10,6 +10,7 @@ from flask_cors import CORS
 from config import config
 import os
 from database import db
+from services.email_service import init_email
 
 # Load environment variables from .env file
 load_dotenv()
@@ -44,6 +45,9 @@ def create_app(config_class=None):
     # Initialize database
     db.init_app(app)
 
+    # Initialize email service
+    init_email(app)
+
     # Root route - serve index.html
     @app.route('/')
     def index():
@@ -59,6 +63,11 @@ def create_app(config_class=None):
     def login_page_alt():
         return send_file('frontend/pages/login.html')
 
+    # Admin page route
+    @app.route('/admin')
+    def admin_page():
+        return send_file('frontend/pages/admin.html')
+
     # Serve frontend/auth.js for login page
     @app.route('/frontend/auth.js')
     def serve_auth_js():
@@ -68,11 +77,13 @@ def create_app(config_class=None):
     from api.auth import auth_bp
     from api.applications import apps_bp
     from api.emails import emails_bp
+    from api.admin import admin_bp
     from claude_integration import claude_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(apps_bp)
     app.register_blueprint(emails_bp)
+    app.register_blueprint(admin_bp)
     app.register_blueprint(claude_bp)
 
     # Error handlers
