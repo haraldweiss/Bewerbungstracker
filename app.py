@@ -59,6 +59,11 @@ def create_app(config_class=None):
     def login_page_alt():
         return send_file('frontend/pages/login.html')
 
+    # Serve frontend/auth.js for login page
+    @app.route('/frontend/auth.js')
+    def serve_auth_js():
+        return send_file('frontend/auth.js', mimetype='application/javascript')
+
     # Register blueprints
     from api.auth import auth_bp
     from api.applications import apps_bp
