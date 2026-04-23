@@ -15,6 +15,7 @@ cryptography==41.0.3
 
 # Database
 psycopg2-binary==2.9.7
+SQLAlchemy==2.0.23
 
 # Production Server
 gunicorn==21.2.0
