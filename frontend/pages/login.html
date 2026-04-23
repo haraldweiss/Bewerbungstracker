@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="description" content="📋 Bewerbungs-Tracker Login">
+    <meta name="theme-color" content="#4CAF50">
+    <title>📋 Bewerbungs-Tracker - Login</title>
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --primary-light: #818CF8;
+            --primary-dark: #3730A3;
+            --secondary: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --info: #3B82F6;
+            --bg: #0F172A;
+            --bg-card: #1E293B;
+            --bg-card2: #263548;
+            --text: #E2E8F0;
+            --text-muted: #94A3B8;
+            --border: #334155;
+            --shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+
+        :root[data-scheme="light"] {
+            --primary: #4F46E5;
+            --primary-light: #818CF8;
+            --primary-dark: #3730A3;
+            --secondary: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --info: #3B82F6;
+            --bg: #F8FAFC;
+            --bg-card: #FFFFFF;
+            --bg-card2: #F1F5F9;
+            --text: #0F172A;
+            --text-muted: #64748B;
+            --border: #E2E8F0;
+            --shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .login-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            width: 100%;
+            max-width: 420px;
+            padding: 2.5rem;
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo-text {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .login-header h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .login-header p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 0.75rem;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-bottom: 2px solid transparent;
+            position: relative;
+            bottom: -1px;
+        }
+
+        .tab-btn:hover {
+            color: var(--text);
+        }
+
+        .tab-btn.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 0.4rem;
+            color: var(--text);
+        }
+
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-card2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 0.95rem;
+            transition: all 0.2s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 0.85rem;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(79, 70, 229, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .alert {
+            padding: 0.85rem;
+            border-radius: 8px;
+            margin-bottom: 1.25rem;
+            font-size: 0.9rem;
+            display: none;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-16px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .alert.active {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .alert.error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #FCA5A5;
+        }
+
+        .alert.success {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #86EFAC;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1rem;
+            transition: color 0.2s;
+        }
+
+        .password-toggle:hover {
+            color: var(--text);
+        }
+
+        .form-group-password {
+            position: relative;
+        }
+
+        .form-group-password input {
+            padding-right: 2.5rem;
+        }
+
+        .form-footer {
+            text-align: center;
+            margin-top: 1.5rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .form-footer a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .form-footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 480px) {
+            .login-container {
+                padding: 1.75rem;
+            }
+
+            .login-header h1 {
+                font-size: 1.5rem;
+            }
+
+            .logo-text {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <div class="logo-text">📋</div>
+            <h1>Bewerbungs-Tracker</h1>
+            <p>Verwalte deine Bewerbungen effizient</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('login')">Login</button>
+            <button class="tab-btn" onclick="switchTab('register')">Registrieren</button>
+        </div>
+
+        <!-- LOGIN TAB -->
+        <div id="login" class="tab-content active">
+            <div id="loginAlert" class="alert"></div>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="loginEmail">Email-Adresse</label>
+                    <input
+                        type="email"
+                        id="loginEmail"
+                        name="email"
+                        placeholder="deine@email.de"
+                        required
+                    >
+                </div>
+
+                <div class="form-group form-group-password">
+                    <label for="loginPassword">Passwort</label>
+                    <input
+                        type="password"
+                        id="loginPassword"
+                        name="password"
+                        placeholder="••••••••"
+                        required
+                    >
+                    <button
+                        type="button"
+                        class="password-toggle"
+                        onclick="togglePassword('loginPassword')"
+                    >
+                        👁️
+                    </button>
+                </div>
+
+                <button type="submit" class="btn" id="loginBtn">
+                    <span>Anmelden</span>
+                </button>
+            </form>
+        </div>
+
+        <!-- REGISTER TAB -->
+        <div id="register" class="tab-content">
+            <div id="registerAlert" class="alert"></div>
+            <form id="registerForm" onsubmit="handleRegister(event)">
+                <div class="form-group">
+                    <label for="registerEmail">Email-Adresse</label>
+                    <input
+                        type="email"
+                        id="registerEmail"
+                        name="email"
+                        placeholder="deine@email.de"
+                        required
+                    >
+                </div>
+
+                <div class="form-group form-group-password">
+                    <label for="registerPassword">Passwort</label>
+                    <input
+                        type="password"
+                        id="registerPassword"
+                        name="password"
+                        placeholder="••••••••"
+                        required
+                        minlength="8"
+                    >
+                    <button
+                        type="button"
+                        class="password-toggle"
+                        onclick="togglePassword('registerPassword')"
+                    >
+                        👁️
+                    </button>
+                </div>
+
+                <div class="form-group form-group-password">
+                    <label for="registerConfirmPassword">Passwort bestätigen</label>
+                    <input
+                        type="password"
+                        id="registerConfirmPassword"
+                        name="confirmPassword"
+                        placeholder="••••••••"
+                        required
+                        minlength="8"
+                    >
+                    <button
+                        type="button"
+                        class="password-toggle"
+                        onclick="togglePassword('registerConfirmPassword')"
+                    >
+                        👁️
+                    </button>
+                </div>
+
+                <button type="submit" class="btn" id="registerBtn">
+                    <span>Konto erstellen</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script src="../auth.js"></script>
+    <script>
+        /**
+         * Switch between login and register tabs
+         */
+        function switchTab(tabName) {
+            // Hide all tabs
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => tab.classList.remove('active'));
+
+            // Remove active class from all buttons
+            const buttons = document.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+
+            // Add active class to clicked button
+            event.target.classList.add('active');
+
+            // Clear alerts
+            hideAlert('loginAlert');
+            hideAlert('registerAlert');
+        }
+
+        /**
+         * Toggle password visibility
+         */
+        function togglePassword(inputId) {
+            const input = document.getElementById(inputId);
+            const isPassword = input.type === 'password';
+            input.type = isPassword ? 'text' : 'password';
+        }
+
+        /**
+         * Show alert message
+         */
+        function showAlert(alertId, message, type) {
+            const alert = document.getElementById(alertId);
+            alert.textContent = message;
+            alert.className = `alert ${type} active`;
+        }
+
+        /**
+         * Hide alert message
+         */
+        function hideAlert(alertId) {
+            const alert = document.getElementById(alertId);
+            alert.classList.remove('active');
+            alert.textContent = '';
+        }
+
+        /**
+         * Handle login form submission
+         */
+        async function handleLogin(event) {
+            event.preventDefault();
+
+            const email = document.getElementById('loginEmail').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            const loginBtn = document.getElementById('loginBtn');
+
+            // Validate inputs
+            if (!email || !password) {
+                showAlert('loginAlert', '❌ Bitte fülle alle Felder aus', 'error');
+                return;
+            }
+
+            if (password.length < 8) {
+                showAlert('loginAlert', '❌ Passwort muss mindestens 8 Zeichen lang sein', 'error');
+                return;
+            }
+
+            // Show loading state
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<div class="spinner"></div><span>Wird angemeldet...</span>';
+
+            try {
+                await Auth.login(email, password);
+                showAlert('loginAlert', '✓ Anmeldung erfolgreich! Weiterleitung...', 'success');
+
+                // Redirect to home page
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000);
+            } catch (error) {
+                showAlert('loginAlert', `❌ ${error.message}`, 'error');
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = '<span>Anmelden</span>';
+            }
+        }
+
+        /**
+         * Handle registration form submission
+         */
+        async function handleRegister(event) {
+            event.preventDefault();
+
+            const email = document.getElementById('registerEmail').value.trim();
+            const password = document.getElementById('registerPassword').value;
+            const confirmPassword = document.getElementById('registerConfirmPassword').value;
+            const registerBtn = document.getElementById('registerBtn');
+
+            // Validate inputs
+            if (!email || !password || !confirmPassword) {
+                showAlert('registerAlert', '❌ Bitte fülle alle Felder aus', 'error');
+                return;
+            }
+
+            if (password.length < 8) {
+                showAlert('registerAlert', '❌ Passwort muss mindestens 8 Zeichen lang sein', 'error');
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                showAlert('registerAlert', '❌ Passwörter stimmen nicht überein', 'error');
+                return;
+            }
+
+            // Validate email format
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                showAlert('registerAlert', '❌ Ungültige Email-Adresse', 'error');
+                return;
+            }
+
+            // Show loading state
+            registerBtn.disabled = true;
+            registerBtn.innerHTML = '<div class="spinner"></div><span>Wird erstellt...</span>';
+
+            try {
+                await Auth.register(email, password);
+                showAlert('registerAlert', '✓ Registrierung erfolgreich! Bitte melde dich an.', 'success');
+
+                // Clear form
+                document.getElementById('registerForm').reset();
+
+                // Switch to login tab after 2 seconds
+                setTimeout(() => {
+                    document.getElementById('login').classList.add('active');
+                    document.getElementById('register').classList.remove('active');
+                    document.querySelectorAll('.tab-btn')[0].classList.add('active');
+                    document.querySelectorAll('.tab-btn')[1].classList.remove('active');
+                    hideAlert('registerAlert');
+                }, 2000);
+            } catch (error) {
+                showAlert('registerAlert', `❌ ${error.message}`, 'error');
+                registerBtn.disabled = false;
+                registerBtn.innerHTML = '<span>Konto erstellen</span>';
+            }
+        }
+
+        /**
+         * Redirect to login if already authenticated
+         */
+        if (Auth.isAuthenticated()) {
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>
