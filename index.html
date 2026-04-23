@@ -1894,6 +1894,7 @@ function showView(name) {
     if (name === 'kanban') renderKanban();
     if (name === 'deleted') loadDeletedEntries();
     if (name === 'users') loadUsersPage();
+    if (name === 'cvcompare') showCVTab('upload');
 }
 
 function switchTab(el, tabId) {
@@ -3644,7 +3645,8 @@ function exportPDF() {
 }
 
 function exportJSON() {
-    const json = JSON.stringify({ bewerbungen: state.bewerbungen, settings: state.settings, exportedAt: new Date().toISOString() }, null, 2);
+    const cvComparisons = JSON.parse(localStorage.getItem('cvComparisons') || '[]');
+    const json = JSON.stringify({ bewerbungen: state.bewerbungen, settings: state.settings, cvComparisons, exportedAt: new Date().toISOString() }, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -3706,6 +3708,11 @@ function handleImport(event) {
                     // Import settings with full preservation
                     if (data.settings && typeof data.settings === 'object') {
                         state.settings = { ...state.settings, ...data.settings };
+                    }
+
+                    // Import CV comparisons
+                    if (data.cvComparisons && Array.isArray(data.cvComparisons)) {
+                        localStorage.setItem('cvComparisons', JSON.stringify(data.cvComparisons));
                     }
 
                     saveToStorage();
