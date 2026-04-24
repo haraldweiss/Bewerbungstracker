@@ -325,7 +325,7 @@
     <button class="nav-btn" id="nav-deleted" onclick="showView('deleted')">🗑️ Gelöschte Einträge</button>
     <button class="nav-btn" id="nav-cvcompare" onclick="showView('cvcompare')">📋 CV Vergleich</button>
     <button class="nav-btn" id="nav-settings" onclick="showView('settings')">⚙️ Einstellungen</button>
-    <button class="nav-btn" id="navUsersBtn" style="display:none;" onclick="showView('users')">👥 Nutzer-Management</button>
+    <button class="nav-btn" id="navUsersBtn" onclick="showView('users')">👥 Nutzer-Management</button>
 </aside>
 
 <main>
@@ -1705,9 +1705,17 @@ async function updateAdminButtonVisibility() {
             return;
         }
         const isUserAdmin = await Auth.isAdmin();
+
+        // Update top bar admin button
         const adminBtn = document.getElementById('adminDashboardBtn');
         if (adminBtn) {
             adminBtn.style.display = isUserAdmin ? 'block' : 'none';
+        }
+
+        // Update sidebar navigation admin button
+        const navUsersBtn = document.getElementById('navUsersBtn');
+        if (navUsersBtn) {
+            navUsersBtn.style.display = isUserAdmin ? 'block' : 'none';
         }
     } catch (error) {
         console.error('⚠️ Error checking admin status:', error);
