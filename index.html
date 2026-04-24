@@ -3979,13 +3979,37 @@ async function proceedWithImport() {
     }
 }
 
-function clearAllData() {
+async function clearAllData() {
     if (!confirm('ALLE Daten löschen? Dies kann nicht rückgängig gemacht werden!')) return;
     if (!confirm('Wirklich sicher? Alle Bewerbungen werden gelöscht!')) return;
+
+    try {
+        // First, delete all applications from the database
+        const applicationsToDelete = [...state.bewerbungen];
+        console.log(`🗑️ Deleting ${applicationsToDelete.length} applications from database...`);
+
+        for (const app of applicationsToDelete) {
+            try {
+                const response = await fetchAPI(`/api/applications/${app.id}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    console.warn(`⚠️ Failed to delete ${app.id}:`, response.status);
+                }
+            } catch (err) {
+                console.error(`❌ Error deleting ${app.id}:`, err);
+            }
+        }
+
+        console.log('✅ Database deletion complete');
+    } catch (err) {
+        console.error('❌ Error during database cleanup:', err);
+        showToast('⚠️ Fehler beim Löschen aus Datenbank. Lokale Daten werden trotzdem gelöscht.', 'warning');
+    }
+
+    // Clear local data
     state.bewerbungen = [];
     saveToStorage();
     renderAll();
-    showToast('Alle Daten gelöscht', 'warning');
+    showToast('✅ Alle Daten gelöscht (lokal und in Datenbank)', 'success');
 }
 
 /* ═══════════════════════════════════════════════════════
