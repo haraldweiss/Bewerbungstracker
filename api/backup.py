@@ -306,10 +306,10 @@ def import_backup(user):
     Multipart form: file field with 'backup' JSON
     """
     try:
-        if 'file' not in request.files:
-            return {'error': 'File field required'}, 400
+        if 'backup' not in request.files:
+            return {'error': 'No backup file provided'}, 400
 
-        file = request.files['file']
+        file = request.files['backup']
 
         if file.filename == '':
             return {'error': 'No file selected'}, 400
