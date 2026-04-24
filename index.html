@@ -3687,7 +3687,7 @@ function handleImport(event) {
     const file = event.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
         try {
             const data = JSON.parse(e.target.result);
             if (data.bewerbungen && Array.isArray(data.bewerbungen)) {
@@ -3702,6 +3702,8 @@ function handleImport(event) {
                 if (confirm(msg)) {
                     // Import applications with full state preservation (status, dates, all properties)
                     let importedCount = 0;
+                    const applicationsForDb = [];
+
                     data.bewerbungen.forEach(b => {
                         // Ensure the object has required properties
                         if (b.id && b.firma) {
@@ -3725,6 +3727,18 @@ function handleImport(event) {
                                 };
                                 state.bewerbungen.push(importedApp);
                                 importedCount++;
+
+                                // Convert to database format for backup API
+                                // Map: firma → company, position → position, datum → applied_date
+                                applicationsForDb.push({
+                                    id: b.id,
+                                    company: b.firma,
+                                    position: b.position || '',
+                                    status: b.status || 'applied',
+                                    applied_date: b.datum || null,
+                                    created_at: b.createdAt || new Date().toISOString(),
+                                    updated_at: b.updatedAt || new Date().toISOString()
+                                });
                             }
                         }
                     });
@@ -3747,6 +3761,44 @@ function handleImport(event) {
                         ? `${importedCount} neue Bewerbung(en) mit vollständigem Status importiert ✓`
                         : `Alle ${importCount} Bewerbung(en) waren bereits vorhanden (Status unverändert) ✓`;
                     showToast(message, 'success');
+
+                    // === NEW: Also sync to database via BackupClient API ===
+                    if (importedCount > 0 && typeof backupClient !== 'undefined') {
+                        try {
+                            console.log(`🔄 Syncing ${importedCount} imported applications to database...`);
+
+                            // Prepare backup data in the format the API expects
+                            const backupData = {
+                                exported_at: new Date().toISOString(),
+                                applications: applicationsForDb,
+                                emails: []
+                            };
+
+                            // Create a temporary JSON file to import via the backup API
+                            const backupFile = new File(
+                                [JSON.stringify(backupData)],
+                                'settings-import-backup.json',
+                                { type: 'application/json' }
+                            );
+
+                            // Import via BackupClient API
+                            const dbResult = await backupClient.importBackup(backupFile);
+                            console.log('✅ Database sync completed:', dbResult);
+
+                            // Show additional info about database sync
+                            showToast(
+                                `✓ Auch ${dbResult.imported_applications} Bewerbungen in Datenbank gespeichert`,
+                                'info'
+                            );
+                        } catch (apiError) {
+                            console.warn('⚠️ Database sync failed (data in localStorage only):', apiError);
+                            // Don't fail the entire import - localStorage data is safe
+                            showToast(
+                                `⚠️ Offline-Speicherung OK, aber Datenbank-Sync fehlgeschlagen: ${apiError.message}`,
+                                'warning'
+                            );
+                        }
+                    }
                 }
             } else {
                 showToast('Keine Bewerbungen in der Datei gefunden!', 'error');
@@ -5023,5 +5075,18 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCustomAIPlatforms();
 });
 </script>
+
+<!-- Backup Client for database sync -->
+<script src="/frontend/js/backup-client.js"></script>
+<script>
+    // Initialize BackupClient for use in Settings page import
+    if (typeof BackupClient !== 'undefined') {
+        const backupClient = new BackupClient();
+        console.log('✅ BackupClient initialized for Settings page sync');
+    } else {
+        console.warn('⚠️ BackupClient not available - database sync disabled');
+    }
+</script>
+
 </body>
 </html>
