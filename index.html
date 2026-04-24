@@ -1639,15 +1639,31 @@ async function loadFromStorage() {
 
         // Try to load from Database via API (with proper auth)
         // Use Auth.fetch which handles authentication automatically
-        const data = await Auth.fetch('/api/applications', { method: 'GET' });
+        let data;
+        try {
+            data = await Auth.fetch('/api/applications', { method: 'GET' });
+            console.log('📊 API Response received:', data);
+        } catch(fetchError) {
+            console.error('❌ Auth.fetch failed:', fetchError);
+            console.log('🔍 Error details:', {
+                message: fetchError.message,
+                status: fetchError.status,
+                toString: fetchError.toString()
+            });
+            throw fetchError;
+        }
 
-        console.log('📊 API Response:', data);
-
-        if (data && data.applications) {
-            state.bewerbungen = data.applications || [];
+        if (data && data.applications && Array.isArray(data.applications)) {
+            state.bewerbungen = data.applications;
             console.log(`✅ Data loaded from Database: ${state.bewerbungen.length} applications`);
+            console.log('📋 Applications from DB:', state.bewerbungen.slice(0, 3)); // Log first 3
         } else {
             console.warn('⚠️ API response missing applications array:', data);
+            console.log('🔍 Data structure:', {
+                hasData: !!data,
+                keys: data ? Object.keys(data) : 'null',
+                applicationsType: data ? typeof data.applications : 'undefined'
+            });
             throw new Error('No applications in API response');
         }
 
@@ -1662,7 +1678,11 @@ async function loadFromStorage() {
             console.warn('⚠️ Settings API not available:', e.message);
         }
     } catch(e) {
-        console.error('❌ loadFromStorage() error:', e.message, e);
+        console.error('❌ loadFromStorage() failed:', {
+            message: e.message,
+            stack: e.stack,
+            name: e.name
+        });
         console.warn('⚠️ Database unavailable, loading from localStorage...');
         // Fallback to localStorage if Database is not available
         try {
@@ -1675,7 +1695,9 @@ async function loadFromStorage() {
             } else {
                 console.warn('⚠️ No data in localStorage either');
             }
-        } catch(err) { console.error('❌ localStorage load error:', err); }
+        } catch(err) {
+            console.error('❌ localStorage load error:', err);
+        }
     }
 }
 
@@ -1930,6 +1952,8 @@ function updateConnectionStatus() {
    NAVIGATION & TABS
 ═══════════════════════════════════════════════════════ */
 function showView(name) {
+    console.log(`👁️ showView(${name}) called - current state.bewerbungen: ${state.bewerbungen.length}`);
+
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     const view = document.getElementById('view-' + name);
@@ -1942,10 +1966,12 @@ function showView(name) {
     if (['dashboard', 'bewerbungen', 'einstellungen'].includes(name)) {
         console.log(`📄 Switching to ${name} view - reloading data from database...`);
         loadFromStorage().then(() => {
+            console.log(`✅ Reload complete for ${name}: state.bewerbungen now has ${state.bewerbungen.length} applications`);
             if (name === 'dashboard') renderDashboard();
             if (name === 'bewerbungen') renderBewerbungen();
         }).catch(e => {
             console.error(`❌ Failed to reload for ${name}:`, e);
+            console.log(`⚠️ Rendering with existing data (${state.bewerbungen.length} applications)`);
             // Still render with existing data if reload fails
             if (name === 'dashboard') renderDashboard();
             if (name === 'bewerbungen') renderBewerbungen();
@@ -3826,14 +3852,25 @@ function handleImport(event) {
                             console.log('📄 File created:', { name: backupFile.name, size: backupFile.size, type: backupFile.type });
 
                             // Import via BackupClient API
+                            console.log('🚀 Calling backupClient.importBackup()...');
                             const dbResult = await backupClient.importBackup(backupFile);
                             console.log('✅ Database sync completed:', dbResult);
 
                             // Show additional info about database sync
                             showToast(
-                                `✓ Auch ${dbResult.imported_applications} Bewerbungen in Datenbank gespeichert`,
+                                `✓ Datenbank: ${dbResult.imported_applications}/${importedCount} gespeichert (Duplikate: ${importedCount - dbResult.imported_applications})`,
                                 'info'
                             );
+
+                            // After successful API import, reload from database to update UI
+                            console.log('🔄 Reloading from database to update UI...');
+                            try {
+                                await loadFromStorage();
+                                renderAll();
+                                console.log(`✅ UI updated with database state: ${state.bewerbungen.length} applications`);
+                            } catch(reloadErr) {
+                                console.error('⚠️ Failed to reload after import:', reloadErr);
+                            }
                         } catch (apiError) {
                             console.error('❌ Database sync error:', apiError);
                             console.error('Error message:', apiError.message);
@@ -3843,6 +3880,9 @@ function handleImport(event) {
                                 'warning'
                             );
                         }
+                    } else if (importedCount === 0) {
+                        console.log('ℹ️ No new applications to sync (all were duplicates)');
+                        showToast('ℹ️ Alle Bewerbungen waren bereits vorhanden', 'info');
                     }
                 }
             } else {
