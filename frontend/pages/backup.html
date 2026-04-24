@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="description" content="📦 Backup & Export Management">
+    <meta name="theme-color" content="#4CAF50">
+    <title>📦 Backups & Export - Bewerbungs-Tracker</title>
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --primary-light: #818CF8;
+            --primary-dark: #3730A3;
+            --secondary: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --info: #3B82F6;
+            --bg: #0F172A;
+            --bg-primary: #1E293B;
+            --bg-card: #263548;
+            --text: #E2E8F0;
+            --text-muted: #94A3B8;
+            --border: #334155;
+            --shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+
+        :root[data-scheme="light"] {
+            --primary: #4F46E5;
+            --primary-light: #818CF8;
+            --primary-dark: #3730A3;
+            --secondary: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --info: #3B82F6;
+            --bg: #F8FAFC;
+            --bg-primary: #FFFFFF;
+            --bg-card: #F1F5F9;
+            --text: #0F172A;
+            --text-muted: #64748B;
+            --border: #E2E8F0;
+            --shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        .backup-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-logo {
+            font-size: 2rem;
+        }
+
+        .header h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 0.25rem;
+        }
+
+        .section {
+            margin-bottom: 2.5rem;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Export Section */
+        .export-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .export-card {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .export-card:hover {
+            border-color: var(--primary);
+            box-shadow: var(--shadow);
+            transform: translateY(-2px);
+        }
+
+        .export-card-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .export-card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+
+        .export-card-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+
+        .export-btn {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .export-btn:hover {
+            opacity: 0.9;
+            transform: scale(1.02);
+        }
+
+        /* Backup History */
+        .backup-list {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .backup-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.25rem;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s ease;
+        }
+
+        .backup-item:last-child {
+            border-bottom: none;
+        }
+
+        .backup-item:hover {
+            background: var(--bg-card);
+        }
+
+        .backup-info {
+            flex: 1;
+        }
+
+        .backup-version {
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.25rem;
+        }
+
+        .backup-meta {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .backup-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-small {
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 0.5rem 0.9rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-small:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .btn-small.danger:hover {
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Import Section */
+        .import-section {
+            background: var(--bg-primary);
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .import-upload {
+            margin-bottom: 1rem;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-input-label {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color: white;
+            padding: 0.8rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            margin-bottom: 1rem;
+        }
+
+        .file-input-label:hover {
+            opacity: 0.9;
+            transform: scale(1.02);
+        }
+
+        .selected-file {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        .import-btn {
+            background: var(--secondary);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .import-btn:hover:not(:disabled) {
+            opacity: 0.9;
+            transform: scale(1.02);
+        }
+
+        .import-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-primary);
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: var(--shadow);
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text);
+        }
+
+        .modal-body {
+            color: var(--text-muted);
+            margin-bottom: 1.5rem;
+            line-height: 1.6;
+        }
+
+        .modal-warning {
+            background: var(--bg-card);
+            border-left: 3px solid var(--warning);
+            padding: 0.75rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 0.8rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .loading {
+            display: inline-block;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .status-auto {
+            background: var(--info);
+            color: white;
+        }
+
+        .status-manual {
+            background: var(--warning);
+            color: white;
+        }
+
+        .status-restore {
+            background: var(--secondary);
+            color: white;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            max-width: 400px;
+            box-shadow: var(--shadow);
+            animation: slideIn 0.3s ease;
+            z-index: 2000;
+        }
+
+        .toast.success {
+            border-left: 3px solid var(--secondary);
+        }
+
+        .toast.error {
+            border-left: 3px solid var(--danger);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .backup-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1rem;
+            }
+
+            .backup-actions {
+                width: 100%;
+            }
+
+            .modal-content {
+                width: 95%;
+            }
+
+            .export-cards {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="backup-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-logo">📦</div>
+            <div>
+                <h1>Backups & Export</h1>
+                <p>Manage your data backups and exports</p>
+            </div>
+        </div>
+
+        <!-- Export Section -->
+        <div class="section">
+            <h2 class="section-title">📊 Export Data</h2>
+            <div class="export-cards">
+                <div class="export-card" onclick="backupManager.exportAs('json')">
+                    <div class="export-card-icon">📄</div>
+                    <div class="export-card-title">JSON Export</div>
+                    <div class="export-card-desc">Export all applications and emails as JSON</div>
+                    <button class="export-btn">Download JSON</button>
+                </div>
+                <div class="export-card" onclick="backupManager.exportAs('csv')">
+                    <div class="export-card-icon">📈</div>
+                    <div class="export-card-title">CSV Export</div>
+                    <div class="export-card-desc">Export applications as spreadsheet</div>
+                    <button class="export-btn">Download CSV</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backup History -->
+        <div class="section">
+            <h2 class="section-title">⏰ Backup History</h2>
+            <div class="backup-list" id="backupList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <p>Loading backups...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Import Section -->
+        <div class="section">
+            <h2 class="section-title">📥 Import Data</h2>
+            <div class="import-section">
+                <h3 style="margin-bottom: 0.5rem;">Upload Backup File</h3>
+                <p style="color: var(--text-muted); margin-bottom: 1.5rem; font-size: 0.9rem;">
+                    Upload a previously exported JSON backup file to restore your data
+                </p>
+                <div class="import-upload">
+                    <input type="file" id="importFile" class="file-input" accept=".json" />
+                    <label for="importFile" class="file-input-label">Choose File</label>
+                    <div class="selected-file" id="selectedFileName"></div>
+                </div>
+                <button class="import-btn" id="importBtn" onclick="backupManager.importBackup()" disabled>
+                    Import Backup
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restore Modal -->
+    <div class="modal" id="restoreModal">
+        <div class="modal-content">
+            <h2 class="modal-title">Restore Backup</h2>
+            <div class="modal-body">
+                <div class="modal-warning">
+                    ⚠️ Restoring will add backed-up applications and emails to your current data.
+                </div>
+                <p>
+                    Select what to do with existing data:
+                </p>
+                <div style="margin-top: 1rem;">
+                    <label style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; cursor: pointer;">
+                        <input type="radio" name="clearExisting" value="false" checked style="cursor: pointer;" />
+                        <span>Keep my current data and add from backup (recommended)</span>
+                    </label>
+                    <label style="display: flex; gap: 0.5rem; cursor: pointer;">
+                        <input type="radio" name="clearExisting" value="true" style="cursor: pointer;" />
+                        <span>Replace current data completely (careful!)</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="backupManager.closeRestoreModal()">Cancel</button>
+                <button class="btn-primary" onclick="backupManager.confirmRestore()">Restore</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/frontend/auth.js"></script>
+    <script src="/frontend/backup-client.js"></script>
+    <script>
+        const BackupManager = class {
+            constructor() {
+                this.restoreVersion = null;
+                this.init();
+            }
+
+            async init() {
+                // Require authentication
+                Auth.requireAuth();
+
+                // Load backups on page load
+                await this.loadBackups();
+
+                // Setup file input listener
+                document.getElementById('importFile').addEventListener('change', (e) => {
+                    const fileName = e.target.files[0]?.name || '';
+                    document.getElementById('selectedFileName').textContent = fileName ? `Selected: ${fileName}` : '';
+                    document.getElementById('importBtn').disabled = !fileName;
+                });
+            }
+
+            async loadBackups() {
+                try {
+                    const backups = await backupClient.listBackups();
+                    this.displayBackups(backups);
+                } catch (error) {
+                    console.error('Error loading backups:', error);
+                    this.showToast('Failed to load backups', 'error');
+                    this.displayBackups([]);
+                }
+            }
+
+            displayBackups(backups) {
+                const listEl = document.getElementById('backupList');
+
+                if (!backups || backups.length === 0) {
+                    listEl.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📭</div>
+                            <p>No backups yet</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Sort by created_at descending (latest first)
+                const sorted = [...backups].sort((a, b) => {
+                    return new Date(b.created_at) - new Date(a.created_at);
+                });
+
+                listEl.innerHTML = sorted.map(backup => {
+                    const date = new Date(backup.created_at);
+                    const dateStr = date.toLocaleDateString('de-DE', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+
+                    let badgeClass = 'status-auto';
+                    if (backup.backup_type === 'manual_export') badgeClass = 'status-manual';
+                    if (backup.backup_type?.includes('restore')) badgeClass = 'status-restore';
+
+                    return `
+                        <div class="backup-item">
+                            <div class="backup-info">
+                                <div class="backup-version">Version ${backup.version}</div>
+                                <div class="backup-meta">
+                                    <span>${dateStr}</span>
+                                    <span class="status-badge ${badgeClass}">${backup.backup_type || 'automatic'}</span>
+                                    <span>${backup.summary || 'Backup'}</span>
+                                </div>
+                            </div>
+                            <div class="backup-actions">
+                                <button class="btn-small" onclick="backupManager.openRestoreModal(${backup.version})">
+                                    Restore
+                                </button>
+                                <button class="btn-small" onclick="backupManager.downloadBackup(${backup.version})">
+                                    Download
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            async exportAs(format) {
+                try {
+                    const btn = event.target.closest('.export-btn');
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="loading">⏳</span> Exporting...';
+
+                    await backupClient.downloadExport(format);
+                    this.showToast(`${format.toUpperCase()} exported successfully`, 'success');
+                } catch (error) {
+                    console.error('Export error:', error);
+                    this.showToast('Export failed', 'error');
+                } finally {
+                    const btn = event.target.closest('.export-btn');
+                    btn.disabled = false;
+                    btn.innerHTML = `Download ${format.toUpperCase()}`;
+                }
+            }
+
+            async downloadBackup(version) {
+                try {
+                    const backup = await backupClient.getBackup(version);
+                    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                    const filename = `backup_v${version}_${new Date().toISOString().split('T')[0]}.json`;
+                    backupClient._downloadBlob(blob, filename);
+                    this.showToast('Backup downloaded', 'success');
+                } catch (error) {
+                    console.error('Download error:', error);
+                    this.showToast('Failed to download backup', 'error');
+                }
+            }
+
+            async importBackup() {
+                const fileInput = document.getElementById('importFile');
+                const file = fileInput.files[0];
+
+                if (!file) {
+                    this.showToast('Please select a file', 'error');
+                    return;
+                }
+
+                try {
+                    const btn = document.getElementById('importBtn');
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="loading">⏳</span> Importing...';
+
+                    const result = await backupClient.importBackup(file);
+                    this.showToast(
+                        `Imported ${result.imported_applications} applications, ${result.imported_emails} emails`,
+                        'success'
+                    );
+
+                    // Reset file input
+                    fileInput.value = '';
+                    document.getElementById('selectedFileName').textContent = '';
+
+                    // Refresh backup list
+                    await this.loadBackups();
+                } catch (error) {
+                    console.error('Import error:', error);
+                    this.showToast('Import failed: ' + error.message, 'error');
+                } finally {
+                    const btn = document.getElementById('importBtn');
+                    btn.disabled = !document.getElementById('importFile').files[0];
+                    btn.innerHTML = 'Import Backup';
+                }
+            }
+
+            openRestoreModal(version) {
+                this.restoreVersion = version;
+                document.getElementById('restoreModal').classList.add('active');
+            }
+
+            closeRestoreModal() {
+                document.getElementById('restoreModal').classList.remove('active');
+                this.restoreVersion = null;
+            }
+
+            async confirmRestore() {
+                if (!this.restoreVersion) return;
+
+                try {
+                    const clearExisting = document.querySelector('input[name="clearExisting"]:checked').value === 'true';
+                    const btn = event.target;
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="loading">⏳</span> Restoring...';
+
+                    const result = await backupClient.restoreBackup(this.restoreVersion, clearExisting);
+
+                    this.showToast(
+                        `Restored ${result.restored_applications} applications, ${result.restored_emails} emails`,
+                        'success'
+                    );
+
+                    this.closeRestoreModal();
+                    await this.loadBackups();
+                } catch (error) {
+                    console.error('Restore error:', error);
+                    this.showToast('Restore failed: ' + error.message, 'error');
+                } finally {
+                    const btn = event.target;
+                    btn.disabled = false;
+                    btn.innerHTML = 'Restore';
+                }
+            }
+
+            showToast(message, type = 'success') {
+                const toast = document.createElement('div');
+                toast.className = `toast ${type}`;
+                toast.textContent = message;
+                document.body.appendChild(toast);
+
+                setTimeout(() => {
+                    toast.remove();
+                }, 3000);
+            }
+        };
+
+        const backupManager = new BackupManager();
+    </script>
+</body>
+</html>
