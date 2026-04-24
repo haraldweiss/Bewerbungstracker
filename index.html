@@ -1075,6 +1075,27 @@
         </div>
     </div>
 
+    <div class="card" style="max-width:600px;margin-bottom:1rem;display:none;" id="adminSettingsCard">
+        <div class="card-title" style="margin-bottom:1rem;">👥 Benutzerverwaltung</div>
+
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <th style="text-align: left; padding: 0.75rem; font-weight: bold;">E-Mail</th>
+                        <th style="text-align: left; padding: 0.75rem; font-weight: bold;">Erstellt</th>
+                        <th style="text-align: left; padding: 0.75rem; font-weight: bold;">Status</th>
+                        <th style="text-align: left; padding: 0.75rem; font-weight: bold;">Rolle</th>
+                        <th style="text-align: left; padding: 0.75rem; font-weight: bold;">Aktionen</th>
+                    </tr>
+                </thead>
+                <tbody id="adminUsersList">
+                    <tr><td colspan="5" style="padding: 1rem; text-align: center; color: var(--text-muted);">Lädt Benutzer...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <div class="card" style="max-width:600px;">
         <div class="card-title" style="margin-bottom:0.5rem;">ℹ️ Info</div>
         <p style="color:var(--text-muted);font-size:0.85rem;line-height:1.8;">
@@ -1751,6 +1772,17 @@ async function updateAdminButtonVisibility() {
         const navUsersBtn = document.getElementById('navUsersBtn');
         if (navUsersBtn) {
             navUsersBtn.style.display = isUserAdmin ? 'block' : 'none';
+        }
+
+        // Update admin settings card visibility in Settings
+        const adminCard = document.getElementById('adminSettingsCard');
+        if (adminCard) {
+            if (isUserAdmin) {
+                adminCard.style.display = 'block';
+                AdminSettings.init();
+            } else {
+                adminCard.style.display = 'none';
+            }
         }
     } catch (error) {
         console.error('⚠️ Error checking admin status:', error);
@@ -4361,6 +4393,56 @@ const BackupManager = {
             console.error('Restore error:', error);
             showToast(`Wiederherstellung fehlgeschlagen: ${error.message}`, 'error');
         }
+    }
+};
+
+/* ═══════════════════════════════════════════════════════
+   ADMIN SETTINGS - admin user management in Settings
+═══════════════════════════════════════════════════════ */
+const AdminSettings = {
+    init() {
+        this.loadUsers();
+    },
+
+    async loadUsers() {
+        try {
+            const response = await Auth.fetch('/users', { method: 'GET' });
+            if (response.users) {
+                this.displayUsers(response.users);
+            }
+        } catch (error) {
+            console.error('Failed to load users:', error);
+            const el = document.getElementById('adminUsersList');
+            if (el) {
+                el.innerHTML = `<tr><td colspan="5" style="padding: 1rem; text-align: center; color: var(--error);">Fehler beim Laden der Benutzer</td></tr>`;
+            }
+        }
+    },
+
+    displayUsers(users) {
+        const html = users.map(u => `
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <td style="padding: 0.75rem;">${escapeHtml(u.email)}</td>
+                <td style="padding: 0.75rem; font-size: 0.85rem;">${new Date(u.created_at).toLocaleDateString('de-DE')}</td>
+                <td style="padding: 0.75rem;">
+                    <span style="padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; background: ${u.is_active ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)'}; color: ${u.is_active ? '#86EFAC' : '#FCD34D'};">
+                        ${u.is_active ? '✓ Aktiv' : '⏳ Ausstehend'}
+                    </span>
+                </td>
+                <td style="padding: 0.75rem;">${u.is_admin ? '👑 Admin' : 'Benutzer'}</td>
+                <td style="padding: 0.75rem;">
+                    <button class="btn btn-sm" style="padding:0.4rem 0.8rem;font-size:0.8rem;" onclick="AdminSettings.showActions(${u.id})">Aktionen</button>
+                </td>
+            </tr>
+        `).join('');
+
+        document.getElementById('adminUsersList').innerHTML = html;
+    },
+
+    showActions(userId) {
+        // Placeholder for action menu or modal
+        // Future implementation: Reset password, Approve user, Promote to admin, Delete user
+        console.log('Actions for user:', userId);
     }
 };
 
