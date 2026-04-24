@@ -293,6 +293,13 @@
         .google-btn:hover { box-shadow:0 4px 12px rgba(0,0,0,0.3); transform:translateY(-1px); }
         .google-logo { width:20px; height:20px; }
 
+        /* RESPONSIVE EXPORT CARDS GRID */
+        @media (max-width: 600px) {
+            .backup-export-grid {
+                grid-template-columns: 1fr !important;
+            }
+        }
+
         /* TABS, HIGHLIGHT - Now in components.css */
     </style>
 </head>
@@ -1046,7 +1053,7 @@
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Sichere deine Daten auf dem Server mit Verschlüsselung und stelle sie wieder her.</p>
 
         <!-- Export Cards -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="backup-export-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
             <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem; text-align: center; cursor: pointer;" onclick="BackupManager.exportAs('json')">
                 <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem;">📄 JSON Export</h3>
                 <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Strukturiertes Format</p>
