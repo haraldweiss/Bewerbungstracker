@@ -1040,6 +1040,41 @@
             <button class="btn btn-danger" onclick="clearAllData()">🗑️ Alles löschen</button>
         </div>
     </div>
+
+    <div class="card" style="max-width:600px;margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:1rem;">🔐 Sicherung & Export (Cloud)</div>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Sichere deine Daten auf dem Server mit Verschlüsselung und stelle sie wieder her.</p>
+
+        <!-- Export Cards -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+            <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem; text-align: center; cursor: pointer;" onclick="BackupManager.exportAs('json')">
+                <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem;">📄 JSON Export</h3>
+                <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Strukturiertes Format</p>
+                <button class="btn btn-primary btn-sm" style="margin-top: 0.5rem;">Download</button>
+            </div>
+            <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem; text-align: center; cursor: pointer;" onclick="BackupManager.exportAs('csv')">
+                <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem;">📊 CSV Export</h3>
+                <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Spreadsheet Format</p>
+                <button class="btn btn-primary btn-sm" style="margin-top: 0.5rem;">Download</button>
+            </div>
+        </div>
+
+        <!-- Backup History -->
+        <div style="margin-bottom: 1.5rem;">
+            <h4 style="margin-bottom: 1rem;">📋 Backup-Verlauf</h4>
+            <div id="backupList" style="min-height: 100px; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
+                <p style="color: var(--text-muted);">Lädt Backups...</p>
+            </div>
+        </div>
+
+        <!-- Import -->
+        <div style="margin-bottom: 1rem;">
+            <h4 style="margin-bottom: 0.5rem;">📥 Backup Importieren</h4>
+            <input type="file" id="backupFile" accept=".json" style="margin-bottom: 0.5rem; width: 100%;">
+            <button class="btn btn-primary" onclick="BackupManager.importBackup()">Import</button>
+        </div>
+    </div>
+
     <div class="card" style="max-width:600px;">
         <div class="card-title" style="margin-bottom:0.5rem;">ℹ️ Info</div>
         <p style="color:var(--text-muted);font-size:0.85rem;line-height:1.8;">
@@ -2214,6 +2249,11 @@ function showView(name) {
         if (name === 'deleted') loadDeletedEntries();
         if (name === 'users') loadUsersPage();
         if (name === 'cvcompare') showCVTab('upload');
+    }
+
+    // Initialize BackupManager when Settings view is shown
+    if (name === 'settings') {
+        BackupManager.init();
     }
 }
 
@@ -4214,6 +4254,115 @@ async function clearAllData() {
     renderAll();
     showToast('✅ Alle Daten gelöscht (lokal und in Datenbank)', 'success');
 }
+
+/* ═══════════════════════════════════════════════════════
+   BACKUP MANAGER - Cloud Backup/Export/Import
+═══════════════════════════════════════════════════════ */
+const BackupManager = {
+    backupClient: null,
+
+    init() {
+        this.backupClient = new BackupClient();
+        this.loadBackups();
+    },
+
+    async loadBackups() {
+        try {
+            const data = await this.backupClient.listBackups();
+            this.displayBackups(data.backups || []);
+        } catch (error) {
+            console.error('Failed to load backups:', error);
+            const el = document.getElementById('backupList');
+            if (el) {
+                el.innerHTML = `<p style="color: var(--error);">Fehler beim Laden der Backups</p>`;
+            }
+        }
+    },
+
+    displayBackups(backups) {
+        const el = document.getElementById('backupList');
+        if (!el) return;
+
+        if (!backups || backups.length === 0) {
+            el.innerHTML = '<p style="color: var(--text-muted);">Keine Backups vorhanden</p>';
+            return;
+        }
+
+        const sorted = [...backups].sort((a, b) => {
+            return new Date(b.created_at) - new Date(a.created_at);
+        });
+
+        const html = `<ul style="list-style: none; padding: 0; margin: 0;">
+            ${sorted.map(b => `
+                <li style="padding: 0.75rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong>Version ${b.version}</strong>
+                        <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+                            ${new Date(b.created_at).toLocaleString('de-DE')} • ${b.backup_type} • ${b.summary || 'Backup'}
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-sm" style="padding:0.4rem 0.8rem;font-size:0.8rem;" onclick="BackupManager.restoreBackup(${b.version})">Restore</button>
+                    </div>
+                </li>
+            `).join('')}
+        </ul>`;
+
+        el.innerHTML = html;
+    },
+
+    async exportAs(format) {
+        try {
+            const btn = event.target.closest('.btn') || event.target;
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⏳ Exportiert...';
+
+            await this.backupClient.downloadExport(format);
+            showToast(`${format.toUpperCase()} Export erfolgreich`, 'success');
+        } catch (error) {
+            console.error('Export error:', error);
+            showToast(`Export fehlgeschlagen: ${error.message}`, 'error');
+        } finally {
+            const btn = event.target.closest('.btn') || event.target;
+            btn.disabled = false;
+            btn.textContent = 'Download';
+        }
+    },
+
+    async importBackup() {
+        const file = document.getElementById('backupFile').files[0];
+        if (!file) {
+            showToast('Bitte wähle eine Datei aus', 'warning');
+            return;
+        }
+
+        try {
+            const result = await this.backupClient.importBackup(file);
+            showToast(`${result.imported_applications} Bewerbungen importiert`, 'success');
+            document.getElementById('backupFile').value = '';
+            await this.loadBackups();
+        } catch (error) {
+            console.error('Import error:', error);
+            showToast(`Import fehlgeschlagen: ${error.message}`, 'error');
+        }
+    },
+
+    async restoreBackup(version) {
+        if (!confirm(`Backup Version ${version} wiederherstellen? Existierende Daten bleiben erhalten.`)) {
+            return;
+        }
+
+        try {
+            const result = await this.backupClient.restoreBackup(version, false);
+            showToast(`${result.restored_applications} Bewerbungen wiederhergestellt`, 'success');
+            await this.loadBackups();
+        } catch (error) {
+            console.error('Restore error:', error);
+            showToast(`Wiederherstellung fehlgeschlagen: ${error.message}`, 'error');
+        }
+    }
+};
 
 /* ═══════════════════════════════════════════════════════
    FILTER
