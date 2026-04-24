@@ -68,10 +68,20 @@ def create_app(config_class=None):
     def admin_page():
         return send_file('frontend/pages/admin.html')
 
+    # Backup page route
+    @app.route('/backup')
+    def backup_page():
+        return send_file('frontend/pages/backup.html')
+
     # Serve frontend/auth.js for login page
     @app.route('/frontend/auth.js')
     def serve_auth_js():
         return send_file('frontend/auth.js', mimetype='application/javascript')
+
+    # Serve frontend/backup-client.js
+    @app.route('/frontend/backup-client.js')
+    def serve_backup_client_js():
+        return send_file('frontend/backup-client.js', mimetype='application/javascript')
 
     # Register blueprints
     from api.auth import auth_bp
