@@ -3,6 +3,7 @@ from api.auth import token_required
 from models import Application, ApplicationStatus
 from database import db
 from datetime import datetime
+from services.backup_service import BackupService
 
 apps_bp = Blueprint('applications', __name__, url_prefix='/api/applications')
 
@@ -48,6 +49,9 @@ def create_application(user):
 
     db.session.add(app)
     db.session.commit()
+
+    # Create automatic backup after new entry
+    BackupService.create_backup(user, backup_type='automatic')
 
     return {
         'id': app.id,
@@ -101,6 +105,9 @@ def update_application(user, app_id):
     app.updated_at = datetime.utcnow()
     db.session.commit()
 
+    # Create automatic backup after update
+    BackupService.create_backup(user, backup_type='automatic')
+
     return {
         'id': app.id,
         'company': app.company,
@@ -121,5 +128,8 @@ def delete_application(user, app_id):
 
     db.session.delete(app)
     db.session.commit()
+
+    # Create automatic backup after deletion
+    BackupService.create_backup(user, backup_type='automatic')
 
     return {'message': 'Application deleted'}, 200
