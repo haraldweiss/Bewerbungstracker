@@ -1515,13 +1515,19 @@ function validateMasterPassword(password) {
  */
 async function updateAdminButtonVisibility() {
     try {
+        // Check if Auth module is available and has isAdmin method
+        if (typeof Auth === 'undefined' || typeof Auth.isAdmin !== 'function') {
+            console.warn('⚠️ Auth.isAdmin not available yet, skipping admin check');
+            return;
+        }
         const isUserAdmin = await Auth.isAdmin();
         const adminBtn = document.getElementById('adminDashboardBtn');
         if (adminBtn) {
             adminBtn.style.display = isUserAdmin ? 'block' : 'none';
         }
     } catch (error) {
-        console.error('Error checking admin status:', error);
+        console.error('⚠️ Error checking admin status:', error);
+        // Don't fail initialization if admin check fails
     }
 }
 
