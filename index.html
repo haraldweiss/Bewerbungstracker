@@ -3627,13 +3627,28 @@ async function saveSMTPSettings() {
 }
 
 async function testSmtpConnection() {
-    const host = document.getElementById('smtpHost').value.trim();
-    const port = document.getElementById('smtpPort').value.trim();
-    const user = document.getElementById('smtpUser').value.trim();
-    const pass = document.getElementById('smtpPass').value;
+    // Try to load saved encrypted credentials first
+    let credentials = loadEncryptedCredentials('smtp');
+
+    // If no saved credentials, try to read from form fields
+    if (!credentials) {
+        const host = document.getElementById('smtpHost').value.trim();
+        const port = document.getElementById('smtpPort').value.trim();
+        const user = document.getElementById('smtpUser').value.trim();
+        const pass = document.getElementById('smtpPass').value;
+
+        if (!host || !port || !user || !pass) {
+            showToast('Bitte SMTP-Einstellungen zuerst speichern', 'warning');
+            return;
+        }
+
+        credentials = { host, port, user, pass };
+    }
+
+    const { host, port, user, pass } = credentials;
 
     if (!host || !port || !user || !pass) {
-        showToast('Bitte alle Felder ausfüllen', 'warning');
+        showToast('Bitte SMTP-Einstellungen zuerst speichern', 'warning');
         return;
     }
 
@@ -3665,10 +3680,17 @@ async function testSmtpConnection() {
 }
 
 async function sendTestEmail() {
-    const recipient = document.getElementById('smtpUser').value.trim();
+    // Try to load saved encrypted credentials to get recipient email
+    let recipient = document.getElementById('smtpUser').value.trim();
+
     if (!recipient) {
-        showToast('Gib zuerst eine Email-Adresse ein', 'warning');
-        return;
+        const credentials = loadEncryptedCredentials('smtp');
+        if (credentials && credentials.user) {
+            recipient = credentials.user;
+        } else {
+            showToast('SMTP-Einstellungen erforderlich (speichere zuerst)', 'warning');
+            return;
+        }
     }
 
     updateSmtpStatus('⏳ Sende Test-Email...');
