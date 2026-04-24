@@ -29,6 +29,12 @@
             --info: #3B82F6; --bg: #0F172A; --bg-card: #1E293B;
             --bg-card2: #263548; --text: #E2E8F0; --text-muted: #94A3B8;
             --border: #334155; --shadow: 0 4px 20px rgba(0,0,0,0.4);
+            /* Responsive Breakpoints */
+            --mobile-max: 480px;
+            --tablet-min: 481px;
+            --tablet-max: 1024px;
+            --desktop-min: 1025px;
+            --large-desktop-min: 1440px;
         }
 
         :root[data-scheme="light"] {
@@ -867,11 +873,7 @@
     </div>
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">🔐 Sicherheit & Master-Passwort</div>
-        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Master-Passwort schützt deine SMTP/IMAP Passwörter mit Verschlüsselung.</p>
-        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
-            <button class="btn btn-warning btn-sm" onclick="changeMasterPassword()">🔑 Master-Passwort ändern</button>
-            <button class="btn btn-danger btn-sm" onclick="logoutEncryption()">🔓 Sitzung beenden (Passwort löschen)</button>
-        </div>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">✅ Email-Passwörter sind sicher verschlüsselt über dein Benutzerkonto.</p>
         <div id="encryptionStatus" style="font-size:0.85rem;color:var(--text-muted);">
             <span id="masterPasswordStatus">Prüfe Status...</span>
         </div>
@@ -1579,42 +1581,8 @@ function goToAdminDashboard() {
 }
 
 async function init() {
-    // Request master password first if email settings are configured
-    const hasEmailSettings = localStorage.getItem('bewerbungsTrackerV3')?.includes('smtp') ||
-                              localStorage.getItem('bewerbungsTrackerV3')?.includes('imap');
-
-    if (hasEmailSettings && !encryption.masterPasswordSet && encryption.isMasterPasswordSet()) {
-        const password = prompt('🔐 Master-Passwort eingeben (für Email-Einstellungen):');
-        if (password) {
-            const validation = validateMasterPassword(password);
-            if (validation.valid) {
-                await encryption.setMasterPassword(password);
-                startEncryptionSessionTimeout();
-            } else {
-                showToast('❌ ' + validation.error, 'error');
-            }
-        } else {
-            showToast('Warnung: Email-Einstellungen sind verschlüsselt und werden nicht verfügbar sein', 'warning');
-        }
-    } else if (!encryption.masterPasswordSet && !encryption.isMasterPasswordSet()) {
-        // First time: set master password with strong validation
-        let validPassword = false;
-        while (!validPassword) {
-            const password = prompt('🔐 Master-Passwort für Email-Sicherheit:\n\nAnforderungen:\n• Min. 12 Zeichen\n• Groß- und Kleinbuchstaben\n• Zahlen\n\n(Dieses Passwort schützt deine SMTP/IMAP Passwörter)');
-
-            if (!password) break; // User cancelled
-
-            const validation = validateMasterPassword(password);
-            if (validation.valid) {
-                await encryption.setMasterPassword(password);
-                startEncryptionSessionTimeout();
-                showToast('🔐 Master-Passwort mit hoher Komplexität gespeichert ✓', 'success');
-                validPassword = true;
-            } else {
-                showToast('❌ ' + validation.error, 'error');
-            }
-        }
-    }
+    // Master password no longer needed - using per-user JWT authentication instead
+    console.log('✅ Init: Multi-user auth enabled, skipping master password prompt');
 
     // Check if user is admin and show admin button
     await updateAdminButtonVisibility();
@@ -1701,9 +1669,76 @@ async function loadFromStorage() {
         }
 
         if (data && data.applications && Array.isArray(data.applications)) {
-            state.bewerbungen = data.applications;
-            console.log(`✅ Data loaded from Database: ${state.bewerbungen.length} applications`);
-            console.log('📋 Applications from DB:', state.bewerbungen.slice(0, 3)); // Log first 3
+            // Convert from database format (company, applied_date) to Settings format (firma, datum)
+            console.log('🔄 Converting database format to Settings format...');
+            console.log('📊 Raw DB response (first app):', data.applications[0]);
+
+            // Load localStorage data to restore fields that aren't in database (quelle, gehalt, ort, email, link, notizen)
+            let localStorageApps = [];
+            try {
+                const saved = localStorage.getItem('bewerbungsTrackerV3');
+                if (saved) {
+                    const parsedData = JSON.parse(saved);
+                    localStorageApps = parsedData.bewerbungen || [];
+                    console.log(`📦 Loaded ${localStorageApps.length} apps from localStorage for field merging`);
+
+                    // Log first localStorage app to see if it has quelle
+                    if (localStorageApps.length > 0) {
+                        console.log('📦 First localStorage app:', {
+                            firma: localStorageApps[0].firma,
+                            quelle: localStorageApps[0].quelle,
+                            gehalt: localStorageApps[0].gehalt
+                        });
+                    }
+                }
+            } catch(e) {
+                console.warn('⚠️ Could not load localStorage for merging:', e.message);
+            }
+
+            // Create a map of localStorage apps by company name (IDs change in database)
+            const localStorageMap = {};
+            localStorageApps.forEach(app => {
+                const key = (app.firma || '').toLowerCase();
+                localStorageMap[key] = app;
+            });
+
+            state.bewerbungen = data.applications.map((app, idx) => {
+                // Match by company name since database generates new IDs
+                const companyKey = (app.company || '').toLowerCase();
+                const localData = localStorageMap[companyKey] || {};
+
+                const converted = {
+                    id: app.id,
+                    firma: app.company,  // Database uses 'company', Settings uses 'firma'
+                    position: app.position || '',
+                    status: app.status || 'beworben',
+                    datum: app.applied_date || '',  // Database uses 'applied_date', Settings uses 'datum'
+                    // Restore optional fields from localStorage (not stored in database)
+                    quelle: localData.quelle || '',  // Source: where job offer came from
+                    gehalt: localData.gehalt || '',
+                    ort: localData.ort || '',
+                    email: localData.email || '',
+                    link: localData.link || '',
+                    notizen: localData.notizen || '',
+                    createdAt: app.created_at || app.createdAt || new Date().toISOString(),
+                    updatedAt: app.updated_at || app.updatedAt || new Date().toISOString()
+                };
+
+                // Log first app with details about where quelle came from
+                if (idx === 0) {
+                    console.log('🔍 First app conversion:', {
+                        company: app.company,
+                        matchedLocalData: Object.keys(localData).length > 0,
+                        finalQuelle: converted.quelle
+                    });
+                }
+
+                return converted;
+            });
+
+            console.log(`✅ Data loaded from Database: ${state.bewerbungen.length} applications (merged with localStorage)`);
+            console.log('📋 Converted Applications:', state.bewerbungen.slice(0, 3));
+            console.log('🔍 First app quelle (source):', state.bewerbungen[0]?.quelle);
         } else {
             console.warn('⚠️ API response missing applications array:', data);
             console.log('🔍 Data structure:', {
@@ -3854,11 +3889,22 @@ async function proceedWithImport() {
         let importedCount = 0;
         const applicationsForDb = [];
 
-        data.bewerbungen.forEach(b => {
+        data.bewerbungen.forEach((b, idx) => {
             // Ensure the object has required properties
             if (b.id && b.firma) {
                 const existing = state.bewerbungen.find(x => x.id === b.id);
                 if (!existing) {
+                    // Log first app to see what's in the JSON
+                    if (idx === 0) {
+                        console.log('📋 First app from JSON:', {
+                            firma: b.firma,
+                            quelle: b.quelle,
+                            position: b.position,
+                            gehalt: b.gehalt,
+                            ort: b.ort
+                        });
+                    }
+
                     // New application: preserve all properties including status, dates, notes
                     const importedApp = {
                         id: b.id,
@@ -3880,7 +3926,8 @@ async function proceedWithImport() {
 
                     // Convert to database format for backup API
                     // Map: firma → company, position → position, datum → applied_date
-                    applicationsForDb.push({
+                    // NOTE: Optional fields (quelle, gehalt, etc) are kept in localStorage only
+                    const dbApp = {
                         id: b.id,
                         company: b.firma,
                         position: b.position || '',
@@ -3888,7 +3935,14 @@ async function proceedWithImport() {
                         applied_date: b.datum || null,
                         created_at: b.createdAt || new Date().toISOString(),
                         updated_at: b.updatedAt || new Date().toISOString()
-                    });
+                    };
+
+                    // Log first DB app to verify quelle is included
+                    if (idx === 0) {
+                        console.log('📤 First app for DB sync:', { company: dbApp.company, quelle: dbApp.quelle, gehalt: dbApp.gehalt });
+                    }
+
+                    applicationsForDb.push(dbApp);
                 }
             }
         });
@@ -3990,10 +4044,9 @@ async function clearAllData() {
 
         for (const app of applicationsToDelete) {
             try {
-                const response = await fetchAPI(`/api/applications/${app.id}`, { method: 'DELETE' });
-                if (!response.ok) {
-                    console.warn(`⚠️ Failed to delete ${app.id}:`, response.status);
-                }
+                // Use Auth.fetch() for authenticated requests - it handles auth headers correctly
+                const response = await Auth.fetch(`/applications/${app.id}`, { method: 'DELETE' });
+                console.log(`✅ Deleted ${app.id}:`, response);
             } catch (err) {
                 console.error(`❌ Error deleting ${app.id}:`, err);
             }
