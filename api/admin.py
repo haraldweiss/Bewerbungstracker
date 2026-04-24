@@ -128,16 +128,21 @@ def get_user_applications(user, user_id):
 @token_required
 @admin_required
 def promote_user(user, user_id):
-    """Promote a user to admin"""
+    """Toggle admin status for a user"""
+    if str(user.id) == str(user_id):
+        return {'error': 'Cannot change your own admin status'}, 400
+
     target_user = User.query.get(user_id)
     if not target_user:
         return {'error': 'User not found'}, 404
 
-    target_user.is_admin = True
+    # Toggle admin status
+    target_user.is_admin = not target_user.is_admin
     db.session.commit()
 
+    action = 'promoted to admin' if target_user.is_admin else 'demoted from admin'
     return {
-        'message': f'User {target_user.email} promoted to admin',
+        'message': f'User {target_user.email} {action}',
         'email': target_user.email,
         'is_admin': target_user.is_admin
     }, 200
