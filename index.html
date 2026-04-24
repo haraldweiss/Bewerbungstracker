@@ -2629,20 +2629,43 @@ async function quickStatusChange(id, newStatus) {
         showToast(`Status aktualisiert: ${newStatus}`, 'success');
     } catch (error) {
         console.error('Status sync error:', error);
-        showToast('⚠️ Status lokal gespeichert, DB-Sync fehler: ' + error.message, 'warning');
+
+        // Fetch actual data from database to restore authoritative values
+        try {
+            console.log('Fetching actual data from database to restore consistency...');
+            const dbData = await Auth.fetch(`/applications/${id}`, {
+                method: 'GET'
+            });
+
+            // Restore state to match database (DB is authoritative)
+            state.bewerbungen[idx].status = dbData.status;
+            state.bewerbungen[idx].updatedAt = dbData.updated_at;
+            saveToStorage();
+            renderAll();
+
+            showToast(`⚠️ Status-Update fehlgeschlagen. Datenbank-Wert wiederhergestellt: ${dbData.status}`, 'warning');
+        } catch (fetchError) {
+            console.error('Failed to fetch DB data for consistency:', fetchError);
+            // If we can't fetch from DB either, rollback to oldStatus locally
+            state.bewerbungen[idx].status = oldStatus;
+            saveToStorage();
+            renderAll();
+            showToast(`❌ Status-Update fehlgeschlagen. Wert auf "${oldStatus}" zurückgesetzt.`, 'error');
+        }
     }
 
-    // Push-Benachrichtigung senden
-    if (newStatus !== oldStatus && ['antwort', 'interview', 'zusage', 'absage'].includes(newStatus)) {
+    // Push-Benachrichtigung senden (nur wenn erfolgreich)
+    // Check current status - only send if it actually changed and is current
+    const finalStatus = state.bewerbungen[idx].status;
+    if (finalStatus !== oldStatus && ['antwort', 'interview', 'zusage', 'absage'].includes(finalStatus)) {
         notifyStatusChange(
             state.bewerbungen[idx].firma,
             state.bewerbungen[idx].position,
-            newStatus
+            finalStatus
         );
     }
 
     renderAll();
-    showToast(`Status → ${newStatus}`, 'success');
 }
 
 function deleteFromDetail() {
