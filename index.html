@@ -50,12 +50,48 @@
         /* HEADER */
         header {
             background:linear-gradient(135deg,var(--primary-dark),var(--primary));
-            padding:0 2rem; display:flex; align-items:center;
-            justify-content:space-between; height:64px;
-            box-shadow:var(--shadow); position:sticky; top:0; z-index:100;
+            display:flex;
+            flex-wrap:wrap;
+            align-items:center;
+            justify-content:space-between;
+            gap:0.5rem;
+            padding:0.5rem 1rem;
+            min-height:50px;
+            box-shadow:var(--shadow);
+            position:sticky;
+            top:0;
+            z-index:100;
+        }
+        @media (min-width:481px) {
+            header {
+                padding:0.75rem 1.5rem;
+                min-height:64px;
+            }
+        }
+        @media (min-width:1025px) {
+            header {
+                padding:1rem 2rem;
+            }
         }
         .logo { display:flex; align-items:center; gap:0.75rem; font-size:1.25rem; font-weight:700; }
-        .header-actions { display:flex; align-items:center; gap:0.75rem; }
+        .header-actions {
+            display:flex;
+            gap:0.5rem;
+            flex-wrap:wrap;
+            flex:1;
+            justify-content:flex-end;
+            align-items:center;
+        }
+        .header-actions .btn {
+            padding:0.4rem 0.8rem;
+            font-size:0.8rem;
+        }
+        @media (min-width:768px) {
+            .header-actions .btn {
+                padding:0.55rem 1.1rem;
+                font-size:0.9rem;
+            }
+        }
 
         /* LAYOUT */
         .app-layout { display:grid; grid-template-columns:220px 1fr; height:calc(100vh - 64px); }
