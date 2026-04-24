@@ -2306,7 +2306,19 @@ function switchTab(el, tabId) {
 /* ═══════════════════════════════════════════════════════
    RENDER DASHBOARD
 ═══════════════════════════════════════════════════════ */
-function renderAll() { renderDashboard(); renderBewerbungen(); }
+function renderAll() {
+    renderDashboard();
+    renderBewerbungen();
+    renderKanban();
+    // Also refresh the currently active view
+    const activeView = document.querySelector('.view.active');
+    if (activeView) {
+        const viewName = activeView.id.replace('view-', '');
+        if (viewName === 'dashboard') renderDashboard();
+        if (viewName === 'bewerbungen') renderBewerbungen();
+        if (viewName === 'kanban') renderKanban();
+    }
+}
 
 function renderDashboard() {
     const b = state.bewerbungen;
