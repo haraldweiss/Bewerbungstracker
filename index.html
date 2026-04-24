@@ -3648,7 +3648,8 @@ async function testSmtpConnection() {
     // Wait a moment, then check service status
     setTimeout(async () => {
         try {
-            const status = await Auth.fetch(EMAIL_SERVICE_URL + '/api/status');
+            const response = await fetch(EMAIL_SERVICE_URL + '/api/status');
+            const status = await response.json();
             if (status.smtp_configured) {
                 updateSmtpStatus('✅ SMTP verbunden und konfiguriert');
                 showToast('SMTP-Verbindung erfolgreich!', 'success');
