@@ -35,6 +35,20 @@
             --tablet-max: 1024px;
             --desktop-min: 1025px;
             --large-desktop-min: 1440px;
+            /* Responsive Typography */
+            font-size: 14px;
+        }
+
+        @media (min-width: 481px) {
+            :root {
+                font-size: 15px;
+            }
+        }
+
+        @media (min-width: 768px) {
+            :root {
+                font-size: 16px;
+            }
         }
 
         :root[data-scheme="light"] {
@@ -46,6 +60,32 @@
         }
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+        /* RESPONSIVE TYPOGRAPHY */
+        h1 { font-size: 1.5rem; font-weight: 700; }
+        h2 { font-size: 1.25rem; font-weight: 700; }
+        h3 { font-size: 1.1rem; font-weight: 700; }
+
+        @media (min-width: 768px) {
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+            h3 { font-size: 1.25rem; }
+        }
+
+        /* FORM & INPUT RESPONSIVE SIZING */
+        input,
+        select,
+        textarea {
+            font-size: 16px;
+        }
+
+        @media (min-width: 768px) {
+            input,
+            select,
+            textarea {
+                font-size: 14px;
+            }
+        }
 
         /* HEADER */
         header {
