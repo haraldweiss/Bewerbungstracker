@@ -2589,13 +2589,36 @@ function showDetail(id) {
     openModal('detailModal');
 }
 
-function quickStatusChange(id, newStatus) {
+async function quickStatusChange(id, newStatus) {
     const idx = state.bewerbungen.findIndex(x => x.id === id);
     if (idx === -1) return;
     const oldStatus = state.bewerbungen[idx].status;
+
+    // Update local state
     state.bewerbungen[idx].status = newStatus;
     state.bewerbungen[idx].updatedAt = new Date().toISOString();
     saveToStorage();
+
+    // Sync to database
+    try {
+        const response = await Auth.fetch(`/applications/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+                status: newStatus,
+                applied_date: state.bewerbungen[idx].datum
+            })
+        });
+
+        // Update with server response
+        if (response.updated_at) {
+            state.bewerbungen[idx].updatedAt = response.updated_at;
+        }
+
+        showToast(`Status aktualisiert: ${newStatus}`, 'success');
+    } catch (error) {
+        console.error('Status sync error:', error);
+        showToast('⚠️ Status lokal gespeichert, DB-Sync fehler: ' + error.message, 'warning');
+    }
 
     // Push-Benachrichtigung senden
     if (newStatus !== oldStatus && ['antwort', 'interview', 'zusage', 'absage'].includes(newStatus)) {
