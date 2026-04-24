@@ -99,7 +99,10 @@ class BackupClient {
         const formData = new FormData();
         formData.append('backup', file);
 
-        const response = await fetch(`${window.location.origin}${this.baseUrl}/import`, {
+        const url = `${window.location.origin}${this.baseUrl}/import`;
+        console.log('Importing backup:', { url, fileName: file.name, fileSize: file.size });
+
+        const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -107,8 +110,12 @@ class BackupClient {
             body: formData
         });
 
+        console.log('Import response:', { status: response.status, ok: response.ok });
+
         if (!response.ok) {
-            throw new Error(`Import failed: ${response.status}`);
+            const errorData = await response.json().catch(() => ({}));
+            console.error('Import error response:', errorData);
+            throw new Error(`Import failed: ${response.status} - ${errorData.error || 'Unknown error'}`);
         }
 
         return await response.json();
