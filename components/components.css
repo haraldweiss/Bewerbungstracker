@@ -331,9 +331,9 @@ textarea::placeholder {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 16px;
-    padding: 1.5rem;
+    padding: 1rem;
     width: 100%;
-    max-width: 600px;
+    max-width: 90%;
     max-height: 90vh;
     overflow-y: auto;
     box-shadow: var(--shadow);
@@ -1140,14 +1140,28 @@ tr:last-child td {
     }
 }
 
+@media (min-width: 481px) {
+    .modal {
+        max-width: 500px;
+    }
+}
+
+@media (min-width: 768px) {
+    .modal {
+        max-width: 600px;
+        padding: 1.5rem;
+    }
+}
+
+@media (min-width: 1024px) {
+    .modal {
+        max-width: 700px;
+    }
+}
+
 @media (max-width: 768px) {
     .detail-grid {
         grid-template-columns: 1fr;
-    }
-
-    .modal {
-        max-width: calc(100vw - 2rem);
-        padding: 1rem;
     }
 
     .tabs {
