@@ -89,6 +89,36 @@ class Application(db.Model):
         return f'<Application {self.company} - {self.position}>'
 
 
+class BackupHistory(db.Model):
+    __tablename__ = 'backup_history'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False, index=True)
+
+    # Encrypted backup data (JSON)
+    encrypted_data = db.Column(db.Text, nullable=False)
+
+    # Format: 'json' or 'csv'
+    format = db.Column(db.String(10), default='json')
+
+    # Unencrypted version identifier (version 1, 2, 3, etc. per user)
+    version = db.Column(db.Integer, default=1)
+
+    # Type: 'automatic' (on entry creation) or 'manual' (user-requested)
+    backup_type = db.Column(db.String(20), default='automatic')
+
+    # Summary of backup (e.g., "5 applications, 12 emails")
+    summary = db.Column(db.String(255))
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    # Foreign key relationship
+    user = db.relationship('User', backref='backups', foreign_keys=[user_id])
+
+    def __repr__(self):
+        return f'<BackupHistory user={self.user_id} v{self.version} {self.created_at}>'
+
+
 class Email(db.Model):
     __tablename__ = 'emails'
 
