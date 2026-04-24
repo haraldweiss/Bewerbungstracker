@@ -369,7 +369,9 @@ textarea::placeholder {
    ────────────────────────────────────────────────────────────────────────── */
 
 .table-wrapper {
+    width: 100%;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 table {
@@ -401,6 +403,68 @@ tr:hover td {
 
 tr:last-child td {
     border-bottom: none;
+}
+
+/* Mobile-first responsive table layout */
+@media (max-width: 767px) {
+    .table-wrapper {
+        overflow-x: visible;
+    }
+
+    .table-wrapper table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+
+    .table-wrapper thead {
+        display: none;
+    }
+
+    .table-wrapper tbody,
+    .table-wrapper tr,
+    .table-wrapper td {
+        display: block;
+        width: 100%;
+    }
+
+    .table-wrapper tr {
+        margin-bottom: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1rem;
+        background: var(--bg-card);
+    }
+
+    .table-wrapper tr:hover {
+        border-color: var(--primary);
+    }
+
+    .table-wrapper tr:hover td {
+        background: transparent;
+    }
+
+    .table-wrapper td {
+        padding: 0.5rem 0;
+        text-align: right;
+        padding-left: 50%;
+        position: relative;
+        border: none;
+        margin-bottom: 0.5rem;
+    }
+
+    .table-wrapper td:last-child {
+        margin-bottom: 0;
+    }
+
+    .table-wrapper td::before {
+        content: attr(data-label);
+        position: absolute;
+        left: 0.5rem;
+        font-weight: bold;
+        width: 45%;
+        text-align: left;
+        color: var(--text-muted);
+    }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
