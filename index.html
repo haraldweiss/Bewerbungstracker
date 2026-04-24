@@ -93,13 +93,80 @@
             }
         }
 
-        /* LAYOUT */
-        .app-layout { display:grid; grid-template-columns:220px 1fr; height:calc(100vh - 64px); }
-        aside {
-            background:var(--bg-card); border-right:1px solid var(--border);
-            padding:1rem 0.75rem; overflow-y:auto; display:flex; flex-direction:column; gap:0.25rem;
+        #mobileMenuBtn {
+          display: none;
+          padding: 0.4rem 0.6rem;
+          font-size: 1.2rem;
         }
-        main { overflow-y:auto; padding:2rem; }
+
+        @media (max-width: 767px) {
+          #mobileMenuBtn {
+            display: block;
+          }
+        }
+
+        /* LAYOUT */
+        .app-layout {
+          display: grid;
+          grid-template-columns: 1fr;
+          height: calc(100vh - 50px);
+        }
+
+        @media (min-width: 768px) {
+          .app-layout {
+            grid-template-columns: 220px 1fr;
+            height: calc(100vh - 64px);
+          }
+        }
+
+        aside {
+          display: none;
+          background: var(--bg-card);
+          border-right: 1px solid var(--border);
+          flex-direction: column;
+          overflow-y: auto;
+          position: fixed;
+          left: 0;
+          top: 50px;
+          width: 100%;
+          height: calc(100vh - 50px);
+          z-index: 90;
+          padding: 1rem 0.75rem;
+          gap: 0.25rem;
+        }
+
+        /* Mobile menu open state */
+        body.nav-open aside {
+          display: flex;
+        }
+
+        @media (min-width: 768px) {
+          aside {
+            display: flex;
+            position: relative;
+            top: 0;
+            width: 220px;
+            height: 100%;
+            z-index: auto;
+          }
+        }
+
+        main {
+          overflow-y: auto;
+          padding: 1rem;
+        }
+
+        @media (min-width: 768px) {
+          main {
+            padding: 2rem;
+          }
+        }
+
+        @media (min-width: 1440px) {
+          main {
+            padding: 2.5rem;
+          }
+        }
 
         /* NAV */
         .nav-btn {
@@ -187,8 +254,6 @@
         .google-logo { width:20px; height:20px; }
 
         /* TABS, HIGHLIGHT - Now in components.css */
-
-        @media(max-width:768px) { .app-layout{grid-template-columns:1fr} aside{display:none} }
     </style>
 </head>
 <body>
@@ -196,6 +261,7 @@
 <header>
     <div class="logo"><span>📋</span> Bewerbungs-Tracker</div>
     <div class="header-actions">
+        <button id="mobileMenuBtn" class="btn btn-secondary btn-sm" onclick="toggleMobileMenu()">☰</button>
         <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.9rem;background:rgba(255,255,255,0.1);border-radius:20px;font-size:0.82rem;border:1px solid rgba(255,255,255,0.2);">
             <span id="connStatusDot" style="width:8px;height:8px;border-radius:50%;background:#94A3B8;display:inline-block;"></span>
             <span id="connStatusText">Nicht verbunden</span>
@@ -4478,6 +4544,26 @@ function initColorScheme() {
     const saved = localStorage.getItem('colorScheme') || 'dark';
     applyColorScheme(saved);
 }
+
+// ── Mobile Menu Toggle ─────────────────────────────────────────────────────
+
+function toggleMobileMenu() {
+    document.body.classList.toggle('nav-open');
+}
+
+// Close menu when navigation item is clicked
+document.querySelectorAll('aside button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.body.classList.remove('nav-open');
+    });
+});
+
+// Close menu when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('aside') && !e.target.closest('#mobileMenuBtn')) {
+        document.body.classList.remove('nav-open');
+    }
+});
 
 // ── Proxy Status & Cache Tracking ──────────────────────────────────────────────
 
