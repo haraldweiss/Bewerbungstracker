@@ -13,19 +13,11 @@ class BackupClient {
      * @returns {Promise<Array>} Array of backup objects with version, created_at, type, summary
      */
     async listBackups() {
-        try {
-            const response = await Auth.fetch(`${this.baseUrl}/list`, {
-                method: 'GET'
-            });
-            if (!response.ok) {
-                throw new Error(`Failed to list backups: ${response.status}`);
-            }
-            const data = await response.json();
-            return data.backups || [];
-        } catch (error) {
-            console.error('Error listing backups:', error);
-            throw error;
-        }
+        const data = await Auth.fetch(`${this.baseUrl}/list`, {
+            method: 'GET'
+        });
+        // Auth.fetch already parses JSON and throws on errors
+        return data.backups || [];
     }
 
     /**
@@ -35,24 +27,28 @@ class BackupClient {
      * @returns {Promise<Blob>} File blob for download
      */
     async exportData(format = 'json', includeEmails = true) {
-        try {
-            const url = new URL(`${window.location.origin}${this.baseUrl}/export`);
-            url.searchParams.append('format', format);
-            url.searchParams.append('include_emails', includeEmails);
-
-            const response = await Auth.fetch(url.toString(), {
-                method: 'GET'
-            });
-
-            if (!response.ok) {
-                throw new Error(`Export failed: ${response.status}`);
-            }
-
-            return await response.blob();
-        } catch (error) {
-            console.error('Error exporting data:', error);
-            throw error;
+        // Note: For binary responses, we need to use native fetch with Bearer token
+        const token = Auth.getToken();
+        if (!token) {
+            throw new Error('Not authenticated');
         }
+
+        const url = new URL(`${window.location.origin}${this.baseUrl}/export`);
+        url.searchParams.append('format', format);
+        url.searchParams.append('include_emails', includeEmails);
+
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Export failed: ${response.status}`);
+        }
+
+        return await response.blob();
     }
 
     /**
@@ -62,23 +58,12 @@ class BackupClient {
      * @returns {Promise<Object>} Backup object with data
      */
     async getBackup(version, decrypt = true) {
-        try {
-            const url = new URL(`${window.location.origin}${this.baseUrl}/${version}`);
-            url.searchParams.append('decrypt', decrypt);
-
-            const response = await Auth.fetch(url.toString(), {
-                method: 'GET'
-            });
-
-            if (!response.ok) {
-                throw new Error(`Failed to get backup: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Error getting backup:', error);
-            throw error;
-        }
+        const url = `/backup/${version}?decrypt=${decrypt}`;
+        const data = await Auth.fetch(url, {
+            method: 'GET'
+        });
+        // Auth.fetch already parses JSON and throws on errors
+        return data;
     }
 
     /**
@@ -88,27 +73,15 @@ class BackupClient {
      * @returns {Promise<Object>} Restore result with summary
      */
     async restoreBackup(version, clearExisting = false) {
-        try {
-            const response = await Auth.fetch(`${this.baseUrl}/${version}/restore`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    confirm: true,
-                    clear_existing: clearExisting
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Restore failed: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Error restoring backup:', error);
-            throw error;
-        }
+        const data = await Auth.fetch(`/backup/${version}/restore`, {
+            method: 'POST',
+            body: JSON.stringify({
+                confirm: true,
+                clear_existing: clearExisting
+            })
+        });
+        // Auth.fetch already parses JSON and throws on errors
+        return data;
     }
 
     /**
@@ -117,24 +90,28 @@ class BackupClient {
      * @returns {Promise<Object>} Import result with summary
      */
     async importBackup(file) {
-        try {
-            const formData = new FormData();
-            formData.append('file', file);
-
-            const response = await Auth.fetch(`${this.baseUrl}/import`, {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                throw new Error(`Import failed: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Error importing backup:', error);
-            throw error;
+        // For multipart form data, use native fetch with Bearer token
+        const token = Auth.getToken();
+        if (!token) {
+            throw new Error('Not authenticated');
         }
+
+        const formData = new FormData();
+        formData.append('backup', file);
+
+        const response = await fetch(`${window.location.origin}${this.baseUrl}/import`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error(`Import failed: ${response.status}`);
+        }
+
+        return await response.json();
     }
 
     /**
@@ -143,14 +120,9 @@ class BackupClient {
      * @param {string} filename - Name for downloaded file
      */
     async downloadExport(format = 'json', filename = null) {
-        try {
-            const blob = await this.exportData(format, true);
-            const defaultFilename = filename || `backup_${new Date().toISOString().split('T')[0]}.${format}`;
-            this._downloadBlob(blob, defaultFilename);
-        } catch (error) {
-            console.error('Error downloading export:', error);
-            throw error;
-        }
+        const blob = await this.exportData(format, true);
+        const defaultFilename = filename || `backup_${new Date().toISOString().split('T')[0]}.${format}`;
+        this._downloadBlob(blob, defaultFilename);
     }
 
     /**
