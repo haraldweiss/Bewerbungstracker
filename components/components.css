@@ -156,7 +156,9 @@
    ────────────────────────────────────────────────────────────────────────── */
 
 .btn {
-    padding: 0.55rem 1.1rem;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.5rem 1rem;
     border-radius: 8px;
     border: none;
     font-size: 0.88rem;
@@ -165,7 +167,8 @@
     transition: all 0.2s;
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    justify-content: center;
+    gap: 0.5rem;
 }
 
 .btn:hover {
@@ -209,6 +212,7 @@
 }
 
 .btn-sm {
+    min-height: 36px;
     padding: 0.35rem 0.75rem;
     font-size: 0.8rem;
 }
@@ -237,6 +241,17 @@
 .button-group.button-group-justified .btn {
     flex: 1;
     justify-content: center;
+}
+
+@media (min-width: 768px) {
+    .btn {
+        min-height: auto;
+        min-width: auto;
+    }
+
+    .btn-sm {
+        min-height: auto;
+    }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
