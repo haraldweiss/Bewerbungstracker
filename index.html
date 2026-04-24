@@ -4462,7 +4462,7 @@ const AdminSettings = {
                 </td>
                 <td style="padding: 0.75rem;">${u.is_admin ? '👑 Admin' : 'Benutzer'}</td>
                 <td style="padding: 0.75rem;">
-                    <button class="btn btn-sm" style="padding:0.4rem 0.8rem;font-size:0.8rem;" onclick="AdminSettings.showActions(${u.id})">Aktionen</button>
+                    <button class="btn btn-sm" style="padding:0.4rem 0.8rem;font-size:0.8rem;" onclick="AdminSettings.showActions('${u.id}')">Aktionen</button>
                 </td>
             </tr>
         `).join('');
@@ -5875,17 +5875,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <!-- Backup Client for database sync -->
 <script src="/frontend/backup-client.js"></script>
 <script>
-    // Initialize BackupClient as global variable for use in Settings page import
-    let backupClient = null;
-
-    window.addEventListener('DOMContentLoaded', () => {
-        if (typeof BackupClient !== 'undefined') {
-            backupClient = new BackupClient();
-            console.log('✅ BackupClient initialized for Settings page sync');
-        } else {
-            console.warn('⚠️ BackupClient not available - database sync disabled');
-        }
-    });
+    // BackupClient is initialized by BackupManager in Settings
 </script>
 
 </body>
