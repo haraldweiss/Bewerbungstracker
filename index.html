@@ -1179,12 +1179,19 @@ function getAuthHeader() {
     return {};
 }
 
-// Wrapper für API requests
+// Wrapper für API requests - adds auth token to requests
 async function fetchAPI(url, options = {}) {
+    const token = typeof Auth !== 'undefined' ? Auth.getToken() : null;
+
     const headers = {
         'Content-Type': 'application/json',
         ...(options.headers || {})
     };
+
+    // Add Authorization header if token is available
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
 
     const response = await fetch(url, {
         ...options,
