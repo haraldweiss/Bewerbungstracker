@@ -1627,32 +1627,55 @@ function checkIfEmailSummaryShouldBeSent() {
 
 async function loadFromStorage() {
     try {
-        // Try to load from Data Service (SQLite)
-        const response = await fetchAPI('/api/applications');
-        if (response.ok) {
-            const data = await response.json();
+        console.log('🔄 loadFromStorage() called, checking if Auth is available...');
+
+        // Check if Auth is available
+        if (typeof Auth === 'undefined') {
+            console.warn('⚠️ Auth not available yet, loading from localStorage only');
+            throw new Error('Auth not available');
+        }
+
+        console.log('✅ Auth available, fetching from /api/applications...');
+
+        // Try to load from Database via API (with proper auth)
+        // Use Auth.fetch which handles authentication automatically
+        const data = await Auth.fetch('/api/applications', { method: 'GET' });
+
+        console.log('📊 API Response:', data);
+
+        if (data && data.applications) {
             state.bewerbungen = data.applications || [];
+            console.log(`✅ Data loaded from Database: ${state.bewerbungen.length} applications`);
+        } else {
+            console.warn('⚠️ API response missing applications array:', data);
+            throw new Error('No applications in API response');
         }
 
-        // Load settings from Data Service
-        const settingsResponse = await fetchAPI('/api/settings');
-        if (settingsResponse.ok) {
-            const settingsData = await settingsResponse.json();
-            state.settings = { ...state.settings, ...settingsData.settings };
+        // Try to load settings (may not exist)
+        try {
+            const settingsData = await Auth.fetch('/api/settings', { method: 'GET' });
+            if (settingsData && settingsData.settings) {
+                state.settings = { ...state.settings, ...settingsData.settings };
+                console.log('✅ Settings loaded from API');
+            }
+        } catch(e) {
+            console.warn('⚠️ Settings API not available:', e.message);
         }
-
-        console.log('✅ Data loaded from SQLite (Data Service)');
     } catch(e) {
-        console.warn('⚠️ Data Service unavailable, loading from localStorage:', e.message);
-        // Fallback to localStorage if Data Service is not available
+        console.error('❌ loadFromStorage() error:', e.message, e);
+        console.warn('⚠️ Database unavailable, loading from localStorage...');
+        // Fallback to localStorage if Database is not available
         try {
             const saved = localStorage.getItem('bewerbungsTrackerV3');
             if (saved) {
                 const data = JSON.parse(saved);
                 state.bewerbungen = data.bewerbungen || [];
                 state.settings = { ...state.settings, ...(data.settings || {}) };
+                console.log(`✅ Data loaded from localStorage: ${state.bewerbungen.length} applications`);
+            } else {
+                console.warn('⚠️ No data in localStorage either');
             }
-        } catch(err) { console.error('Load error:', err); }
+        } catch(err) { console.error('❌ localStorage load error:', err); }
     }
 }
 
@@ -1913,12 +1936,27 @@ function showView(name) {
     const nav = document.getElementById('nav-' + name);
     if (view) { view.classList.add('active'); }
     if (nav) nav.classList.add('active');
-    if (name === 'dashboard') renderDashboard();
-    if (name === 'bewerbungen') renderBewerbungen();
-    if (name === 'kanban') renderKanban();
-    if (name === 'deleted') loadDeletedEntries();
-    if (name === 'users') loadUsersPage();
-    if (name === 'cvcompare') showCVTab('upload');
+
+    // Reload data from database when switching to views that need current data
+    // This ensures data is fresh after navigation or when returning from other tabs
+    if (['dashboard', 'bewerbungen', 'einstellungen'].includes(name)) {
+        console.log(`📄 Switching to ${name} view - reloading data from database...`);
+        loadFromStorage().then(() => {
+            if (name === 'dashboard') renderDashboard();
+            if (name === 'bewerbungen') renderBewerbungen();
+        }).catch(e => {
+            console.error(`❌ Failed to reload for ${name}:`, e);
+            // Still render with existing data if reload fails
+            if (name === 'dashboard') renderDashboard();
+            if (name === 'bewerbungen') renderBewerbungen();
+        });
+    } else {
+        // For other views, just render normally
+        if (name === 'kanban') renderKanban();
+        if (name === 'deleted') loadDeletedEntries();
+        if (name === 'users') loadUsersPage();
+        if (name === 'cvcompare') showCVTab('upload');
+    }
 }
 
 function switchTab(el, tabId) {
@@ -3763,9 +3801,10 @@ function handleImport(event) {
                     showToast(message, 'success');
 
                     // === NEW: Also sync to database via BackupClient API ===
-                    if (importedCount > 0 && typeof backupClient !== 'undefined') {
+                    if (importedCount > 0 && backupClient !== null) {
                         try {
                             console.log(`🔄 Syncing ${importedCount} imported applications to database...`);
+                            console.log('📋 Applications for DB:', applicationsForDb);
 
                             // Prepare backup data in the format the API expects
                             const backupData = {
@@ -3774,12 +3813,17 @@ function handleImport(event) {
                                 emails: []
                             };
 
+                            console.log('📦 Backup data prepared:', backupData);
+                            console.log('📦 JSON stringified:', JSON.stringify(backupData));
+
                             // Create a temporary JSON file to import via the backup API
                             const backupFile = new File(
                                 [JSON.stringify(backupData)],
                                 'settings-import-backup.json',
                                 { type: 'application/json' }
                             );
+
+                            console.log('📄 File created:', { name: backupFile.name, size: backupFile.size, type: backupFile.type });
 
                             // Import via BackupClient API
                             const dbResult = await backupClient.importBackup(backupFile);
@@ -3791,7 +3835,8 @@ function handleImport(event) {
                                 'info'
                             );
                         } catch (apiError) {
-                            console.warn('⚠️ Database sync failed (data in localStorage only):', apiError);
+                            console.error('❌ Database sync error:', apiError);
+                            console.error('Error message:', apiError.message);
                             // Don't fail the entire import - localStorage data is safe
                             showToast(
                                 `⚠️ Offline-Speicherung OK, aber Datenbank-Sync fehlgeschlagen: ${apiError.message}`,
@@ -5073,19 +5118,45 @@ document.addEventListener('DOMContentLoaded', () => {
     initColorScheme();
     init();
     loadCustomAIPlatforms();
+
+    // Add visibility change listener to reload data when tab regains focus
+    // This ensures data stays in sync when user switches to other tabs/windows
+    document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible') {
+            console.log('👁️ Tab regained focus - checking for data updates...');
+            try {
+                await loadFromStorage();
+                // Refresh current view with new data
+                const activeView = document.querySelector('.view.active');
+                if (activeView) {
+                    const viewName = activeView.id.replace('view-', '');
+                    console.log(`🔄 Refreshing ${viewName} with updated data`);
+                    if (viewName === 'dashboard') renderDashboard();
+                    if (viewName === 'bewerbungen') renderBewerbungen();
+                    if (viewName === 'kanban') renderKanban();
+                }
+            } catch (e) {
+                console.error('⚠️ Failed to refresh on tab focus:', e);
+            }
+        }
+    });
 });
 </script>
 
 <!-- Backup Client for database sync -->
-<script src="/frontend/js/backup-client.js"></script>
+<script src="/frontend/backup-client.js"></script>
 <script>
-    // Initialize BackupClient for use in Settings page import
-    if (typeof BackupClient !== 'undefined') {
-        const backupClient = new BackupClient();
-        console.log('✅ BackupClient initialized for Settings page sync');
-    } else {
-        console.warn('⚠️ BackupClient not available - database sync disabled');
-    }
+    // Initialize BackupClient as global variable for use in Settings page import
+    let backupClient = null;
+
+    window.addEventListener('DOMContentLoaded', () => {
+        if (typeof BackupClient !== 'undefined') {
+            backupClient = new BackupClient();
+            console.log('✅ BackupClient initialized for Settings page sync');
+        } else {
+            console.warn('⚠️ BackupClient not available - database sync disabled');
+        }
+    });
 </script>
 
 </body>
