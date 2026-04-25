@@ -138,7 +138,43 @@ sudo -u root venv/bin/python scripts/create_user.py \
     --email harald@example.com --admin --auto-confirm
 ```
 
-### B7. Verifikation
+### B7. DB-Backups (täglich, automatisch)
+
+```bash
+sudo cp deploy/systemd/bewerbungen-backup.service /etc/systemd/system/
+sudo cp deploy/systemd/bewerbungen-backup.timer /etc/systemd/system/
+sudo mkdir -p /var/backups/bewerbungen && sudo chmod 700 /var/backups/bewerbungen
+sudo systemctl daemon-reload
+sudo systemctl enable --now bewerbungen-backup.timer
+
+# Manuell starten (für ersten Test):
+sudo systemctl start bewerbungen-backup.service
+ls -lh /var/backups/bewerbungen/
+sudo tail /var/log/bewerbungen/backup.log
+```
+
+Default: täglich 03:00 (mit bis zu 30 Min Jitter), Retention 30 Tage. Nutzt
+SQLite-Backup-API für **atomare Online-Snapshots** – kein Lock-Konflikt mit
+laufenden gunicorn-Workers. Komprimiert jedes Backup mit gzip.
+
+**Restore-Beispiel:**
+```bash
+# Letztes Backup zurückspielen:
+LATEST=$(ls -t /var/backups/bewerbungen/bewerbungstracker_*.db.gz | head -1)
+sudo systemctl stop bewerbungen
+sudo zcat "$LATEST" > /var/www/bewerbungen/instance/bewerbungstracker.db
+sudo chcon -t httpd_sys_rw_content_t /var/www/bewerbungen/instance/bewerbungstracker.db
+sudo systemctl start bewerbungen
+```
+
+Konfiguration via Env-Vars (in der `.service`-Unit überschreibbar):
+```
+BACKUP_DIR=/var/backups/bewerbungen
+RETENTION_DAYS=30
+DB_PATHS=/var/www/bewerbungen/instance/bewerbungstracker.db,/var/www/bewerbungen/email_config.db
+```
+
+### B8. Verifikation
 
 ```bash
 curl -sI https://bewerbungen.deinedomain.de/                            # 200

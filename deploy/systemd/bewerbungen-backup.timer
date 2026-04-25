@@ -1,0 +1,14 @@
+# systemd timer: täglicher DB-Backup-Run (03:00 + bis zu 30 min Random-Jitter).
+# Persistent=true holt ausgefallene Runs nach (z.B. nach Reboot).
+[Unit]
+Description=Daily Bewerbungstracker DB Backup
+Requires=bewerbungen-backup.service
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=30min
+Persistent=true
+Unit=bewerbungen-backup.service
+
+[Install]
+WantedBy=timers.target

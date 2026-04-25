@@ -1,0 +1,14 @@
+# systemd unit: führt das DB-Backup einmalig aus (von Timer getriggert).
+# Install: cp deploy/systemd/bewerbungen-backup.{service,timer} /etc/systemd/system/
+#          systemctl daemon-reload
+#          systemctl enable --now bewerbungen-backup.timer
+[Unit]
+Description=Bewerbungstracker DB Backup
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/www/bewerbungen
+ExecStart=/bin/bash -c 'exec /usr/bin/python3 /var/www/bewerbungen/scripts/backup_db.py'
+StandardOutput=append:/var/log/bewerbungen/backup.log
+StandardError=append:/var/log/bewerbungen/backup.log
