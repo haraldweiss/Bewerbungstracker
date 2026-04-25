@@ -1495,45 +1495,56 @@ async function editUserModal(userId) {
 async function saveUser(event) {
     event.preventDefault();
 
-    const username = document.getElementById('userUsername').value.trim();
-    const email = document.getElementById('userEmail').value.trim();
+    // Backend-Schema: User hat KEIN username-Feld; email + password reichen.
+    // Das Username-Feld im UI dient nur als optionaler Anzeigename (nicht persistiert).
+    const email = document.getElementById('userEmail').value.trim().toLowerCase();
     const password = document.getElementById('userPassword').value.trim();
     const isAdmin = document.getElementById('userIsAdmin').checked;
 
-    if (!username) {
-        alert('Benutzername erforderlich');
+    if (!email || !email.includes('@')) {
+        alert('Gültige Email erforderlich');
         return;
     }
-
-    if (!editingUserId && !password) {
-        alert('Passwort erforderlich für neuen Nutzer');
+    if (!editingUserId && (!password || password.length < 8)) {
+        alert('Passwort mit mindestens 8 Zeichen erforderlich');
         return;
     }
 
     try {
-        const data = { username, email, is_admin: isAdmin };
-        if (password) data.password = password;
-
-        const url = editingUserId ? `/api/admin/users/${editingUserId}` : '/api/admin/users';
-        const method = editingUserId ? 'PUT' : 'POST';
-
-        const response = await fetchAPI(url, {
-            method,
-            body: JSON.stringify(data)
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            alert(error.message || 'Fehler beim Speichern');
-            return;
+        // POST: neuer User – Backend legt Salt + DEK an und setzt confirmed/active.
+        // PATCH /promote: nur Admin-Status togglen (Edit existierender User).
+        if (!editingUserId) {
+            const result = await Auth.fetch('/admin/users', {
+                method: 'POST',
+                body: JSON.stringify({
+                    email,
+                    password,
+                    is_admin: isAdmin,
+                })
+            });
+            if (result.email_sent) {
+                showToast(`✅ Nutzer angelegt – Bestätigungs-Email an ${email} versendet`, 'success');
+            } else {
+                showToast(`⚠️ Nutzer angelegt, aber Bestätigungs-Email konnte NICHT versendet werden. SMTP prüfen!`, 'warning');
+            }
+        } else {
+            // Edit-Mode: aktuell unterstützt das Backend nur Promote/Demote.
+            // Passwort-Änderung über separaten /reset-password-Endpoint.
+            const target = (state.adminUsers || []).find(u => u.id === editingUserId);
+            if (target && target.is_admin !== isAdmin) {
+                await Auth.fetch(`/admin/users/${editingUserId}/promote`, { method: 'PATCH' });
+            }
+            if (password) {
+                showToast('ℹ️ Passwort kann nur via "Reset-Password" geändert werden', 'info');
+            }
+            showToast('✅ Nutzer aktualisiert', 'success');
         }
 
         closeModal('userModal');
         loadUsersPage();
-        showToast(editingUserId ? '✅ Nutzer aktualisiert' : '✅ Neuer Nutzer erstellt', 'success');
     } catch (error) {
         console.error('Error saving user:', error);
-        alert('Fehler beim Speichern des Nutzers');
+        alert('Fehler beim Speichern: ' + (error.message || 'unbekannt'));
     }
 }
 
@@ -1893,76 +1904,27 @@ async function loadFromStorage() {
         }
 
         if (data && data.applications && Array.isArray(data.applications)) {
-            // Convert from database format (company, applied_date) to Settings format (firma, datum)
-            console.log('🔄 Converting database format to Settings format...');
-            console.log('📊 Raw DB response (first app):', data.applications[0]);
+            // DB ist Source-of-Truth: alle Felder kommen aus der API. localStorage
+            // wird NICHT mehr für Felder gemerged – das hat in der Vergangenheit
+            // zu UUID/Legacy-ID-Drifts und nicht-persistierten Status-Änderungen
+            // geführt.
+            state.bewerbungen = data.applications.map(app => ({
+                id: app.id,
+                firma: app.company,
+                position: app.position || '',
+                status: app.status || 'beworben',
+                datum: app.applied_date || '',
+                quelle: app.source || '',
+                gehalt: app.salary || '',
+                ort: app.location || '',
+                email: app.contact_email || '',
+                link: app.link || '',
+                notizen: app.notes || '',
+                createdAt: app.created_at || new Date().toISOString(),
+                updatedAt: app.updated_at || new Date().toISOString(),
+            }));
 
-            // Load localStorage data to restore fields that aren't in database (quelle, gehalt, ort, email, link, notizen)
-            let localStorageApps = [];
-            try {
-                const saved = localStorage.getItem('bewerbungsTrackerV3');
-                if (saved) {
-                    const parsedData = JSON.parse(saved);
-                    localStorageApps = parsedData.bewerbungen || [];
-                    console.log(`📦 Loaded ${localStorageApps.length} apps from localStorage for field merging`);
-
-                    // Log first localStorage app to see if it has quelle
-                    if (localStorageApps.length > 0) {
-                        console.log('📦 First localStorage app:', {
-                            firma: localStorageApps[0].firma,
-                            quelle: localStorageApps[0].quelle,
-                            gehalt: localStorageApps[0].gehalt
-                        });
-                    }
-                }
-            } catch(e) {
-                console.warn('⚠️ Could not load localStorage for merging:', e.message);
-            }
-
-            // Create a map of localStorage apps by company name (IDs change in database)
-            const localStorageMap = {};
-            localStorageApps.forEach(app => {
-                const key = (app.firma || '').toLowerCase();
-                localStorageMap[key] = app;
-            });
-
-            state.bewerbungen = data.applications.map((app, idx) => {
-                // Match by company name since database generates new IDs
-                const companyKey = (app.company || '').toLowerCase();
-                const localData = localStorageMap[companyKey] || {};
-
-                const converted = {
-                    id: app.id,
-                    firma: app.company,  // Database uses 'company', Settings uses 'firma'
-                    position: app.position || '',
-                    status: app.status || 'beworben',
-                    datum: app.applied_date || '',  // Database uses 'applied_date', Settings uses 'datum'
-                    // Restore optional fields from localStorage (not stored in database)
-                    quelle: localData.quelle || '',  // Source: where job offer came from
-                    gehalt: localData.gehalt || '',
-                    ort: localData.ort || '',
-                    email: localData.email || '',
-                    link: localData.link || '',
-                    notizen: localData.notizen || '',
-                    createdAt: app.created_at || app.createdAt || new Date().toISOString(),
-                    updatedAt: app.updated_at || app.updatedAt || new Date().toISOString()
-                };
-
-                // Log first app with details about where quelle came from
-                if (idx === 0) {
-                    console.log('🔍 First app conversion:', {
-                        company: app.company,
-                        matchedLocalData: Object.keys(localData).length > 0,
-                        finalQuelle: converted.quelle
-                    });
-                }
-
-                return converted;
-            });
-
-            console.log(`✅ Data loaded from Database: ${state.bewerbungen.length} applications (merged with localStorage)`);
-            console.log('📋 Converted Applications:', state.bewerbungen.slice(0, 3));
-            console.log('🔍 First app quelle (source):', state.bewerbungen[0]?.quelle);
+            console.log(`✅ ${state.bewerbungen.length} Bewerbungen aus DB geladen (Source-of-Truth)`);
         } else {
             console.warn('⚠️ API response missing applications array:', data);
             console.log('🔍 Data structure:', {
@@ -2604,58 +2566,76 @@ function showDetail(id) {
 async function quickStatusChange(id, newStatus) {
     const idx = state.bewerbungen.findIndex(x => x.id === id);
     if (idx === -1) return;
-    const oldStatus = state.bewerbungen[idx].status;
+    const b = state.bewerbungen[idx];
+    const oldStatus = b.status;
 
-    // Update local state
-    state.bewerbungen[idx].status = newStatus;
-    state.bewerbungen[idx].updatedAt = new Date().toISOString();
-    saveToStorage();
-
-    // Sync to database
+    // DB-First: erst die DB updaten, dann den lokalen State daraus übernehmen.
+    // localStorage wird durch saveToStorage() am Ende gespiegelt.
     try {
-        const response = await Auth.fetch(`/applications/${id}`, {
-            method: 'PATCH',
-            body: JSON.stringify({
-                status: newStatus,
-                applied_date: state.bewerbungen[idx].datum
-            })
-        });
+        let response;
+        try {
+            response = await Auth.fetch(`/applications/${id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    status: newStatus,
+                    applied_date: b.datum || null
+                })
+            });
+        } catch (patchError) {
+            // 404 → Datensatz existiert nicht in der DB (z.B. nur lokale UUID
+            // aus der localStorage-Drift-Phase). In dem Fall NICHT revertieren,
+            // sondern als neuen Datensatz POSTen, damit der gewünschte Status
+            // tatsächlich persistiert.
+            const is404 = /404|not found/i.test(patchError.message || '');
+            if (!is404) throw patchError;
 
-        // Update with server response
-        if (response.updated_at) {
-            state.bewerbungen[idx].updatedAt = response.updated_at;
+            console.warn(`Bewerbung ${id} nicht in DB – wird neu angelegt.`);
+            response = await Auth.fetch('/applications', {
+                method: 'POST',
+                body: JSON.stringify({
+                    company: b.firma,
+                    position: b.position,
+                    status: newStatus,
+                    applied_date: b.datum || null,
+                    salary: b.gehalt || null,
+                    location: b.ort || null,
+                    contact_email: b.email || null,
+                    source: b.quelle || null,
+                    link: b.link || null,
+                    notes: b.notizen || null,
+                })
+            });
+
+            // ID hat sich geändert (Server vergibt neue) – im State spiegeln
+            if (response.id && response.id !== id) {
+                state.bewerbungen[idx].id = response.id;
+            }
         }
+
+        // State aus Server-Response übernehmen (DB-authoritative)
+        state.bewerbungen[idx].status = response.status || newStatus;
+        state.bewerbungen[idx].updatedAt = response.updated_at || new Date().toISOString();
 
         showToast(`Status aktualisiert: ${newStatus}`, 'success');
     } catch (error) {
         console.error('Status sync error:', error);
-
-        // Fetch actual data from database to restore authoritative values
+        // Bei sonstigem Fehler: aus DB nachladen, sonst auf oldStatus zurück.
         try {
-            console.log('Fetching actual data from database to restore consistency...');
-            const dbData = await Auth.fetch(`/applications/${id}`, {
-                method: 'GET'
-            });
-
-            // Restore state to match database (DB is authoritative)
+            const dbData = await Auth.fetch(`/applications/${state.bewerbungen[idx].id}`, { method: 'GET' });
             state.bewerbungen[idx].status = dbData.status;
             state.bewerbungen[idx].updatedAt = dbData.updated_at;
-            saveToStorage();
-            renderAll();
-
-            showToast(`⚠️ Status-Update fehlgeschlagen. Datenbank-Wert wiederhergestellt: ${dbData.status}`, 'warning');
+            showToast(`⚠️ Status-Update fehlgeschlagen. Wert aus DB wiederhergestellt: ${dbData.status}`, 'warning');
         } catch (fetchError) {
-            console.error('Failed to fetch DB data for consistency:', fetchError);
-            // If we can't fetch from DB either, rollback to oldStatus locally
             state.bewerbungen[idx].status = oldStatus;
-            saveToStorage();
-            renderAll();
             showToast(`❌ Status-Update fehlgeschlagen. Wert auf "${oldStatus}" zurückgesetzt.`, 'error');
         }
     }
 
-    // Push-Benachrichtigung senden (nur wenn erfolgreich)
-    // Check current status - only send if it actually changed and is current
+    // Persist Cache + UI-Refresh
+    saveToStorage();
+    renderAll();
+
+    // Push-Benachrichtigung senden (nur wenn Status wirklich geändert)
     const finalStatus = state.bewerbungen[idx].status;
     if (finalStatus !== oldStatus && ['antwort', 'interview', 'zusage', 'absage'].includes(finalStatus)) {
         notifyStatusChange(
@@ -2664,8 +2644,6 @@ async function quickStatusChange(id, newStatus) {
             finalStatus
         );
     }
-
-    renderAll();
 }
 
 function deleteFromDetail() {
@@ -3504,7 +3482,11 @@ function saveNotificationSettings() {
 // SMTP / EMAIL SERVICE FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 
-const EMAIL_SERVICE_URL = 'http://127.0.0.1:8766';
+// Auto-Detect: Lokal (localhost) → direkter Port, VPS → Apache-Reverse-Proxy.
+// Damit läuft dieselbe index.html sowohl bei `http://localhost:8080` (Mac-Setup)
+// als auch bei `https://bewerbung.wolfinisoftware.de` (VPS-Setup).
+const _isLocalSetup = ['localhost', '127.0.0.1', ''].includes(location.hostname);
+const EMAIL_SERVICE_URL = _isLocalSetup ? 'http://127.0.0.1:8766' : '/email-service';
 
 function toggleSmtpSettings() {
     const checkbox = document.getElementById('smtpEnabled');
@@ -3546,19 +3528,15 @@ async function callEmailService(endpoint, data) {
     }
 }
 
-// Update master password status display
+// Master-Passwort ist seit der Server-Side-Envelope-Encryption obsolet:
+// SMTP/IMAP-Credentials werden vom email_service.py (Port 8766) verschlüsselt
+// in email_config.db gehalten, Bewerbungs-Daten via Backend-DEK pro User.
+// Die Status-Anzeige zeigt das jetzt nur noch hinweisend an.
 function updateEncryptionStatus() {
     const status = document.getElementById('masterPasswordStatus');
-    if (encryption.masterPasswordSet && encryption.isMasterPasswordSet()) {
-        status.innerHTML = '✅ Master-Passwort aktiv | Email-Passwörter sind verschlüsselt 🔐';
-        status.style.color = 'var(--secondary)';
-    } else if (encryption.isMasterPasswordSet()) {
-        status.innerHTML = '⏳ Master-Passwort erforderlich | Bitte Browser-Sitzung neustarten';
-        status.style.color = 'var(--warning)';
-    } else {
-        status.innerHTML = '❌ Kein Master-Passwort gesetzt | Starten Sie die App neu';
-        status.style.color = 'var(--danger)';
-    }
+    if (!status) return;
+    status.innerHTML = '🔐 Verschlüsselung läuft serverseitig (Envelope-Encryption + Email Service)';
+    status.style.color = 'var(--text-muted)';
 }
 
 // Change master password
@@ -4753,7 +4731,7 @@ function createTabsHtml(tabs, activeId) {
 /* ═══════════════════════════════════════════════════════
    IMAP / POP3
 ═══════════════════════════════════════════════════════ */
-const IMAP_PROXY = 'http://127.0.0.1:8765';
+const IMAP_PROXY = _isLocalSetup ? 'http://127.0.0.1:8765' : '/imap-proxy';
 
 const IMAP_PRESETS = {
     gmail_imap: { host:'imap.gmail.com',       port:993, protocol:'imap' },
@@ -5120,22 +5098,21 @@ function renderImapResultsFiltered(emailsToRender) {
         return;
     }
 
-    // Use existing renderImapResults logic but with filtered emails
-    // Render each email item
+    // XSS-safe: escHtml für alle vom IMAP-Server kommenden Felder
     list.innerHTML = emailsToRender.map((email, idx) => `
         <div class="email-item" style="margin-bottom:0.75rem;">
             <div class="email-item-header">
                 <div style="flex:1;">
-                    <div class="email-firma">${email.firma || 'Unbekannt'}</div>
-                    <div style="font-size:0.82rem;color:var(--text-muted);">Von: ${email.from || 'N/A'}</div>
+                    <div class="email-firma">${escHtml(email.firma || 'Unbekannt')}</div>
+                    <div style="font-size:0.82rem;color:var(--text-muted);">Von: ${escHtml(email.from || 'N/A')}</div>
                 </div>
                 <button class="btn btn-success btn-sm" onclick="importSingleImapEmail(${idx})">Importieren</button>
             </div>
             <div style="font-size:0.85rem;margin-top:0.35rem;">
-                <strong>${email.subject || '(kein Betreff)'}</strong>
+                <strong>${escHtml(email.subject || '(kein Betreff)')}</strong>
             </div>
             <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">
-                ${email.date || 'Kein Datum'}
+                ${escHtml(email.date || 'Kein Datum')}
             </div>
         </div>
     `).join('');

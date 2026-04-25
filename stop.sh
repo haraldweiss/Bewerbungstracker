@@ -64,7 +64,6 @@ echo ""
 kill_service 8080 "Web Server"
 kill_service 8765 "IMAP Proxy"
 kill_service 8766 "Email Service"
-kill_service 8767 "Data Service"
 
 echo ""
 
@@ -72,7 +71,7 @@ echo ""
 echo -e "${BLUE}Verifying all services are stopped...${NC}"
 all_stopped=true
 
-for port in 8080 8765 8766 8767; do
+for port in 8080 8765 8766; do
     if check_port $port; then
         echo -e "${RED}❌ Port $port is still in use${NC}"
         all_stopped=false

@@ -83,6 +83,29 @@ def create_app(config_class=None):
     def serve_backup_client_js():
         return send_file('frontend/backup-client.js', mimetype='application/javascript')
 
+    # PWA Static-Files (manifest, service-worker) – ohne diese gibt's
+    # 404-Errors in der Konsole und keine Push/Offline-Funktionalität.
+    @app.route('/manifest.json')
+    def serve_manifest():
+        return send_file('manifest.json', mimetype='application/manifest+json')
+
+    @app.route('/service-worker.js')
+    def serve_service_worker():
+        # Service Worker MUSS mit Service-Worker-Allowed Header serviert werden,
+        # damit der Scope auf '/' liegt.
+        resp = send_file('service-worker.js', mimetype='application/javascript')
+        resp.headers['Service-Worker-Allowed'] = '/'
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
+    @app.route('/favicon.ico')
+    def serve_favicon():
+        # 204 No Content falls keine favicon.ico existiert (verhindert 404-Spam).
+        path = os.path.join(app.root_path, 'favicon.ico')
+        if os.path.exists(path):
+            return send_file('favicon.ico')
+        return '', 204
+
     # Register blueprints
     from api.auth import auth_bp
     from api.applications import apps_bp

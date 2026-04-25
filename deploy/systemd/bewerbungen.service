@@ -1,0 +1,16 @@
+# systemd unit for the Flask app (gunicorn behind Apache reverse proxy).
+# Install path: /etc/systemd/system/bewerbungen.service
+# After install: systemctl daemon-reload && systemctl enable --now bewerbungen
+[Unit]
+Description=Bewerbungstracker Flask Application
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/bewerbungen
+Type=notify
+ExecStart=/bin/bash -c 'source /var/www/bewerbungen/.env && exec /var/www/bewerbungen/venv/bin/gunicorn --workers 4 --worker-class sync --bind 127.0.0.1:5000 --timeout 60 --access-logfile /var/log/bewerbungen/access.log --error-logfile /var/log/bewerbungen/error.log wsgi:app'
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -7,6 +7,8 @@ from config import Config
 from auth_service import AuthService
 from models import User, EmailConfirmationToken
 from services.email_service import send_confirmation_email
+from services.encryption_service import EncryptionService
+from services.key_cache import get_key_cache
 from database import db
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
@@ -65,11 +67,18 @@ def register():
 
     try:
         password_hash = AuthService.hash_password(data['password'])
+
+        # Envelope-Encryption: per-User-Salt + DEK generieren, DEK mit
+        # KEK aus Passwort wrappen.
+        salt, encrypted_dek, _dek = EncryptionService.create_user_keys(data['password'])
+
         user = User(
             email=data['email'],
             password_hash=password_hash,
             email_confirmed=False,
-            is_active=False
+            is_active=False,
+            encryption_salt=salt,
+            encrypted_data_key=encrypted_dek,
         )
         db.session.add(user)
         db.session.flush()  # Get user ID
@@ -101,31 +110,50 @@ def register():
 
 @auth_bp.route('/confirm-email', methods=['GET'])
 def confirm_email():
-    """Confirm email with token"""
+    """Confirm email with token. Liefert eine HTML-Response, weil dieser
+    Endpoint typischerweise direkt vom Email-Client geöffnet wird."""
+    from flask import current_app, make_response
+
     token = request.args.get('token')
+    app_url = current_app.config.get('APP_URL', 'https://bewerbungen.wolfinisoftware.de')
+
+    def _html(title: str, msg: str, kind: str = 'success') -> tuple:
+        color = {'success': '#10B981', 'error': '#DC2626'}.get(kind, '#4F46E5')
+        body = f"""
+        <!doctype html><html lang="de"><head><meta charset="utf-8">
+        <title>{title}</title>
+        <style>body{{font-family:Arial,sans-serif;max-width:560px;margin:60px auto;color:#333;text-align:center}}
+        h1{{color:{color}}} a{{display:inline-block;margin-top:24px;padding:10px 20px;background:#4F46E5;color:#fff;text-decoration:none;border-radius:6px}}</style>
+        </head><body><h1>{title}</h1><p>{msg}</p>
+        <a href="{app_url}">Zur App</a></body></html>
+        """
+        return body, 200 if kind == 'success' else 400
 
     if not token:
-        return {'error': 'Confirmation token required'}, 400
+        return _html('Fehler', 'Bestätigungs-Token fehlt.', 'error')
 
     token_record = EmailConfirmationToken.query.filter_by(token=token).first()
-
     if not token_record:
-        return {'error': 'Invalid or expired confirmation token'}, 400
+        return _html('Ungültiger Link', 'Der Bestätigungs-Link ist ungültig oder bereits eingelöst.', 'error')
 
     if token_record.expires_at < datetime.utcnow():
         db.session.delete(token_record)
         db.session.commit()
-        return {'error': 'Confirmation token has expired'}, 400
+        return _html('Link abgelaufen', 'Dieser Link ist abgelaufen. Bitte einen neuen anfordern.', 'error')
 
     user = User.query.get(token_record.user_id)
+    if not user:
+        return _html('Fehler', 'Zugehöriger Account existiert nicht mehr.', 'error')
+
     user.email_confirmed = True
     db.session.delete(token_record)
     db.session.commit()
 
-    return {
-        'message': 'Email confirmed! Your account is pending admin approval.',
-        'email': user.email
-    }, 200
+    return _html(
+        '✅ Konto aktiviert',
+        f'Email <strong>{user.email}</strong> bestätigt. Du kannst dich jetzt einloggen.',
+        'success',
+    )
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -151,6 +179,20 @@ def login():
     # Check if account is approved
     if not user.is_active:
         return {'error': 'Your account is pending admin approval'}, 401
+
+    # Envelope-Encryption: DEK mit Passwort entsperren und in KeyCache legen.
+    # Backup-Operationen (auto-Backup auf CRUD) holen den DEK von dort, ohne
+    # dass das Passwort über JWT übertragen werden muss.
+    if user.encryption_salt and user.encrypted_data_key:
+        try:
+            dek = EncryptionService.unlock_dek(
+                data['password'], user.encryption_salt, user.encrypted_data_key
+            )
+            get_key_cache().put(user.id, dek)
+        except Exception:
+            # Crypto-Fehler hier wäre ein DB-Korruptions-Indikator – Login lässt
+            # sich nicht fortsetzen, ohne Backups unbrauchbar zu machen.
+            return {'error': 'Encryption key unlock failed'}, 500
 
     access_token = AuthService.create_access_token(user.id)
     refresh_token = AuthService.create_refresh_token(user.id)
@@ -194,6 +236,9 @@ def refresh():
 @token_required
 def logout(user):
     """Logout user (token invalidation handled client-side)"""
+    # DEK aus dem In-Memory-Cache entfernen – kein Klartext-Schlüssel im RAM
+    # nach Logout.
+    get_key_cache().evict(user.id)
     return {'message': 'Logout successful'}, 200
 
 

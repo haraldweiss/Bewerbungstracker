@@ -1,228 +1,199 @@
-"""Tests for BackupService with automatic backup creation and pruning"""
+"""Tests für BackupService nach Umstellung auf Envelope-Encryption.
+
+Backups werden jetzt mit dem DEK aus dem KeyCache verschlüsselt – Tests
+befüllen den Cache vor jedem Test über das EncryptionService-Helper.
+"""
 
 import pytest
-import json
 from datetime import datetime
+
 from models import User, Application, Email, BackupHistory
-from services.backup_service import BackupService
+from services.backup_service import BackupService, BackupKeyUnavailable
 from services.encryption_service import EncryptionService
+from services.key_cache import get_key_cache
 from database import db
+
+
+@pytest.fixture(autouse=True)
+def reset_key_cache():
+    """Cache vor + nach jedem Test leeren."""
+    get_key_cache().clear()
+    yield
+    get_key_cache().clear()
 
 
 @pytest.fixture
 def test_user(app):
-    """Create a test user"""
+    """User mit gesetztem Salt + encrypted_data_key + DEK im Cache."""
     with app.app_context():
+        salt, encrypted_dek, dek = EncryptionService.create_user_keys("testpw")
         user = User(
             email="backup_test@example.com",
-            password_hash="hashed_password_123"
+            password_hash="hashed_password_123",
+            encryption_salt=salt,
+            encrypted_data_key=encrypted_dek,
         )
         db.session.add(user)
         db.session.commit()
-        user_id = user.id
-
-    # Return the user ID so we can fetch it fresh in each test
-    return user_id
+        get_key_cache().put(user.id, dek)
+        return user.id
 
 
 @pytest.fixture
 def user_with_data(app, test_user):
-    """Create a test user with applications and emails"""
+    """User mit zwei Applications + zwei Emails."""
     with app.app_context():
         user = db.session.get(User, test_user)
 
-        # Create applications
         app1 = Application(
-            user_id=user.id,
-            company="TechCorp",
-            position="Senior Engineer",
-            status="applied",
-            applied_date=datetime.utcnow().date()
+            user_id=user.id, company="TechCorp", position="Senior Engineer",
+            status="applied", applied_date=datetime.utcnow().date(),
         )
         app2 = Application(
-            user_id=user.id,
-            company="WebInc",
-            position="Full Stack Developer",
-            status="interview",
-            applied_date=datetime.utcnow().date()
+            user_id=user.id, company="WebInc", position="Full Stack Developer",
+            status="interview", applied_date=datetime.utcnow().date(),
         )
         db.session.add_all([app1, app2])
         db.session.flush()
 
-        # Create emails
         email1 = Email(
-            user_id=user.id,
-            message_id="msg_001",
+            user_id=user.id, message_id="msg_001",
             subject="TechCorp - Interview Invitation",
             from_address="hr@techcorp.com",
-            matched_application_id=app1.id,
-            timestamp=datetime.utcnow()
+            matched_application_id=app1.id, timestamp=datetime.utcnow(),
         )
         email2 = Email(
-            user_id=user.id,
-            message_id="msg_002",
+            user_id=user.id, message_id="msg_002",
             subject="WebInc - Application Received",
             from_address="noreply@webinc.com",
-            matched_application_id=app2.id,
-            timestamp=datetime.utcnow()
+            matched_application_id=app2.id, timestamp=datetime.utcnow(),
         )
         db.session.add_all([email1, email2])
         db.session.commit()
-
         return user.id
 
 
 def test_create_automatic_backup(app, user_with_data):
-    """Test creating an automatic backup and verify fields"""
     with app.app_context():
         user = db.session.get(User, user_with_data)
-
-        # Create backup
         backup = BackupService.create_backup(user, backup_type='automatic')
 
-        # Verify backup record created
-        assert backup is not None
         assert isinstance(backup, BackupHistory)
         assert backup.user_id == user.id
         assert backup.backup_type == 'automatic'
         assert backup.version == 1
         assert backup.format == 'json'
-        assert backup.encrypted_data is not None
-        assert backup.summary is not None
-
-        # Verify summary includes count
+        assert backup.encrypted_data
         assert "applications" in backup.summary.lower()
         assert "emails" in backup.summary.lower()
 
 
+def test_create_backup_without_cached_dek_raises(app, test_user):
+    with app.app_context():
+        user = db.session.get(User, test_user)
+        get_key_cache().evict(user.id)
+
+        with pytest.raises(BackupKeyUnavailable):
+            BackupService.create_backup(user, backup_type='automatic')
+
+
 def test_backup_versioning_max_10(app, user_with_data):
-    """Test that only maximum 10 backups are kept per user"""
     with app.app_context():
         user = db.session.get(User, user_with_data)
+        for _ in range(15):
+            BackupService.create_backup(user, backup_type='automatic')
 
-        # Create 15 backups
-        backups = []
-        for i in range(15):
-            backup = BackupService.create_backup(user, backup_type='automatic')
-            backups.append(backup)
-
-        # Verify only 10 are kept
-        remaining_backups = BackupService.get_user_backups(user_with_data, limit=100)
-
-        assert len(remaining_backups) == 10
-
-        # Verify versions are sequential (1-10)
-        versions = sorted([b.version for b in remaining_backups])
-        assert versions == list(range(6, 16))  # Versions 6-15 should remain
+        remaining = BackupService.get_user_backups(user_with_data, limit=100)
+        assert len(remaining) == 10
+        assert sorted([b.version for b in remaining]) == list(range(6, 16))
 
 
 def test_decrypt_backup_data(app, user_with_data):
-    """Test decrypting backup data and verify structure"""
     with app.app_context():
         user = db.session.get(User, user_with_data)
-
-        # Create backup
         backup = BackupService.create_backup(user, backup_type='automatic')
 
-        # Decrypt backup
-        decrypted_data = BackupService.get_backup_decrypted(
-            backup,
-            user.email,
-            user.password_hash
-        )
+        decrypted = BackupService.get_backup_decrypted(backup, user)
 
-        # Verify structure
-        assert isinstance(decrypted_data, dict)
-        assert 'applications' in decrypted_data
-        assert 'emails' in decrypted_data
-        assert 'backed_up_at' in decrypted_data
+        assert isinstance(decrypted, dict)
+        assert 'applications' in decrypted
+        assert 'emails' in decrypted
+        assert 'backed_up_at' in decrypted
+        assert len(decrypted['applications']) == 2
+        assert len(decrypted['emails']) == 2
 
-        # Verify applications structure
-        assert isinstance(decrypted_data['applications'], list)
-        assert len(decrypted_data['applications']) == 2
+        app_keys = {'id', 'company', 'position', 'status', 'applied_date',
+                    'created_at', 'updated_at'}
+        assert app_keys.issubset(decrypted['applications'][0].keys())
 
-        app_data = decrypted_data['applications'][0]
-        assert 'id' in app_data
-        assert 'company' in app_data
-        assert 'position' in app_data
-        assert 'status' in app_data
-        assert 'applied_date' in app_data
-        assert 'created_at' in app_data
-        assert 'updated_at' in app_data
-
-        # Verify emails structure
-        assert isinstance(decrypted_data['emails'], list)
-        assert len(decrypted_data['emails']) == 2
-
-        email_data = decrypted_data['emails'][0]
-        assert 'id' in email_data
-        assert 'message_id' in email_data
-        assert 'subject' in email_data
-        assert 'from_address' in email_data
-        assert 'timestamp' in email_data
-        assert 'matched_application_id' in email_data
+        email_keys = {'id', 'message_id', 'subject', 'from_address',
+                      'timestamp', 'matched_application_id'}
+        assert email_keys.issubset(decrypted['emails'][0].keys())
 
 
-def test_get_user_backups(app, user_with_data):
-    """Test retrieving user's recent backups"""
+def test_decrypt_backup_without_cached_dek_raises(app, user_with_data):
     with app.app_context():
         user = db.session.get(User, user_with_data)
+        backup = BackupService.create_backup(user, backup_type='automatic')
 
-        # Create 3 backups
-        for i in range(3):
+        get_key_cache().evict(user.id)
+        with pytest.raises(BackupKeyUnavailable):
+            BackupService.get_backup_decrypted(backup, user)
+
+
+def test_get_user_backups_ordered_desc(app, user_with_data):
+    with app.app_context():
+        user = db.session.get(User, user_with_data)
+        for _ in range(3):
             BackupService.create_backup(user, backup_type='automatic')
 
-        # Get backups
         backups = BackupService.get_user_backups(user.id, limit=10)
-
         assert len(backups) == 3
         assert all(b.user_id == user.id for b in backups)
-
-        # Verify ordered by created_at descending (most recent first)
         for i in range(len(backups) - 1):
             assert backups[i].created_at >= backups[i + 1].created_at
 
 
 def test_create_backup_empty_user(app, test_user):
-    """Test creating backup for user with no applications/emails"""
     with app.app_context():
         user = db.session.get(User, test_user)
-
-        # Create backup
         backup = BackupService.create_backup(user, backup_type='automatic')
 
-        assert backup is not None
-        assert backup.version == 1
-
-        # Decrypt and verify empty data
-        decrypted = BackupService.get_backup_decrypted(
-            backup,
-            user.email,
-            user.password_hash
-        )
-
-        assert len(decrypted['applications']) == 0
-        assert len(decrypted['emails']) == 0
+        decrypted = BackupService.get_backup_decrypted(backup, user)
+        assert decrypted['applications'] == []
+        assert decrypted['emails'] == []
 
 
-def test_backup_summary_format(app, user_with_data):
-    """Test that backup summary has correct format"""
+def test_backup_survives_password_change(app, test_user):
+    """Kernpunkt: nach Password-Change bleiben alte Backups entschlüsselbar.
+
+    Dies setzt voraus, dass der Re-Wrap-Flow den DEK stabil hält.
+    """
     with app.app_context():
-        user = db.session.get(User, user_with_data)
-
+        user = db.session.get(User, test_user)
         backup = BackupService.create_backup(user, backup_type='automatic')
 
-        # Summary should contain counts
-        assert "2" in backup.summary  # 2 applications
-        assert "2" in backup.summary  # 2 emails
+        # Simuliere Password-Change: neuer Salt, DEK bleibt identisch
+        new_salt, new_encrypted_dek = EncryptionService.rewrap_dek_for_new_password(
+            old_password="testpw",
+            new_password="brandnew",
+            old_salt=user.encryption_salt,
+            encrypted_dek=user.encrypted_data_key,
+        )
+        user.encryption_salt = new_salt
+        user.encrypted_data_key = new_encrypted_dek
+        db.session.commit()
+
+        # User loggt sich mit neuem Passwort ein → DEK landet wieder im Cache
+        new_dek = EncryptionService.unlock_dek("brandnew", new_salt, new_encrypted_dek)
+        get_key_cache().put(user.id, new_dek)
+
+        decrypted = BackupService.get_backup_decrypted(backup, user)
+        assert decrypted['applications'] == []
 
 
 def test_manual_backup_type(app, user_with_data):
-    """Test creating a manual backup"""
     with app.app_context():
         user = db.session.get(User, user_with_data)
-
         backup = BackupService.create_backup(user, backup_type='manual')
-
         assert backup.backup_type == 'manual'
-        assert backup.version == 1

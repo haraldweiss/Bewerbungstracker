@@ -39,11 +39,18 @@ MAX_REQUEST_SIZE_BYTES = 1024 * 1024  # 1MB
 ENCRYPTION_KEY = None  # Will be derived from master password
 CREDENTIALS_CACHE = {}  # Cache for credentials to avoid repeated DB lookups
 
-# CORS headers configuration
+# CORS headers – Origin wird dynamisch gegen Whitelist gesetzt
+ALLOWED_ORIGINS = {
+    'http://localhost:8080', 'http://127.0.0.1:8080',
+    'http://localhost:8000', 'http://127.0.0.1:8000',
+    'http://localhost:5000', 'http://127.0.0.1:5000',
+    # VPS-Production (Frontend ruft von hier aus auf 127.0.0.1:8766 = Mac-Service)
+    'https://bewerbung.wolfinisoftware.de',
+    'https://bewerbungen.wolfinisoftware.de',
+}
 CORS_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    'Access-Control-Allow-Headers': 'Content-Type',
 }
 
 # ── Rate Limiter ───────────────────────────────────────────────────────
@@ -75,6 +82,10 @@ class SlidingWindowRateLimiter:
 
 # 5 requests / 60s per client IP for /api/credentials/test
 CREDENTIALS_TEST_LIMITER = SlidingWindowRateLimiter(max_requests=5, window_seconds=60)
+
+# Lock verhindert parallele IMAP-Logins (Scheduler vs. /api/monitoring/check).
+# IONOS sperrt Accounts bei zu vielen gleichzeitigen Logins.
+MONITOR_LOCK = threading.Lock()
 
 
 # ── Helper Classes ─────────────────────────────────────────────────────
@@ -117,7 +128,7 @@ class IMAPConnection:
             try:
                 self.connection.close()
                 self.connection.logout()
-            except:
+            except (imaplib.IMAP4.error, OSError):
                 pass
 
 
@@ -298,11 +309,14 @@ def save_credentials(service, host, port, user, password, encryption_key):
         return False
 
 def get_credentials(service, encryption_key):
-    """Retrieve and decrypt email credentials (cached to avoid repeated DB lookups)"""
-    # Check cache first (avoids repeated DB operations in hot path)
-    cache_key = f"{service}:{encryption_key}"
-    if cache_key in CREDENTIALS_CACHE:
-        return CREDENTIALS_CACHE[cache_key]
+    """Retrieve and decrypt email credentials.
+
+    Cache-Key war früher f"{service}:{encryption_key}" → bei Master-PW-Wechsel
+    blieben alte Einträge mit Klartext-Passwort im RAM. Jetzt: Service als Key,
+    bei Save komplettes Cache-Clear.
+    """
+    if service in CREDENTIALS_CACHE:
+        return CREDENTIALS_CACHE[service]
 
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -317,16 +331,13 @@ def get_credentials(service, encryption_key):
 
         host, port, user, encrypted_password, is_encrypted = result
 
-        # Decrypt password if it was encrypted
         if is_encrypted and encryption_key:
             password = decrypt_password(encrypted_password, encryption_key)
         else:
             password = encrypted_password
 
         creds = {'host': host, 'port': port, 'user': user, 'password': password}
-
-        # Cache for future lookups
-        CREDENTIALS_CACHE[cache_key] = creds
+        CREDENTIALS_CACHE[service] = creds
         return creds
     except Exception as e:
         print(f"❌ Error retrieving credentials: {e}")
@@ -380,9 +391,13 @@ def send_email(recipient, subject, html_body, text_body=''):
             msg.attach(MIMEText(text_body, 'plain', 'utf-8'))
         msg.attach(MIMEText(html_body, 'html', 'utf-8'))
 
-        # Send via SMTP
-        server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
-        server.starttls()
+        # Send via SMTP – Port 465 = SSL/TLS direkt, sonst STARTTLS
+        if smtp_port == 465:
+            context = ssl.create_default_context()
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10, context=context)
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+            server.starttls(context=ssl.create_default_context())
         server.login(smtp_user, smtp_pass)
         server.send_message(msg)
         server.quit()
@@ -488,8 +503,9 @@ def fetch_imap_emails():
         return []
 
     try:
-        imap_conn.select_folder('INBOX')
+        # Readonly: keine \Seen-Flags setzen
         imap = imap_conn.connection
+        imap.select('INBOX', readonly=True)
 
         # Fetch emails from last 7 days
         since_date = (datetime.now() - timedelta(days=7)).strftime('%d-%b-%Y')
@@ -497,7 +513,8 @@ def fetch_imap_emails():
 
         emails = []
         for msg_id in messages[0].split():
-            status, msg_data = imap.fetch(msg_id, '(RFC822)')
+            # BODY.PEEK[] markiert Mail nicht als gelesen
+            status, msg_data = imap.fetch(msg_id, '(BODY.PEEK[])')
             msg = email.message_from_bytes(msg_data[0][1])
 
             emails.append({
@@ -588,35 +605,44 @@ def log_monitoring_email(email_data, company_name, status):
         print(f"Error logging monitoring email: {e}")
 
 def check_and_monitor_emails():
-    """Check for application responses and notify"""
+    """Check for application responses and notify.
+
+    Lock-geschützt: verhindert parallele IMAP-Logins zwischen Scheduler-Thread
+    und HTTP-Handler-Thread (sonst Account-Sperre bei IONOS).
+    """
     if not get_config('email_monitoring_enabled') == 'true':
-        return
+        return []
 
-    print("📧 Checking for application responses...")
+    if not MONITOR_LOCK.acquire(blocking=False):
+        print("⏭️  Monitoring läuft bereits – überspringe.")
+        return []
 
-    # Fetch recent emails
-    recent_emails = fetch_imap_emails()
-    applications = get_applications_list()
+    try:
+        print("📧 Checking for application responses...")
 
-    detected_responses = []
+        recent_emails = fetch_imap_emails()
+        applications = get_applications_list()
 
-    for email_data in recent_emails:
-        matched_app = check_email_for_application(email_data, applications)
+        detected_responses = []
 
-        if matched_app:
-            log_monitoring_email(email_data, matched_app.get('firma'), 'detected')
-            detected_responses.append({
-                'company': matched_app.get('firma'),
-                'from': email_data.get('from'),
-                'subject': email_data.get('subject')
-            })
-            print(f"✅ Application response detected from: {matched_app.get('firma')}")
+        for email_data in recent_emails:
+            matched_app = check_email_for_application(email_data, applications)
 
-    # Send notification if responses found
-    if detected_responses and get_config('monitoring_notify') == 'true':
-        notify_monitoring_results(detected_responses)
+            if matched_app:
+                log_monitoring_email(email_data, matched_app.get('firma'), 'detected')
+                detected_responses.append({
+                    'company': matched_app.get('firma'),
+                    'from': email_data.get('from'),
+                    'subject': email_data.get('subject')
+                })
+                print(f"✅ Application response detected from: {matched_app.get('firma')}")
 
-    return detected_responses
+        if detected_responses and get_config('monitoring_notify') == 'true':
+            notify_monitoring_results(detected_responses)
+
+        return detected_responses
+    finally:
+        MONITOR_LOCK.release()
 
 def notify_monitoring_results(responses):
     """Send notification about detected responses"""
@@ -649,7 +675,11 @@ class JSONHandler(BaseHTTPRequestHandler):
     """Base HTTP handler with JSON response helpers"""
 
     def _send_cors_headers(self):
-        """Send CORS headers to allow cross-origin requests"""
+        """Send CORS headers – nur whitelisted Origin echoen (kein Wildcard)."""
+        origin = self.headers.get('Origin', '')
+        if origin in ALLOWED_ORIGINS:
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Vary', 'Origin')
         for key, value in CORS_HEADERS.items():
             self.send_header(key, value)
 
@@ -682,11 +712,15 @@ class EmailServiceHandler(JSONHandler):
         self.end_headers()
 
     def _check_origin(self):
-        """Verify request origin (CSRF protection - localhost only)"""
+        """Verify request origin against strict whitelist (CSRF protection).
+
+        Substring-Match (localhost in evil.localhost.com) wäre umgehbar – daher
+        exakter Vergleich gegen ALLOWED_ORIGINS.
+        """
         origin = self.headers.get('Origin', '')
 
-        # Allow localhost/127.0.0.1 only
-        if origin and 'localhost' not in origin and '127.0.0.1' not in origin:
+        # Empty Origin (curl, same-origin) zulassen; sonst muss exakter Match.
+        if origin and origin not in ALLOWED_ORIGINS:
             self.send_json_error('CORS policy violation', 403)
             return False
 
@@ -927,9 +961,9 @@ class EmailServiceHandler(JSONHandler):
                 if not ENCRYPTION_KEY:
                     ENCRYPTION_KEY = encryption_key
 
-                # Clear cache for this service to ensure fresh fetch next time
-                cache_key = f"{service}:{encryption_key}"
-                CREDENTIALS_CACHE.pop(cache_key, None)
+                # Cache komplett leeren – sonst können alte Klartext-Passwörter
+                # in den Werten anderer Services hängen bleiben.
+                CREDENTIALS_CACHE.clear()
 
                 self.send_json_ok({
                     'message': f'{service.upper()} credentials saved and encrypted',
@@ -965,9 +999,13 @@ class EmailServiceHandler(JSONHandler):
         try:
             port_int = int(port)
             if service == 'smtp':
-                # Test SMTP connection
-                server = smtplib.SMTP(host, port_int, timeout=10)
-                server.starttls()
+                # Test SMTP connection – Port 465 = SSL/TLS, sonst STARTTLS
+                if port_int == 465:
+                    context = ssl.create_default_context()
+                    server = smtplib.SMTP_SSL(host, port_int, timeout=10, context=context)
+                else:
+                    server = smtplib.SMTP(host, port_int, timeout=10)
+                    server.starttls(context=ssl.create_default_context())
                 server.login(user, password)
                 server.quit()
                 self.send_json_ok({

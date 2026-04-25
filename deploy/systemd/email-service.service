@@ -1,0 +1,15 @@
+[Unit]
+Description=Bewerbungstracker Email Service (SMTP/IMAP credential store)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/bewerbungen
+ExecStart=/bin/bash -c 'exec /var/www/bewerbungen/venv/bin/python -u /var/www/bewerbungen/email_service.py'
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/bewerbungen/email_service.log
+StandardError=append:/var/log/bewerbungen/email_service.log
+
+[Install]
+WantedBy=multi-user.target

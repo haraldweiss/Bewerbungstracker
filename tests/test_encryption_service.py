@@ -1,111 +1,109 @@
-"""Tests for EncryptionService with per-user PBKDF2 key derivation"""
+"""Tests für die Envelope-Encryption-Architektur (Salt + DEK + KEK)."""
 
 import pytest
-from encryption_service import EncryptionService
+from cryptography.fernet import InvalidToken
+
+from encryption_service import EncryptionService, SALT_BYTES, DEK_BYTES
 
 
-def test_derive_encryption_key_from_user():
-    """Test that same user email+password gets same encryption key"""
-    email = "test@example.com"
-    password = "secure_password_123"
-
-    key1 = EncryptionService.derive_user_key(email, password)
-    key2 = EncryptionService.derive_user_key(email, password)
-
-    # Same user should get same key (deterministic)
-    assert key1 == key2
-    assert isinstance(key1, bytes)
-    assert len(key1) > 0
+def test_generate_salt_random_and_correct_length():
+    a = EncryptionService.generate_salt()
+    b = EncryptionService.generate_salt()
+    assert isinstance(a, bytes)
+    assert len(a) == SALT_BYTES
+    assert a != b  # zufällig
 
 
-def test_different_users_get_different_keys():
-    """Test that different users get different encryption keys"""
-    password = "same_password_123"
-
-    key1 = EncryptionService.derive_user_key("user1@example.com", password)
-    key2 = EncryptionService.derive_user_key("user2@example.com", password)
-
-    # Different users should get different keys
-    assert key1 != key2
+def test_derive_kek_deterministic_for_same_inputs():
+    salt = EncryptionService.generate_salt()
+    k1 = EncryptionService.derive_kek("password123", salt)
+    k2 = EncryptionService.derive_kek("password123", salt)
+    assert k1 == k2
 
 
-def test_encrypt_decrypt_user_data():
-    """Test roundtrip encryption and decryption"""
-    email = "test@example.com"
-    password = "secure_password_123"
-    plaintext = "This is sensitive user data"
-
-    # Derive key
-    key = EncryptionService.derive_user_key(email, password)
-
-    # Encrypt
-    encrypted = EncryptionService.encrypt_data(plaintext, key)
-    assert isinstance(encrypted, str)
-    assert encrypted != plaintext
-
-    # Decrypt
-    decrypted = EncryptionService.decrypt_data(encrypted, key)
-    assert decrypted == plaintext
+def test_derive_kek_different_for_different_salt():
+    s1 = EncryptionService.generate_salt()
+    s2 = EncryptionService.generate_salt()
+    k1 = EncryptionService.derive_kek("password123", s1)
+    k2 = EncryptionService.derive_kek("password123", s2)
+    assert k1 != k2
 
 
-def test_encrypt_multiple_messages_different_ciphertexts():
-    """Test that encrypting same plaintext twice produces different ciphertexts (Fernet includes timestamp)"""
-    email = "test@example.com"
-    password = "secure_password_123"
-    plaintext = "Same data"
-
-    key = EncryptionService.derive_user_key(email, password)
-
-    encrypted1 = EncryptionService.encrypt_data(plaintext, key)
-    encrypted2 = EncryptionService.encrypt_data(plaintext, key)
-
-    # Fernet includes timestamp, so ciphertexts differ
-    assert encrypted1 != encrypted2
-
-    # But both decrypt to same plaintext
-    assert EncryptionService.decrypt_data(encrypted1, key) == plaintext
-    assert EncryptionService.decrypt_data(encrypted2, key) == plaintext
+def test_derive_kek_rejects_empty_password():
+    salt = EncryptionService.generate_salt()
+    with pytest.raises(ValueError):
+        EncryptionService.derive_kek("", salt)
 
 
-def test_wrong_key_fails_decryption():
-    """Test that decrypting with wrong key fails"""
-    email1 = "user1@example.com"
-    email2 = "user2@example.com"
-    password = "same_password_123"
-    plaintext = "Secret message"
-
-    key1 = EncryptionService.derive_user_key(email1, password)
-    key2 = EncryptionService.derive_user_key(email2, password)
-
-    encrypted = EncryptionService.encrypt_data(plaintext, key1)
-
-    # Should fail with wrong key
-    with pytest.raises(Exception):
-        EncryptionService.decrypt_data(encrypted, key2)
+def test_derive_kek_rejects_invalid_salt():
+    with pytest.raises(ValueError):
+        EncryptionService.derive_kek("password", b"too_short")
 
 
-def test_encrypt_empty_string():
-    """Test encryption of empty string"""
-    email = "test@example.com"
-    password = "password"
-
-    key = EncryptionService.derive_user_key(email, password)
-
-    encrypted = EncryptionService.encrypt_data("", key)
-    decrypted = EncryptionService.decrypt_data(encrypted, key)
-
-    assert decrypted == ""
+def test_create_user_keys_roundtrip():
+    salt, encrypted_dek, dek = EncryptionService.create_user_keys("hunter2")
+    unlocked = EncryptionService.unlock_dek("hunter2", salt, encrypted_dek)
+    assert unlocked == dek
 
 
-def test_encrypt_large_data():
-    """Test encryption of large data"""
-    email = "test@example.com"
-    password = "password"
-    plaintext = "x" * 10000  # 10KB of data
+def test_unlock_dek_fails_with_wrong_password():
+    salt, encrypted_dek, _dek = EncryptionService.create_user_keys("correct")
+    with pytest.raises(InvalidToken):
+        EncryptionService.unlock_dek("wrong", salt, encrypted_dek)
 
-    key = EncryptionService.derive_user_key(email, password)
 
-    encrypted = EncryptionService.encrypt_data(plaintext, key)
-    decrypted = EncryptionService.decrypt_data(encrypted, key)
+def test_encrypt_decrypt_data_roundtrip():
+    _salt, _enc_dek, dek = EncryptionService.create_user_keys("pw")
+    cipher = EncryptionService.encrypt_data("hello world", dek)
+    assert cipher != "hello world"
+    assert EncryptionService.decrypt_data(cipher, dek) == "hello world"
 
-    assert decrypted == plaintext
+
+def test_encrypt_data_nondeterministic_but_decrypts():
+    _salt, _enc_dek, dek = EncryptionService.create_user_keys("pw")
+    c1 = EncryptionService.encrypt_data("same", dek)
+    c2 = EncryptionService.encrypt_data("same", dek)
+    assert c1 != c2  # Fernet hat IV/Timestamp
+    assert EncryptionService.decrypt_data(c1, dek) == "same"
+    assert EncryptionService.decrypt_data(c2, dek) == "same"
+
+
+def test_decrypt_with_different_dek_fails():
+    _, _, dek1 = EncryptionService.create_user_keys("pw1")
+    _, _, dek2 = EncryptionService.create_user_keys("pw2")
+    cipher = EncryptionService.encrypt_data("secret", dek1)
+    with pytest.raises(InvalidToken):
+        EncryptionService.decrypt_data(cipher, dek2)
+
+
+def test_password_change_preserves_dek():
+    """Kernpunkt der Architektur: Passwort-Wechsel bricht keine Backups.
+
+    Beim Re-Wrap bleibt der DEK identisch – mit altem DEK verschlüsselte Daten
+    bleiben mit dem neuen Salt + neu-gewrappten DEK weiterhin entschlüsselbar.
+    """
+    salt, encrypted_dek, dek = EncryptionService.create_user_keys("oldpw")
+    cipher = EncryptionService.encrypt_data("legacy backup", dek)
+
+    new_salt, new_encrypted_dek = EncryptionService.rewrap_dek_for_new_password(
+        old_password="oldpw",
+        new_password="newpw",
+        old_salt=salt,
+        encrypted_dek=encrypted_dek,
+    )
+    assert new_salt != salt
+    assert new_encrypted_dek != encrypted_dek
+
+    # Der neue Wrap muss denselben DEK liefern → alte Backups bleiben lesbar
+    new_dek = EncryptionService.unlock_dek("newpw", new_salt, new_encrypted_dek)
+    assert new_dek == dek
+    assert EncryptionService.decrypt_data(cipher, new_dek) == "legacy backup"
+
+
+def test_password_change_old_password_no_longer_works():
+    salt, encrypted_dek, _dek = EncryptionService.create_user_keys("oldpw")
+    new_salt, new_encrypted_dek = EncryptionService.rewrap_dek_for_new_password(
+        "oldpw", "newpw", salt, encrypted_dek
+    )
+    with pytest.raises(InvalidToken):
+        EncryptionService.unlock_dek("oldpw", new_salt, new_encrypted_dek)

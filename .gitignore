@@ -31,8 +31,15 @@ build/
 email_config.db
 applications_cache.json
 bewerbungen.db
-# Legacy files
+
+# Legacy / deprecated files (deprecated suffix = nicht ausführen)
 app_legacy.py
+*.deprecated
+*.bak
+
+# Lokale localStorage-Snapshots / Migrations-Inputs (enthalten User-Daten)
+localstorage_apps.json
+local_*.json
 
 # Database files
 bewerbungstracker.db

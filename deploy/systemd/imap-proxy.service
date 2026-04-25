@@ -1,0 +1,15 @@
+[Unit]
+Description=Bewerbungstracker IMAP Proxy (read-only)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/bewerbungen
+ExecStart=/bin/bash -c 'exec /var/www/bewerbungen/venv/bin/python -u /var/www/bewerbungen/imap_proxy.py'
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/bewerbungen/imap_proxy.log
+StandardError=append:/var/log/bewerbungen/imap_proxy.log
+
+[Install]
+WantedBy=multi-user.target

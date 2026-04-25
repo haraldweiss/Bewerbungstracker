@@ -17,6 +17,14 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     email_confirmed = db.Column(db.Boolean, default=False)
     is_active = db.Column(db.Boolean, default=False)
+
+    # Envelope-Encryption: per-User-Salt + verschlüsselter Data Encryption Key.
+    # encryption_salt = 16 Bytes random, encrypted_data_key = Fernet-DEK gewrapped
+    # mit KEK aus PBKDF2(password, salt). Bei Passwort-Reset wird nur der KEK
+    # ausgetauscht – DEK bleibt stabil → Backups bleiben entschlüsselbar.
+    encryption_salt = db.Column(db.LargeBinary(16))
+    encrypted_data_key = db.Column(db.Text)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -63,8 +71,17 @@ class EmailConfirmationToken(db.Model):
 
 
 class ApplicationStatus(str, Enum):
-    APPLIED = 'applied'
+    """Statuswerte. Frontend nutzt die deutschen Bezeichnungen; die englischen
+    bleiben als API-kompatibler Alias bestehen (legacy-Tests erwarten sie)."""
+    # Deutsche Werte (Frontend + Legacy-DB)
+    BEWORBEN = 'beworben'
     INTERVIEW = 'interview'
+    ANTWORT = 'antwort'
+    ABSAGE = 'absage'
+    GHOSTING = 'ghosting'
+    ZUSAGE = 'zusage'
+    # Englische Aliase (älterer Test-Code)
+    APPLIED = 'applied'
     OFFER = 'offer'
     REJECTED = 'rejected'
     ARCHIVED = 'archived'
@@ -77,8 +94,22 @@ class Application(db.Model):
     user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False, index=True)
     company = db.Column(db.String(255), nullable=False)
     position = db.Column(db.String(255), nullable=False)
-    status = db.Column(db.String(50), default=ApplicationStatus.APPLIED.value)
+    status = db.Column(db.String(50), default=ApplicationStatus.BEWORBEN.value)
     applied_date = db.Column(db.Date)
+
+    # Erweiterte Felder aus dem Legacy-Schema (data_service.py-Migration).
+    # Alle nullable, damit alte Records ohne diese Felder lesbar bleiben.
+    salary = db.Column(db.String(100))            # legacy: gehalt
+    location = db.Column(db.String(200))          # legacy: ort
+    contact_email = db.Column(db.String(255))     # legacy: email
+    source = db.Column(db.String(50))             # legacy: quelle (linkedin/xing/...)
+    link = db.Column(db.Text)
+    notes = db.Column(db.Text)                    # legacy: notizen
+
+    # Soft-Delete (Frontend hat /deleted, /recover, ?permanent=true Endpoints).
+    deleted = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    deleted_at = db.Column(db.DateTime, nullable=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
