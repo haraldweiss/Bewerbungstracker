@@ -4519,10 +4519,10 @@ const AdminSettings = {
                 <h4 style="margin-bottom: 1rem; text-align: center;">Aktionen für ${escapeHtml(user.email)}</h4>
 
                 <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                    ${!user.is_active ? `<button class="btn btn-primary btn-sm" onclick="AdminSettings.approveUser(${userId})" style="width: 100%; text-align: left;">✓ Benutzer genehmigen</button>` : ''}
-                    <button class="btn btn-secondary btn-sm" onclick="AdminSettings.resetPassword(${userId})" style="width: 100%; text-align: left;">🔑 Passwort zurücksetzen</button>
-                    <button class="btn btn-secondary btn-sm" onclick="AdminSettings.toggleAdmin(${userId})" style="width: 100%; text-align: left;">${user.is_admin ? '👤' : '👑'} ${user.is_admin ? 'Admin entfernen' : 'Zum Admin promoten'}</button>
-                    <button class="btn btn-danger btn-sm" onclick="AdminSettings.deleteUser(${userId})" style="width: 100%; text-align: left;">🗑️ Benutzer löschen</button>
+                    ${!user.is_active ? `<button class="btn btn-primary btn-sm" onclick="AdminSettings.approveUser('${userId}')" style="width: 100%; text-align: left;">✓ Benutzer genehmigen</button>` : ''}
+                    <button class="btn btn-secondary btn-sm" onclick="AdminSettings.resetPassword('${userId}')" style="width: 100%; text-align: left;">🔑 Passwort zurücksetzen</button>
+                    <button class="btn btn-secondary btn-sm" onclick="AdminSettings.toggleAdmin('${userId}')" style="width: 100%; text-align: left;">${user.is_admin ? '👤' : '👑'} ${user.is_admin ? 'Admin entfernen' : 'Zum Admin promoten'}</button>
+                    <button class="btn btn-danger btn-sm" onclick="AdminSettings.deleteUser('${userId}')" style="width: 100%; text-align: left;">🗑️ Benutzer löschen</button>
                     <button class="btn btn-secondary btn-sm" onclick="AdminSettings.closeActionMenu()" style="width: 100%; text-align: left;">Abbrechen</button>
                 </div>
             </div>
