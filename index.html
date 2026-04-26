@@ -3414,23 +3414,43 @@ function tryParseDate(str) {
 /* ═══════════════════════════════════════════════════════
    GHOSTING CHECK
 ═══════════════════════════════════════════════════════ */
+// Status, bei denen die Bewerbung "noch offen" ist und Ghosting greifen darf.
+// Final-Status (absage, zusage) und bereits geghostete werden übersprungen.
+const GHOSTING_OPEN_STATUSES = ['beworben', 'interview', 'antwort'];
+
 function checkGhosting() {
     const days = parseInt(state.settings.ghostingDays) || 30;
     let count = 0;
+    let skippedClosed = 0;
+
     state.bewerbungen.forEach(b => {
-        if (b.status !== 'beworben') return;
+        if (!GHOSTING_OPEN_STATUSES.includes(b.status)) {
+            skippedClosed++;
+            return;
+        }
         if (getDaysSince(b.datum) >= days) {
             b.status = 'ghosting';
             b.updatedAt = new Date().toISOString();
             count++;
         }
     });
+
     if (count > 0) {
         saveToStorage();
+        // Status-Update muss auch in die DB – sonst kommt er beim Reload zurück.
+        for (const b of state.bewerbungen) {
+            if (b.status !== 'ghosting') continue;
+            try {
+                Auth.fetch(`/applications/${b.id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ status: 'ghosting' })
+                });
+            } catch (e) { /* best-effort, saveToStorage triggert ohnehin Sync */ }
+        }
         renderAll();
-        showToast(`${count} Bewerbung(en) als 👻 Ghosting markiert`, 'warning');
+        showToast(`${count} Bewerbung(en) als 👻 Ghosting markiert (${skippedClosed} abgeschlossene übersprungen)`, 'warning');
     } else {
-        showToast('Keine neuen Ghosting-Fälle', 'info');
+        showToast(`Keine neuen Ghosting-Fälle (${skippedClosed} abgeschlossene übersprungen)`, 'info');
     }
 }
 
