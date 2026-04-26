@@ -3415,8 +3415,11 @@ function tryParseDate(str) {
    GHOSTING CHECK
 ═══════════════════════════════════════════════════════ */
 // Status, bei denen die Bewerbung "noch offen" ist und Ghosting greifen darf.
-// Final-Status (absage, zusage) und bereits geghostete werden übersprungen.
-const GHOSTING_OPEN_STATUSES = ['beworben', 'interview', 'antwort'];
+// Final/aktive Status werden übersprungen:
+//   - absage / zusage:    final, kein Ghosting
+//   - interview:          aktives Gespräch, kein Ghosting
+//   - ghosting:           bereits markiert
+const GHOSTING_OPEN_STATUSES = ['beworben', 'antwort'];
 
 function checkGhosting() {
     const days = parseInt(state.settings.ghostingDays) || 30;
