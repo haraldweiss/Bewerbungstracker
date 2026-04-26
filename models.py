@@ -25,6 +25,12 @@ class User(db.Model):
     encryption_salt = db.Column(db.LargeBinary(16))
     encrypted_data_key = db.Column(db.Text)
 
+    # User-Profil: Settings (Filter, Notification-Prefs, Apps-Script-URL etc.)
+    # und CV-Daten (Lebenslauf-Editor + cvComparisons). Beides als JSON-Strings,
+    # damit das Frontend frei strukturieren kann ohne neue Migrations.
+    settings_json = db.Column(db.Text)   # JSON-Objekt, null = noch nicht gesetzt
+    cv_data_json = db.Column(db.Text)    # JSON-Objekt {cv: {...}, comparisons: [...]}
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -1935,16 +1935,9 @@ async function loadFromStorage() {
             throw new Error('No applications in API response');
         }
 
-        // Try to load settings (may not exist)
-        try {
-            const settingsData = await Auth.fetch('/settings', { method: 'GET' });
-            if (settingsData && settingsData.settings) {
-                state.settings = { ...state.settings, ...settingsData.settings };
-                console.log('✅ Settings loaded from API');
-            }
-        } catch(e) {
-            console.warn('⚠️ Settings API not available:', e.message);
-        }
+        // Settings + CV aus DB laden – DB ist Source-of-Truth, localStorage
+        // wird mit den Werten aus der DB überschrieben (read-through Cache).
+        await loadProfileFromDB();
     } catch(e) {
         console.error('❌ loadFromStorage() failed:', {
             message: e.message,
@@ -2106,51 +2099,82 @@ function downloadConfigBackups() {
     showToast(`${backups.length} Config-Backups heruntergeladen ✓`, 'success');
 }
 
-async function saveToStorage() {
-    try {
-        // Try to save to Data Service (SQLite)
-        const response = await fetchAPI('/api/applications');
+// localStorage als Cache; DB-Sync für Settings + CV läuft debounced über
+// scheduleProfileSync(), damit nicht jeder Tastenanschlag eine PUT triggert.
+let _profileSyncTimer = null;
+function scheduleProfileSync(delayMs = 800) {
+    clearTimeout(_profileSyncTimer);
+    _profileSyncTimer = setTimeout(() => syncProfileToDB().catch(() => {}), delayMs);
+}
 
-        if (response.ok) {
-            const currentData = await response.json();
-            const currentApps = currentData.applications || [];
-
-            // Update changed applications
-            for (let app of state.bewerbungen) {
-                const existing = currentApps.find(a => a.id === app.id);
-                if (existing) {
-                    // Update existing
-                    await Auth.fetch(`/api/applications/${app.id}`, {
-                        method: 'PUT',
-                        body: JSON.stringify(app)
-                    });
-                } else {
-                    // Create new
-                    await Auth.fetch('/api/applications', {
-                        method: 'POST',
-                        body: JSON.stringify(app)
-                    });
-                }
-            }
-
-            // Save settings
-            await Auth.fetch('/api/settings', {
-                method: 'PUT',
-                body: JSON.stringify(state.settings)
-            });
-
-            console.log('✅ Data saved to SQLite (Data Service)');
+// Hook auf localStorage.setItem für die CV-Keys – jede der 11 verteilten
+// CV-Save-Stellen (cvData, cvComparisons) triggert dadurch automatisch
+// einen debounced DB-Sync. Kein Eingriff in die existierenden Funktionen.
+(function() {
+    const _origSet = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = function(key, value) {
+        _origSet(key, value);
+        if (key === 'cvData' || key === 'cvComparisons') {
+            if (typeof scheduleProfileSync === 'function') scheduleProfileSync();
         }
-    } catch(e) {
-        console.warn('⚠️ Data Service unavailable, saving to localStorage:', e.message);
-        // Fallback to localStorage
-        try {
-            localStorage.setItem('bewerbungsTrackerV3', JSON.stringify({
-                bewerbungen: state.bewerbungen,
-                settings: state.settings
-            }));
-        } catch(err) { showToast('Speicherfehler!', 'error'); }
+    };
+})();
+
+async function syncProfileToDB() {
+    if (typeof Auth === 'undefined' || !Auth.getToken()) return;
+    try {
+        await Auth.fetch('/settings', {
+            method: 'PUT',
+            body: JSON.stringify(state.settings || {}),
+        });
+    } catch (e) {
+        console.warn('Settings-Sync zur DB fehlgeschlagen:', e.message);
     }
+    try {
+        const cvData = JSON.parse(localStorage.getItem('cvData') || 'null');
+        const cvComparisons = JSON.parse(localStorage.getItem('cvComparisons') || '[]');
+        await Auth.fetch('/profile/cv', {
+            method: 'PUT',
+            body: JSON.stringify({ cvData, cvComparisons }),
+        });
+    } catch (e) {
+        console.warn('CV-Sync zur DB fehlgeschlagen:', e.message);
+    }
+}
+
+async function loadProfileFromDB() {
+    if (typeof Auth === 'undefined' || !Auth.getToken()) return;
+    try {
+        const r = await Auth.fetch('/settings', { method: 'GET' });
+        if (r && r.settings && typeof r.settings === 'object') {
+            state.settings = { ...state.settings, ...r.settings };
+        }
+    } catch (e) {
+        console.warn('Settings-Load aus DB fehlgeschlagen:', e.message);
+    }
+    try {
+        const r = await Auth.fetch('/profile/cv', { method: 'GET' });
+        const cv = (r && r.cv) || {};
+        if (cv.cvData) localStorage.setItem('cvData', JSON.stringify(cv.cvData));
+        if (Array.isArray(cv.cvComparisons)) {
+            localStorage.setItem('cvComparisons', JSON.stringify(cv.cvComparisons));
+        }
+    } catch (e) {
+        console.warn('CV-Load aus DB fehlgeschlagen:', e.message);
+    }
+}
+
+async function saveToStorage() {
+    // 1) localStorage immer befüllen (Offline-Cache + Schutz gegen API-Ausfall).
+    try {
+        localStorage.setItem('bewerbungsTrackerV3', JSON.stringify({
+            bewerbungen: state.bewerbungen,
+            settings: state.settings,
+        }));
+    } catch (err) { showToast('Speicherfehler (localStorage voll?)', 'error'); }
+
+    // 2) Settings + CV asynchron in die DB persistieren (debounced).
+    scheduleProfileSync();
 
     // Create automatic config backup after successful save
     createConfigBackup();
