@@ -4,16 +4,20 @@ Bewerbungstracker - Modernized Flask App with SQLAlchemy & JWT Auth
 Factory pattern for Flask application creation
 """
 
+import os
 from dotenv import load_dotenv
+
+# .env MUSS vor `from config import config` geladen werden – Config wertet
+# os.getenv(...) zur Import-Zeit aus, also vor jeglicher Modul-Initialisierung.
+# Im gunicorn-Pfad reicht systemd's `source .env`, aber bei direktem
+# `python script.py` (z.B. scripts/*) muss load_dotenv() ganz oben stehen.
+load_dotenv()
+
 from flask import Flask, jsonify, send_file
 from flask_cors import CORS
 from config import config
-import os
 from database import db
 from services.email_service import init_email
-
-# Load environment variables from .env file
-load_dotenv()
 
 
 def create_app(config_class=None):
