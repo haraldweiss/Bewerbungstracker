@@ -2643,6 +2643,14 @@ async function quickStatusChange(id, newStatus) {
         showToast(`Status aktualisiert: ${newStatus}`, 'success');
     } catch (error) {
         console.error('Status sync error:', error);
+
+        // Check if session expired
+        if (error.message === 'SESSION_EXPIRED') {
+            showToast('🔐 Deine Session ist abgelaufen. Bitte melde dich neu an.', 'error');
+            setTimeout(() => { window.location.href = '/login'; }, 2000);
+            return;
+        }
+
         // Bei sonstigem Fehler: aus DB nachladen, sonst auf oldStatus zurück.
         try {
             const dbData = await Auth.fetch(`/applications/${state.bewerbungen[idx].id}`, { method: 'GET' });
@@ -2650,6 +2658,12 @@ async function quickStatusChange(id, newStatus) {
             state.bewerbungen[idx].updatedAt = dbData.updated_at;
             showToast(`⚠️ Status-Update fehlgeschlagen. Wert aus DB wiederhergestellt: ${dbData.status}`, 'warning');
         } catch (fetchError) {
+            // Check if session expired in retry
+            if (fetchError.message === 'SESSION_EXPIRED') {
+                showToast('🔐 Deine Session ist abgelaufen. Bitte melde dich neu an.', 'error');
+                setTimeout(() => { window.location.href = '/login'; }, 2000);
+                return;
+            }
             state.bewerbungen[idx].status = oldStatus;
             showToast(`❌ Status-Update fehlgeschlagen. Wert auf "${oldStatus}" zurückgesetzt.`, 'error');
         }

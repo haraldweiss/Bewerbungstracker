@@ -182,6 +182,17 @@ const Auth = (() => {
                 fetchOptions.headers['Authorization'] = `Bearer ${newToken}`;
                 response = await window.fetch(`${API_BASE}${endpoint}`, fetchOptions);
             } catch (error) {
+                // Refresh token is also expired – session is completely invalid
+                const refreshTokenValue = localStorage.getItem(REFRESH_TOKEN_KEY);
+                const isRefreshExpired = refreshTokenValue === null ||
+                    /refresh token|expired/i.test(error.message || '');
+
+                if (isRefreshExpired) {
+                    // Clear tokens and logout
+                    await logout();
+                    throw new Error('SESSION_EXPIRED');
+                }
+
                 throw new Error(error.message || 'Token refresh failed, please login again');
             }
         }
