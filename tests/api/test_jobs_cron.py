@@ -154,3 +154,23 @@ def test_claude_match_scores_top_n_per_user(mock_factory, app, client, user_fact
     assert body["matched"] == 2
     matched = JobMatch.query.filter(JobMatch.match_score.isnot(None)).all()
     assert len(matched) == 2
+
+
+@patch("services.job_matching.notifier._send_push")
+def test_notify_sends_for_high_score_only(mock_push, app, client, user_factory):
+    user = user_factory(job_discovery_enabled=True, job_notification_threshold=80)
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="1", title="t", url="x", crawl_status='matched')
+    db.session.add(raw); db.session.flush()
+    db.session.add(JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                            prefilter_score=80, match_score=85))
+    raw2 = RawJob(source_id=src.id, external_id="2", title="t", url="x", crawl_status='matched')
+    db.session.add(raw2); db.session.flush()
+    db.session.add(JobMatch(raw_job_id=raw2.id, user_id=user.id, status='new',
+                            prefilter_score=70, match_score=70))
+    db.session.commit()
+
+    r = client.post("/api/jobs/notify", headers={"X-Cron-Token": "test-token"})
+    assert r.get_json()["notified"] == 1
+    assert mock_push.call_count == 1

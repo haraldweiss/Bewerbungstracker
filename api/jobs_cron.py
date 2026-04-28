@@ -12,6 +12,7 @@ from services.job_sources import get_adapter
 from services.job_matching.cv_tokenizer import tokenize_cv
 from services.job_matching.prefilter import score_job, PrefilterContext
 from services.job_matching.claude_matcher import match_job_with_claude
+from services.job_matching.notifier import send_match_notification
 
 
 jobs_cron_bp = Blueprint('jobs_cron', __name__, url_prefix='/api/jobs')
@@ -20,6 +21,7 @@ jobs_cron_bp = Blueprint('jobs_cron', __name__, url_prefix='/api/jobs')
 MAX_NEW_JOBS_PER_TICK = 50
 MAX_PREFILTER_PER_TICK = 100
 PREFILTER_DISMISS_THRESHOLD = 30
+MAX_NOTIFICATIONS_PER_TICK = 20
 HARD_TIME_LIMIT_SEC = 25
 AUTO_DISABLE_FAILURE_COUNT = 5
 
@@ -277,3 +279,36 @@ def claude_match():
 
     return jsonify({"matched": matched, "skipped_budget": skipped_budget,
                     "duration_sec": round(time.time() - started, 2)}), 200
+
+
+@jobs_cron_bp.post('/notify')
+@require_cron_token
+def notify():
+    started = time.time()
+
+    candidates = (db.session.query(JobMatch, RawJob, User)
+                  .join(RawJob, RawJob.id == JobMatch.raw_job_id)
+                  .join(User, User.id == JobMatch.user_id)
+                  .filter(JobMatch.notified_at.is_(None),
+                          JobMatch.status == 'new',
+                          JobMatch.match_score.isnot(None))
+                  .all())
+
+    notified = 0
+    for match, raw, user in candidates:
+        if notified >= MAX_NOTIFICATIONS_PER_TICK:
+            break
+        if time.time() - started > HARD_TIME_LIMIT_SEC:
+            break
+        if match.match_score < user.job_notification_threshold:
+            continue
+
+        send_match_notification(
+            user_id=user.id, title=raw.title, company=raw.company,
+            score=match.match_score, url=raw.url,
+        )
+        match.notified_at = datetime.utcnow()
+        notified += 1
+
+    db.session.commit()
+    return jsonify({"notified": notified, "duration_sec": round(time.time() - started, 2)}), 200
