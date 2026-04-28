@@ -314,7 +314,7 @@ class JobMatch(db.Model):
     _missing_skills = db.Column('missing_skills', db.Text, nullable=True)
     status = db.Column(db.String(16), default='new', nullable=False)
     notified_at = db.Column(db.DateTime, nullable=True)
-    imported_application_id = db.Column(db.Integer, db.ForeignKey('applications.id'), nullable=True)
+    imported_application_id = db.Column(db.String(36), db.ForeignKey('applications.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
