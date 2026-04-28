@@ -326,6 +326,7 @@
     <button class="nav-btn active" id="nav-dashboard" onclick="showView('dashboard')">📊 Dashboard</button>
     <button class="nav-btn" id="nav-bewerbungen" onclick="showView('bewerbungen')">📁 Bewerbungen</button>
     <button class="nav-btn" id="nav-kanban" onclick="showView('kanban')">🗂️ Kanban</button>
+    <button class="nav-btn" id="nav-jobs" onclick="showView('jobs')">🔍 Job-Vorschläge <span id="nav-jobs-badge" class="badge" style="display:none;background:var(--danger);color:white;border-radius:999px;padding:2px 8px;font-size:0.75em;margin-left:4px"></span></button>
     <div class="nav-section">Email Import</div>
     <button class="nav-btn" id="nav-gmail" onclick="showView('gmail')">📧 Mail Connector</button>
     <div class="nav-section">System</div>
@@ -419,6 +420,34 @@
 <div class="view" id="view-kanban">
     <h1 style="font-size:1.5rem;font-weight:700;margin-bottom:1.5rem;">🗂️ Kanban Board</h1>
     <div class="kanban-board" id="kanbanBoard"></div>
+</div>
+
+<!-- ═══ JOB-VORSCHLÄGE (Mini-UI für Phase A — Read-only Listing) ═══ -->
+<div class="view" id="view-jobs">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+        <h1 style="font-size:1.5rem;font-weight:700;">🔍 Job-Vorschläge</h1>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <label style="font-size:0.85em;color:var(--text-muted)">
+                Min. Score:
+                <input type="range" id="jobs-min-score" min="0" max="100" value="0" style="vertical-align:middle">
+                <span id="jobs-min-score-display">0</span>
+            </label>
+            <label style="font-size:0.85em;color:var(--text-muted)">
+                Status:
+                <select id="jobs-status-filter" style="padding:4px 8px;background:var(--bg-card2);color:var(--text);border:1px solid var(--border);border-radius:4px">
+                    <option value="new" selected>Neu</option>
+                    <option value="seen">Gesehen</option>
+                    <option value="imported">Übernommen</option>
+                    <option value="dismissed">Verworfen</option>
+                </select>
+            </label>
+            <button class="btn btn-secondary btn-sm" onclick="JobsView.refresh()">🔄 Aktualisieren</button>
+        </div>
+    </div>
+    <p id="jobs-stats" style="color:var(--text-muted);font-size:0.85em;margin-bottom:1rem"></p>
+    <div id="jobs-list">
+        <p style="color:var(--text-muted);text-align:center;padding:2rem">Lade Vorschläge…</p>
+    </div>
 </div>
 
 <!-- ═══ MAIL CONNECTOR ═══ -->
@@ -2344,6 +2373,7 @@ function showView(name) {
         if (name === 'deleted') loadDeletedEntries();
         if (name === 'users') loadUsersPage();
         if (name === 'cvcompare') showCVTab('upload');
+        if (name === 'jobs') JobsView.onShow();
     }
 
     // Initialize BackupManager when Settings view is shown
@@ -2358,6 +2388,165 @@ function switchTab(el, tabId) {
     el.classList.add('active');
     document.getElementById(tabId).classList.add('active');
 }
+
+/* ═══════════════════════════════════════════════════════
+   JOB-VORSCHLÄGE (Mini-UI für Phase A)
+═══════════════════════════════════════════════════════ */
+const JobsView = (() => {
+    const state = { initialized: false, filters: { minScore: 0, status: 'new' } };
+
+    function $(id) { return document.getElementById(id); }
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/[&<>"']/g, ch => ({
+            '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        }[ch]));
+    }
+
+    function badge(score) {
+        if (score == null) return '⚪';
+        if (score >= 80) return '🟢';
+        if (score >= 60) return '🟡';
+        if (score >= 30) return '🟠';
+        return '⚪';
+    }
+
+    function renderCard(m) {
+        const r = m.raw_job || {};
+        const score = m.match_score != null ? m.match_score.toFixed(0) : '–';
+        const date = r.posted_at ? new Date(r.posted_at).toLocaleDateString('de-DE') : '';
+        const missing = (m.missing_skills || []).slice(0, 5).map(s => escapeHtml(s));
+        return `
+            <div class="card" style="margin-bottom:1rem;padding:1rem">
+                <div style="display:flex;align-items:flex-start;gap:0.75rem;flex-wrap:wrap">
+                    <span style="background:var(--bg-card2);padding:6px 12px;border-radius:999px;font-weight:600;font-size:1.05em">
+                        ${badge(m.match_score)} ${score}
+                    </span>
+                    <h3 style="margin:0;flex:1;min-width:240px;font-size:1.1em">${escapeHtml(r.title)}</h3>
+                </div>
+                <div style="color:var(--text-muted);font-size:0.85em;margin-top:0.5rem">
+                    ${escapeHtml(r.company || '')}${r.location ? ' · ' + escapeHtml(r.location) : ''}${date ? ' · ' + date : ''}${r.source_name ? ' · ' + escapeHtml(r.source_name) : ''}
+                </div>
+                ${m.match_reasoning ? `
+                    <p style="margin:0.75rem 0;border-left:3px solid var(--primary);padding-left:0.75rem;font-style:italic">
+                        ${escapeHtml(m.match_reasoning)}
+                    </p>
+                ` : ''}
+                ${missing.length ? `
+                    <p style="color:var(--warning);margin:0.5rem 0;font-size:0.9em">
+                        ⚠ Fehlt im CV:
+                        ${missing.map(s => `<span style="display:inline-block;background:var(--bg-card2);padding:2px 8px;border-radius:4px;margin-right:4px;font-size:0.85em">${s}</span>`).join('')}
+                    </p>
+                ` : ''}
+                <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap">
+                    <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">🔗 Original</a>
+                    <button class="btn btn-success btn-sm" onclick="JobsView.importMatch(${m.id})">📥 Übernehmen</button>
+                    <button class="btn btn-secondary btn-sm" onclick="JobsView.markSeen(${m.id})">👁 Verbergen</button>
+                    <button class="btn btn-danger btn-sm" onclick="JobsView.dismissMatch(${m.id})">🗑️ Verwerfen</button>
+                </div>
+            </div>`;
+    }
+
+    async function fetchMatches() {
+        const params = new URLSearchParams();
+        params.set('min_score', state.filters.minScore);
+        params.set('status', state.filters.status);
+        params.set('limit', 50);
+        try {
+            const r = await Auth.fetch('/jobs/matches?' + params.toString(), { method: 'GET' });
+            const matches = (r && r.matches) || [];
+            const total = (r && r.total) || 0;
+            const container = $('jobs-list');
+            if (matches.length === 0) {
+                container.innerHTML = `<p style="color:var(--text-muted);text-align:center;padding:2rem">
+                    Keine Vorschläge für Filter "${escapeHtml(state.filters.status)}" mit min. Score ${state.filters.minScore}.<br>
+                    <small>Pipeline läuft im Hintergrund — neue Jobs erscheinen automatisch.</small>
+                </p>`;
+            } else {
+                container.innerHTML = matches.map(renderCard).join('');
+            }
+            $('jobs-stats').textContent = `${matches.length} von ${total} Vorschlägen (Status: ${state.filters.status}, min. Score: ${state.filters.minScore})`;
+        } catch (e) {
+            $('jobs-list').innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem">
+                Fehler beim Laden: ${escapeHtml(e.message)}
+            </p>`;
+        }
+    }
+
+    async function updateBadge() {
+        try {
+            const r = await Auth.fetch('/jobs/matches?status=new&min_score=80&limit=1', { method: 'GET' });
+            const badge = $('nav-jobs-badge');
+            if (r && r.total > 0) {
+                badge.textContent = r.total;
+                badge.style.display = '';
+            } else if (badge) {
+                badge.style.display = 'none';
+            }
+        } catch (e) { /* silent */ }
+    }
+
+    function bindEvents() {
+        const slider = $('jobs-min-score');
+        const display = $('jobs-min-score-display');
+        slider.addEventListener('input', e => { display.textContent = e.target.value; });
+        slider.addEventListener('change', e => {
+            state.filters.minScore = parseInt(e.target.value, 10);
+            fetchMatches();
+        });
+        $('jobs-status-filter').addEventListener('change', e => {
+            state.filters.status = e.target.value;
+            fetchMatches();
+        });
+    }
+
+    return {
+        onShow() {
+            if (!state.initialized) { bindEvents(); state.initialized = true; }
+            fetchMatches();
+            updateBadge();
+        },
+        refresh() { fetchMatches(); updateBadge(); },
+        async importMatch(id) {
+            if (!confirm('Diese Stelle als Bewerbung übernehmen?')) return;
+            try {
+                const r = await Auth.fetch(`/jobs/matches/${id}/import`, { method: 'POST' });
+                if (r && r.application_id) {
+                    if (typeof showToast === 'function') {
+                        showToast(`✅ Bewerbung erstellt`, 'success');
+                    } else {
+                        alert(`✅ Bewerbung erstellt (ID ${r.application_id})`);
+                    }
+                    fetchMatches();
+                }
+            } catch (e) {
+                alert('❌ Fehler: ' + (e && e.message ? e.message : 'unbekannt'));
+            }
+        },
+        async dismissMatch(id) {
+            try {
+                await Auth.fetch(`/jobs/matches/${id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ status: 'dismissed' }),
+                });
+                fetchMatches();
+            } catch (e) { alert('Fehler: ' + e.message); }
+        },
+        async markSeen(id) {
+            try {
+                await Auth.fetch(`/jobs/matches/${id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ status: 'seen' }),
+                });
+                fetchMatches();
+            } catch (e) { alert('Fehler: ' + e.message); }
+        },
+        updateBadge,
+    };
+})();
+
+// Badge regelmäßig updaten — auch wenn User nicht im Jobs-Tab ist
+setInterval(() => { if (typeof Auth !== 'undefined' && Auth.getToken()) JobsView.updateBadge(); }, 5 * 60 * 1000);
 
 /* ═══════════════════════════════════════════════════════
    RENDER DASHBOARD
