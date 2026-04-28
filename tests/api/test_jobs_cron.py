@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 import responses
 from datetime import datetime, timedelta
+from unittest.mock import patch, MagicMock
 
 from app import create_app
 from database import db
@@ -121,3 +122,35 @@ def test_prefilter_dismisses_low_scores(app, client, user_factory):
     client.post("/api/jobs/prefilter", headers={"X-Cron-Token": "test-token"})
     m = JobMatch.query.first()
     assert m.status == 'dismissed'
+
+
+@patch("api.jobs_cron._get_anthropic_client")
+def test_claude_match_scores_top_n_per_user(mock_factory, app, client, user_factory):
+    user = user_factory(
+        job_discovery_enabled=True,
+        cv_data_json=json.dumps({"cv": {"skills": ["react"], "summary": "React expert"}}),
+        job_claude_budget_per_tick=2,
+    )
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    for i in range(5):
+        raw = RawJob(source_id=src.id, external_id=f"id-{i}",
+                     title=f"React Job {i}", description="React",
+                     url=f"https://example.com/{i}", crawl_status='raw')
+        db.session.add(raw); db.session.flush()
+        db.session.add(JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                                prefilter_score=70 + i))
+    db.session.commit()
+
+    mock_client = MagicMock()
+    mock_client.messages.create.return_value = MagicMock(
+        content=[MagicMock(text='{"score": 88, "reasoning": "ok", "missing_skills": []}')],
+        usage=MagicMock(input_tokens=100, output_tokens=20),
+    )
+    mock_factory.return_value = mock_client
+
+    r = client.post("/api/jobs/claude-match", headers={"X-Cron-Token": "test-token"})
+    body = r.get_json()
+    assert body["matched"] == 2
+    matched = JobMatch.query.filter(JobMatch.match_score.isnot(None)).all()
+    assert len(matched) == 2

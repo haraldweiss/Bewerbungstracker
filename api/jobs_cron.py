@@ -1,15 +1,17 @@
 """Cron-Endpoints für Job-Discovery Pipeline (Token-geschützt)."""
 import json
+import os
 import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify
 
 from database import db
-from models import User, JobSource, RawJob, JobMatch
+from models import User, JobSource, RawJob, JobMatch, ApiCall
 from services.cron_auth import require_cron_token
 from services.job_sources import get_adapter
 from services.job_matching.cv_tokenizer import tokenize_cv
 from services.job_matching.prefilter import score_job, PrefilterContext
+from services.job_matching.claude_matcher import match_job_with_claude
 
 
 jobs_cron_bp = Blueprint('jobs_cron', __name__, url_prefix='/api/jobs')
@@ -20,6 +22,48 @@ MAX_PREFILTER_PER_TICK = 100
 PREFILTER_DISMISS_THRESHOLD = 30
 HARD_TIME_LIMIT_SEC = 25
 AUTO_DISABLE_FAILURE_COUNT = 5
+
+DEFAULT_MODEL = os.getenv("CLAUDE_DEFAULT_MODEL", "claude-haiku-4-5-20251001")
+COST_USD_PER_1M_TOKENS_IN = 0.80
+COST_USD_PER_1M_TOKENS_OUT = 4.00
+
+
+def _get_anthropic_client():
+    """Phase A: einziger Server-Key. Phase B ersetzt dies durch Factory."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    from anthropic import Anthropic  # lazy import — nicht im venv bei Tests
+    return Anthropic(api_key=api_key)
+
+
+def _estimate_cost_cents(tokens_in: int, tokens_out: int) -> int:
+    usd = (tokens_in / 1_000_000 * COST_USD_PER_1M_TOKENS_IN
+           + tokens_out / 1_000_000 * COST_USD_PER_1M_TOKENS_OUT)
+    return max(1, round(usd * 100))
+
+
+def _user_today_cost_cents(user_id: str) -> int:
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = (db.session.query(db.func.sum(ApiCall.cost))
+            .filter(ApiCall.user_id == user_id, ApiCall.timestamp >= today_start)
+            .scalar()) or 0
+    return int(round(rows * 100))
+
+
+def _build_cv_summary(cv_data_json: str) -> str:
+    if not cv_data_json:
+        return ""
+    cv = json.loads(cv_data_json).get("cv") or {}
+    parts = []
+    if cv.get("summary"):
+        parts.append(f"Zusammenfassung: {cv['summary']}")
+    if cv.get("skills"):
+        parts.append(f"Skills: {', '.join(cv['skills'])}")
+    if cv.get("experiences"):
+        titles = [e.get("title", "") for e in cv["experiences"][:5]]
+        parts.append(f"Letzte Positionen: {' | '.join(titles)}")
+    return "\n".join(parts)
 
 
 def _select_due_source() -> JobSource | None:
@@ -165,4 +209,71 @@ def prefilter():
 
     db.session.commit()
     return jsonify({"scored": scored, "dismissed": dismissed,
+                    "duration_sec": round(time.time() - started, 2)}), 200
+
+
+@jobs_cron_bp.post('/claude-match')
+@require_cron_token
+def claude_match():
+    started = time.time()
+    client = _get_anthropic_client()
+    if client is None:
+        return jsonify({"error": "ANTHROPIC_API_KEY nicht gesetzt"}), 503
+
+    matched = 0
+    skipped_budget = 0
+
+    users_with_pending = (db.session.query(User)
+                          .join(JobMatch, JobMatch.user_id == User.id)
+                          .filter(JobMatch.match_score.is_(None),
+                                  JobMatch.prefilter_score >= PREFILTER_DISMISS_THRESHOLD,
+                                  JobMatch.status == 'new')
+                          .distinct().all())
+
+    for user in users_with_pending:
+        if time.time() - started > HARD_TIME_LIMIT_SEC:
+            break
+
+        if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+            skipped_budget += 1
+            continue
+
+        candidates = (JobMatch.query
+                      .filter(JobMatch.user_id == user.id,
+                              JobMatch.match_score.is_(None),
+                              JobMatch.prefilter_score >= PREFILTER_DISMISS_THRESHOLD,
+                              JobMatch.status == 'new')
+                      .order_by(JobMatch.prefilter_score.desc())
+                      .limit(user.job_claude_budget_per_tick).all())
+
+        cv_summary = _build_cv_summary(user.cv_data_json)
+        for match in candidates:
+            if time.time() - started > HARD_TIME_LIMIT_SEC:
+                break
+            raw = RawJob.query.get(match.raw_job_id)
+            try:
+                result = match_job_with_claude(
+                    client=client, model=DEFAULT_MODEL, cv_summary=cv_summary,
+                    job={"title": raw.title, "description": raw.description, "location": raw.location},
+                )
+            except Exception:
+                continue
+
+            match.match_score = result.score
+            match.match_reasoning = result.reasoning
+            match.missing_skills = result.missing_skills
+            raw.crawl_status = 'matched'
+
+            cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
+            db.session.add(ApiCall(
+                user_id=user.id, endpoint='/api/jobs/claude-match',
+                model=DEFAULT_MODEL, tokens_in=result.tokens_in,
+                tokens_out=result.tokens_out, cost=cost_cents / 100.0,
+                key_owner='server',
+            ))
+            matched += 1
+
+        db.session.commit()
+
+    return jsonify({"matched": matched, "skipped_budget": skipped_budget,
                     "duration_sec": round(time.time() - started, 2)}), 200
