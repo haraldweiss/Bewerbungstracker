@@ -3665,7 +3665,7 @@ async function loadDeletedEntries() {
         if (!response.ok) throw new Error(`API error: ${response.statusText}`);
 
         const data = await response.json();
-        const deleted = data.deleted || [];
+        const deleted = data.applications || [];
 
         renderDeletedEntries(deleted);
     } catch (error) {
