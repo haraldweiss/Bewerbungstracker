@@ -78,3 +78,46 @@ def test_crawl_source_records_error_and_increments_failures(app, client):
     db.session.refresh(src)
     assert src.consecutive_failures == 1
     assert src.last_error is not None
+
+
+def test_prefilter_scores_pending_matches(app, client, user_factory):
+    user = user_factory(
+        job_discovery_enabled=True,
+        cv_data_json=json.dumps({"cv": {"skills": ["react", "typescript"]}}),
+    )
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="1",
+                 title="Senior React Developer", description="React, TypeScript, Berlin",
+                 url="https://example.com/1", crawl_status='raw')
+    db.session.add(raw); db.session.flush()
+    db.session.add(JobMatch(raw_job_id=raw.id, user_id=user.id, status='new'))
+    db.session.commit()
+
+    r = client.post("/api/jobs/prefilter", headers={"X-Cron-Token": "test-token"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["scored"] == 1
+
+    m = JobMatch.query.first()
+    assert m.prefilter_score is not None
+    assert m.prefilter_score > 0
+
+
+def test_prefilter_dismisses_low_scores(app, client, user_factory):
+    user = user_factory(
+        job_discovery_enabled=True,
+        cv_data_json=json.dumps({"cv": {"skills": ["python"]}}),
+    )
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="1",
+                 title="Designer", description="Figma",
+                 url="https://example.com/1", crawl_status='raw')
+    db.session.add(raw); db.session.flush()
+    db.session.add(JobMatch(raw_job_id=raw.id, user_id=user.id, status='new'))
+    db.session.commit()
+
+    client.post("/api/jobs/prefilter", headers={"X-Cron-Token": "test-token"})
+    m = JobMatch.query.first()
+    assert m.status == 'dismissed'

@@ -1,4 +1,5 @@
 """Cron-Endpoints für Job-Discovery Pipeline (Token-geschützt)."""
+import json
 import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify
@@ -7,12 +8,16 @@ from database import db
 from models import User, JobSource, RawJob, JobMatch
 from services.cron_auth import require_cron_token
 from services.job_sources import get_adapter
+from services.job_matching.cv_tokenizer import tokenize_cv
+from services.job_matching.prefilter import score_job, PrefilterContext
 
 
 jobs_cron_bp = Blueprint('jobs_cron', __name__, url_prefix='/api/jobs')
 
 # Tick-Limits
 MAX_NEW_JOBS_PER_TICK = 50
+MAX_PREFILTER_PER_TICK = 100
+PREFILTER_DISMISS_THRESHOLD = 30
 HARD_TIME_LIMIT_SEC = 25
 AUTO_DISABLE_FAILURE_COUNT = 5
 
@@ -118,3 +123,46 @@ def crawl_source():
         "matches_created": matches_created,
         "duration_sec": round(time.time() - started, 2),
     }), 200
+
+
+@jobs_cron_bp.post('/prefilter')
+@require_cron_token
+def prefilter():
+    started = time.time()
+    pending = (JobMatch.query
+               .filter(JobMatch.prefilter_score.is_(None), JobMatch.status == 'new')
+               .limit(MAX_PREFILTER_PER_TICK).all())
+
+    cv_cache: dict = {}
+    ctx_cache: dict = {}
+    scored = 0
+    dismissed = 0
+
+    for match in pending:
+        if time.time() - started > HARD_TIME_LIMIT_SEC:
+            break
+
+        if match.user_id not in cv_cache:
+            user = User.query.get(match.user_id)
+            cv_data = json.loads(user.cv_data_json) if user.cv_data_json else {}
+            cv_cache[match.user_id] = tokenize_cv(cv_data)
+            ctx_cache[match.user_id] = PrefilterContext(
+                language_filter=user.job_language_filter,
+                region_filter=user.job_region_filter,
+            )
+
+        raw = RawJob.query.get(match.raw_job_id)
+        score = score_job(
+            cv_cache[match.user_id],
+            {"title": raw.title, "description": raw.description, "location": raw.location},
+            ctx_cache[match.user_id],
+        )
+        match.prefilter_score = score
+        if score < PREFILTER_DISMISS_THRESHOLD:
+            match.status = 'dismissed'
+            dismissed += 1
+        scored += 1
+
+    db.session.commit()
+    return jsonify({"scored": scored, "dismissed": dismissed,
+                    "duration_sec": round(time.time() - started, 2)}), 200
