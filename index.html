@@ -422,15 +422,20 @@
     <div class="kanban-board" id="kanbanBoard"></div>
 </div>
 
-<!-- ═══ JOB-VORSCHLÄGE (Mini-UI für Phase A — Read-only Listing) ═══ -->
+<!-- ═══ JOB-VORSCHLÄGE (Phase C — Volle Frontend-Integration) ═══ -->
 <div class="view" id="view-jobs">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
         <h1 style="font-size:1.5rem;font-weight:700;">🔍 Job-Vorschläge</h1>
-        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="JobsView.refresh()">🔄 Aktualisieren</button>
+    </div>
+
+    <!-- Filter-Bar -->
+    <div class="card" style="margin-bottom:1rem;padding:0.75rem">
+        <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
             <label style="font-size:0.85em;color:var(--text-muted)">
                 Min. Score:
                 <input type="range" id="jobs-min-score" min="0" max="100" value="0" style="vertical-align:middle">
-                <span id="jobs-min-score-display">0</span>
+                <span id="jobs-min-score-display" style="display:inline-block;min-width:1.5em">0</span>
             </label>
             <label style="font-size:0.85em;color:var(--text-muted)">
                 Status:
@@ -441,12 +446,28 @@
                     <option value="dismissed">Verworfen</option>
                 </select>
             </label>
-            <button class="btn btn-secondary btn-sm" onclick="JobsView.refresh()">🔄 Aktualisieren</button>
+            <label style="font-size:0.85em;color:var(--text-muted)">
+                Quelle:
+                <select id="jobs-source-filter" style="padding:4px 8px;background:var(--bg-card2);color:var(--text);border:1px solid var(--border);border-radius:4px">
+                    <option value="">Alle</option>
+                </select>
+            </label>
+            <input type="text" id="jobs-search" placeholder="🔎 Titel/Firma suchen…"
+                   style="padding:4px 8px;background:var(--bg-card2);color:var(--text);border:1px solid var(--border);border-radius:4px;flex:1;min-width:180px">
         </div>
     </div>
+
     <p id="jobs-stats" style="color:var(--text-muted);font-size:0.85em;margin-bottom:1rem"></p>
+
     <div id="jobs-list">
         <p style="color:var(--text-muted);text-align:center;padding:2rem">Lade Vorschläge…</p>
+    </div>
+
+    <!-- Pagination -->
+    <div id="jobs-pagination" style="display:flex;gap:0.5rem;align-items:center;justify-content:center;margin:1rem 0;color:var(--text-muted);font-size:0.9em">
+        <button class="btn btn-sm" onclick="JobsView.prevPage()" id="jobs-prev">← Zurück</button>
+        <span id="jobs-page-info">Seite 1</span>
+        <button class="btn btn-sm" onclick="JobsView.nextPage()" id="jobs-next">Weiter →</button>
     </div>
 </div>
 
@@ -975,6 +996,30 @@
         <button class="btn btn-primary" onclick="saveJobDiscoveryFilters()">💾 Filter speichern</button>
         <div id="jdFiltersStatus" style="margin-top:0.5rem;font-size:0.85em;color:var(--text-muted)"></div>
     </div>
+
+    <div class="card" style="max-width:800px;margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:0.75rem;">📡 Job-Quellen</div>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem">
+            System-Quellen (🌐) sind voraktiviert und für alle User da.
+            Eigene Quellen (👤) gelten nur für dich.
+        </p>
+        <div style="margin-bottom:0.75rem">
+            <button class="btn btn-success btn-sm" onclick="JdSourcesUI.openCreate()">+ Eigene Quelle</button>
+            <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.refresh()">🔄</button>
+        </div>
+        <table id="jdSourcesTable" style="width:100%;font-size:0.88rem;border-collapse:collapse">
+            <thead>
+                <tr style="text-align:left;border-bottom:1px solid var(--border)">
+                    <th style="padding:0.4rem">Name</th>
+                    <th style="padding:0.4rem">Typ</th>
+                    <th style="padding:0.4rem">Status</th>
+                    <th style="padding:0.4rem">Aktionen</th>
+                </tr>
+            </thead>
+            <tbody id="jdSourcesTableBody"><tr><td colspan="4" style="padding:0.6rem;color:var(--text-muted)">Lade…</td></tr></tbody>
+        </table>
+    </div>
+
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">🔔 Benachrichtigungen</div>
         <div class="form-group" style="margin-bottom:1rem;">
@@ -2431,6 +2476,7 @@ function showView(name) {
     if (name === 'settings') {
         BackupManager.init();
         loadJobDiscoveryFilters();
+        if (typeof JdSourcesUI !== 'undefined') JdSourcesUI.refresh();
     }
 }
 
@@ -2524,6 +2570,194 @@ async function saveJobDiscoveryFilters() {
     }
 }
 
+/* ═══════════════════════════════════════════════════════
+   JOB-QUELLEN-VERWALTUNG (Settings-Section)
+═══════════════════════════════════════════════════════ */
+const JdSourcesUI = (() => {
+    function $(id) { return document.getElementById(id); }
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/[&<>"']/g, c => ({
+            '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        }[c]));
+    }
+    const TYPE_LABELS = {
+        rss: '📰 RSS', adzuna: '🔎 Adzuna',
+        bundesagentur: '🇩🇪 Bundesagentur', arbeitnow: '🌍 Arbeitnow',
+    };
+
+    async function refresh() {
+        const tbody = $('jdSourcesTableBody');
+        if (!tbody) return;
+        try {
+            const r = await Auth.fetch('/jobs/sources', { method: 'GET' });
+            const list = (r && r.sources) || [];
+            tbody.innerHTML = list.length === 0
+                ? `<tr><td colspan="4" style="padding:0.6rem;color:var(--text-muted)">Keine Quellen.</td></tr>`
+                : list.map(s => {
+                    const last = s.last_crawled_at ? new Date(s.last_crawled_at).toLocaleString('de-DE') : 'noch nicht';
+                    const status = s.enabled
+                        ? (s.last_error
+                            ? `⚠️ <span title="${escapeHtml(s.last_error)}">Fehler</span>`
+                            : '✅ Aktiv')
+                        : '⏸️ Aus';
+                    const ownership = s.is_global ? '🌐 Global' : '👤 Du';
+                    return `
+                    <tr style="border-bottom:1px solid var(--border)">
+                        <td style="padding:0.4rem">
+                            ${escapeHtml(s.name)}<br>
+                            <small style="color:var(--text-muted)">${ownership} · letzter Crawl: ${last}</small>
+                        </td>
+                        <td style="padding:0.4rem">${TYPE_LABELS[s.type] || s.type}</td>
+                        <td style="padding:0.4rem">${status}</td>
+                        <td style="padding:0.4rem;white-space:nowrap">
+                            <button class="btn btn-sm" onclick="JdSourcesUI.testCrawl(${s.id})" title="Test-Crawl">🧪</button>
+                            ${s.is_own ? `
+                                <button class="btn btn-sm" onclick="JdSourcesUI.toggle(${s.id}, ${!s.enabled})" title="${s.enabled ? 'Deaktivieren' : 'Aktivieren'}">${s.enabled ? '⏸️' : '▶️'}</button>
+                                <button class="btn btn-sm btn-danger" onclick="JdSourcesUI.del(${s.id})" title="Löschen">🗑️</button>
+                            ` : ''}
+                        </td>
+                    </tr>`;
+                }).join('');
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="4" style="padding:0.6rem;color:var(--danger)">Fehler: ${escapeHtml(e.message)}</td></tr>`;
+        }
+    }
+
+    async function testCrawl(id) {
+        try {
+            const r = await Auth.fetch(`/jobs/sources/${id}/test-crawl`, { method: 'POST' });
+            if (r && r.ok) {
+                alert(`✅ Test erfolgreich. ${r.found_jobs} Jobs gefunden.\n\n${(r.sample_titles || []).slice(0, 5).join('\n')}`);
+            } else {
+                alert(`❌ Test fehlgeschlagen: ${(r && r.error) || 'unbekannt'}`);
+            }
+        } catch (e) { alert('Fehler: ' + e.message); }
+    }
+
+    async function toggle(id, enabled) {
+        try {
+            await Auth.fetch(`/jobs/sources/${id}`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
+            refresh();
+        } catch (e) { alert('Fehler: ' + e.message); }
+    }
+
+    async function del(id) {
+        if (!confirm('Diese Quelle wirklich löschen?')) return;
+        try {
+            await Auth.fetch(`/jobs/sources/${id}`, { method: 'DELETE' });
+            refresh();
+        } catch (e) { alert('Fehler: ' + e.message); }
+    }
+
+    function openCreate() {
+        if ($('jdSourceModalWrap')) return;
+        const html = `
+        <div id="jdSourceModalWrap" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000" onclick="JdSourcesUI.closeCreate(event)">
+            <div style="background:var(--bg-card);border-radius:8px;padding:1.5rem;max-width:520px;width:92%;max-height:88vh;overflow-y:auto" onclick="event.stopPropagation()">
+                <h3 style="margin-top:0">+ Eigene Job-Quelle</h3>
+                <div class="form-group">
+                    <label>Typ:</label>
+                    <select id="jdNewType" onchange="JdSourcesUI.renderTypeFields()" style="width:100%">
+                        <option value="rss">📰 RSS-Feed</option>
+                        <option value="bundesagentur">🇩🇪 Bundesagentur Jobsuche</option>
+                        <option value="adzuna">🔎 Adzuna</option>
+                        <option value="arbeitnow">🌍 Arbeitnow (Remote)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Name (Anzeige):</label>
+                    <input type="text" id="jdNewName" placeholder="z.B. StepStone Berlin Frontend" style="width:100%">
+                </div>
+                <div class="form-group">
+                    <label>Crawl-Intervall (Min, mind. 15):</label>
+                    <input type="number" id="jdNewInterval" value="60" min="15" max="1440" style="width:120px">
+                </div>
+                <div id="jdNewTypeFields"></div>
+                <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
+                    <button class="btn btn-secondary" onclick="JdSourcesUI.closeCreate()">Abbrechen</button>
+                    <button class="btn btn-primary" onclick="JdSourcesUI.create()">Anlegen</button>
+                </div>
+            </div>
+        </div>`;
+        const el = document.createElement('div');
+        el.innerHTML = html;
+        document.body.appendChild(el.firstElementChild);
+        renderTypeFields();
+    }
+
+    function renderTypeFields() {
+        const t = $('jdNewType').value;
+        const c = $('jdNewTypeFields');
+        if (t === 'rss') {
+            c.innerHTML = `<div class="form-group"><label>RSS-URL:</label>
+                <input type="url" id="jdCfgUrl" placeholder="https://example.com/feed.xml" required style="width:100%"></div>`;
+        } else if (t === 'adzuna') {
+            c.innerHTML = `
+                <div class="form-group"><label>Adzuna app_id:</label><input type="text" id="jdCfgAppId" style="width:100%"></div>
+                <div class="form-group"><label>Adzuna app_key:</label><input type="password" id="jdCfgAppKey" style="width:100%"></div>
+                <div class="form-group"><label>Land (2-Letter):</label><input type="text" id="jdCfgCountry" value="de" maxlength="2" style="width:80px"></div>
+                <div class="form-group"><label>Stichwort:</label><input type="text" id="jdCfgWhat" placeholder="frontend" style="width:100%"></div>
+                <div class="form-group"><label>Ort:</label><input type="text" id="jdCfgWhere" placeholder="Berlin" style="width:100%"></div>`;
+        } else if (t === 'bundesagentur') {
+            c.innerHTML = `
+                <div class="form-group"><label>Stichwort (was):</label><input type="text" id="jdCfgWas" placeholder="Cybersecurity" style="width:100%"></div>
+                <div class="form-group"><label>PLZ (wo):</label><input type="text" id="jdCfgWo" maxlength="5" placeholder="44141" style="width:120px"></div>
+                <div class="form-group"><label>Umkreis (km):</label><input type="number" id="jdCfgUmkreis" value="50" min="0" max="200" style="width:120px"></div>`;
+        } else if (t === 'arbeitnow') {
+            c.innerHTML = `<div class="form-group"><label>Tags (kommagetrennt):</label>
+                <input type="text" id="jdCfgTags" placeholder="javascript, remote" style="width:100%"></div>`;
+        }
+    }
+
+    function buildConfig() {
+        const t = $('jdNewType').value;
+        if (t === 'rss') return { url: $('jdCfgUrl').value };
+        if (t === 'adzuna') return {
+            app_id: $('jdCfgAppId').value, app_key: $('jdCfgAppKey').value,
+            country: ($('jdCfgCountry').value || 'de').toLowerCase(),
+            what: $('jdCfgWhat').value, where: $('jdCfgWhere').value,
+            results_per_page: 50,
+        };
+        if (t === 'bundesagentur') return {
+            was: $('jdCfgWas').value, wo: $('jdCfgWo').value,
+            umkreis: parseInt($('jdCfgUmkreis').value, 10) || 25,
+        };
+        if (t === 'arbeitnow') return {
+            tags: ($('jdCfgTags').value || '').split(',').map(s => s.trim()).filter(Boolean),
+        };
+        return {};
+    }
+
+    async function create() {
+        try {
+            const r = await Auth.fetch('/jobs/sources', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: $('jdNewName').value,
+                    type: $('jdNewType').value,
+                    config: buildConfig(),
+                    crawl_interval_min: parseInt($('jdNewInterval').value, 10) || 60,
+                }),
+            });
+            if (r && r.source) {
+                closeCreate();
+                refresh();
+            }
+        } catch (e) {
+            alert('❌ ' + (e && e.message ? e.message : 'Fehler'));
+        }
+    }
+
+    function closeCreate(event) {
+        if (event && event.target.id !== 'jdSourceModalWrap') return;
+        const m = $('jdSourceModalWrap');
+        if (m) m.remove();
+    }
+
+    return { refresh, openCreate, closeCreate, renderTypeFields, create, testCrawl, toggle, del };
+})();
+
 function switchTab(el, tabId) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -2535,7 +2769,14 @@ function switchTab(el, tabId) {
    JOB-VORSCHLÄGE (Mini-UI für Phase A)
 ═══════════════════════════════════════════════════════ */
 const JobsView = (() => {
-    const state = { initialized: false, filters: { minScore: 0, status: 'new' } };
+    const PAGE_SIZE = 25;
+    const state = {
+        initialized: false,
+        filters: { minScore: 0, status: 'new', sourceId: null, q: '' },
+        offset: 0,
+        total: 0,
+        sourcesCache: [],
+    };
 
     function $(id) { return document.getElementById(id); }
     function escapeHtml(s) {
@@ -2589,25 +2830,42 @@ const JobsView = (() => {
             </div>`;
     }
 
+    async function fetchSources() {
+        try {
+            const r = await Auth.fetch('/jobs/sources', { method: 'GET' });
+            state.sourcesCache = (r && r.sources) || [];
+            const sel = $('jobs-source-filter');
+            if (sel) {
+                const current = sel.value;
+                sel.innerHTML = '<option value="">Alle Quellen</option>' +
+                    state.sourcesCache.map(s =>
+                        `<option value="${s.id}">${escapeHtml(s.name)}</option>`
+                    ).join('');
+                sel.value = current;
+            }
+        } catch (e) { /* silent */ }
+    }
+
     async function fetchMatches() {
         const params = new URLSearchParams();
         params.set('min_score', state.filters.minScore);
         params.set('status', state.filters.status);
-        params.set('limit', 50);
+        if (state.filters.sourceId) params.set('source_id', state.filters.sourceId);
+        if (state.filters.q) params.set('q', state.filters.q);
+        params.set('limit', PAGE_SIZE);
+        params.set('offset', state.offset);
         try {
             const r = await Auth.fetch('/jobs/matches?' + params.toString(), { method: 'GET' });
             const matches = (r && r.matches) || [];
-            const total = (r && r.total) || 0;
+            state.total = (r && r.total) || 0;
             const container = $('jobs-list');
             if (matches.length === 0) {
-                container.innerHTML = `<p style="color:var(--text-muted);text-align:center;padding:2rem">
-                    Keine Vorschläge für Filter "${escapeHtml(state.filters.status)}" mit min. Score ${state.filters.minScore}.<br>
-                    <small>Pipeline läuft im Hintergrund — neue Jobs erscheinen automatisch.</small>
-                </p>`;
+                container.innerHTML = renderEmptyState();
             } else {
                 container.innerHTML = matches.map(renderCard).join('');
             }
-            $('jobs-stats').textContent = `${matches.length} von ${total} Vorschlägen (Status: ${state.filters.status}, min. Score: ${state.filters.minScore})`;
+            $('jobs-stats').textContent = `${matches.length} von ${state.total} Vorschlägen (Status: ${state.filters.status}, min. Score: ${state.filters.minScore}${state.filters.q ? ', Suche: "' + state.filters.q + '"' : ''})`;
+            renderPagination();
         } catch (e) {
             $('jobs-list').innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem">
                 Fehler beim Laden: ${escapeHtml(e.message)}
@@ -2615,9 +2873,133 @@ const JobsView = (() => {
         }
     }
 
+    function renderPagination() {
+        const page = Math.floor(state.offset / PAGE_SIZE) + 1;
+        const totalPages = Math.max(1, Math.ceil(state.total / PAGE_SIZE));
+        $('jobs-page-info').textContent = `Seite ${page} / ${totalPages}`;
+        $('jobs-prev').disabled = state.offset === 0;
+        $('jobs-next').disabled = state.offset + PAGE_SIZE >= state.total;
+        $('jobs-pagination').style.display = state.total > PAGE_SIZE ? '' : 'none';
+    }
+
+    function renderEmptyState() {
+        // Wenn Filter aktiv sind: einfacher Hinweis (kein Onboarding nötig).
+        const hasActiveFilter = state.filters.minScore > 0 || state.filters.sourceId
+            || state.filters.q || state.filters.status !== 'new';
+        if (hasActiveFilter) {
+            const desc = [];
+            if (state.filters.minScore > 0) desc.push(`min. Score ${state.filters.minScore}`);
+            if (state.filters.sourceId) desc.push('einer bestimmten Quelle');
+            if (state.filters.q) desc.push(`Suchbegriff "${state.filters.q}"`);
+            return `<p style="color:var(--text-muted);text-align:center;padding:2rem">
+                Keine Vorschläge im Status "${escapeHtml(state.filters.status)}"${desc.length ? ' mit ' + escapeHtml(desc.join(', ')) : ''}.<br>
+                <small>Filter zurücksetzen oder warten — Pipeline läuft alle 15-30 Min.</small>
+            </p>`;
+        }
+        // Sonst: Onboarding-Checkliste async laden + zeigen
+        renderOnboardingChecklist();
+        return `<div id="jobs-onboarding-loading" style="color:var(--text-muted);text-align:center;padding:2rem">
+            Lade Onboarding-Status…
+        </div>`;
+    }
+
+    async function renderOnboardingChecklist() {
+        try {
+            const [statusR, sourcesR] = await Promise.all([
+                Auth.fetch('/profile/job-discovery/status', { method: 'GET' }).catch(() => null),
+                Auth.fetch('/jobs/sources', { method: 'GET' }).catch(() => null),
+            ]);
+            const enabled = statusR && statusR.enabled;
+            const requested = statusR && statusR.requested_at;
+            const cvDataLocal = localStorage.getItem('cvData');
+            const hasCv = !!(cvDataLocal && cvDataLocal !== 'null');
+            const enabledSources = sourcesR && sourcesR.sources
+                ? sourcesR.sources.filter(s => s.enabled).length : 0;
+            const notifPerm = ('Notification' in window) ? Notification.permission : 'unsupported';
+
+            const checks = [
+                { ok: hasCv, label: 'Lebenslauf hinterlegt',
+                  fix: 'Tab "📋 CV Vergleich" → Upload' },
+                { ok: enabled, label: 'Job-Discovery aktiviert',
+                  fix: requested ? 'Wartet auf Admin-Freigabe (⏳)' : 'Modal beim ersten CV-Upload — oder via Admin' },
+                { ok: enabledSources > 0, label: 'Mindestens 1 aktive Quelle',
+                  fix: 'System-Quellen sind voraktiviert (Settings → Job-Quellen)' },
+                { ok: notifPerm === 'granted', label: 'Browser-Notifications erlaubt (optional)',
+                  fix: notifPerm === 'denied' ? 'Im Browser-URL-Slot freigeben'
+                       : 'Klick auf den Tab triggert Permission-Dialog' },
+            ];
+            const allDone = checks.filter(c => c.label.indexOf('optional') < 0).every(c => c.ok);
+
+            const container = $('jobs-list');
+            if (!container) return;
+            container.innerHTML = `
+                <div class="card" style="padding:1.5rem;max-width:640px;margin:1rem auto">
+                    <h3 style="margin-top:0">🚀 So startest du mit Job-Vorschlägen</h3>
+                    <ul style="list-style:none;padding:0;margin:1rem 0">
+                        ${checks.map(c => `
+                            <li style="padding:0.5rem 0;border-bottom:1px solid var(--border)">
+                                ${c.ok ? '✅' : '⬜'} <strong>${escapeHtml(c.label)}</strong>
+                                ${c.ok ? '' : `<br><small style="color:var(--text-muted);margin-left:1.5rem">→ ${escapeHtml(c.fix)}</small>`}
+                            </li>
+                        `).join('')}
+                    </ul>
+                    ${allDone
+                        ? '<p>🎉 Alles bereit — warte auf den nächsten Pipeline-Lauf (max ~90 Min) oder triggere ihn manuell auf dem VPS.</p>'
+                        : '<p style="color:var(--text-muted)">Sobald alle Pflicht-Punkte erfüllt sind, erscheinen hier deine Vorschläge.</p>'
+                    }
+                    <div style="font-size:0.85em;color:var(--text-muted);margin-top:1rem">
+                        Tipp: Die Pipeline läuft alle 15-30 Min im Hintergrund. Neue Top-Matches (Score ≥ 80) erscheinen dann automatisch hier.
+                    </div>
+                </div>`;
+        } catch (e) {
+            const container = $('jobs-list');
+            if (container) {
+                container.innerHTML = `<p style="color:var(--text-muted);text-align:center;padding:2rem">
+                    Noch keine Vorschläge. Pipeline läuft im Hintergrund — neue Jobs erscheinen automatisch.
+                </p>`;
+            }
+        }
+    }
+
+    // Im localStorage gespeicherte Match-IDs für die der User schon
+    // benachrichtigt wurde (verhindert wiederholte Notifications beim
+    // Badge-Refresh alle 5 Min). Capped auf letzte 200 IDs.
+    function loadSeenIds() {
+        try { return new Set(JSON.parse(localStorage.getItem('jobs-notified-ids') || '[]')); }
+        catch (e) { return new Set(); }
+    }
+    function saveSeenIds(ids) {
+        try {
+            const arr = Array.from(ids).slice(-200);
+            localStorage.setItem('jobs-notified-ids', JSON.stringify(arr));
+        } catch (e) { /* silent (storage full) */ }
+    }
+
+    async function maybeNotify(matches) {
+        if (!('Notification' in window) || Notification.permission !== 'granted') return;
+        const seen = loadSeenIds();
+        let changed = false;
+        for (const m of matches) {
+            if (seen.has(m.id)) continue;
+            const title = '🔍 Neuer Job-Vorschlag';
+            const body = `${m.match_score.toFixed(0)}: ${(m.raw_job && m.raw_job.title) || ''}`
+                + (m.raw_job && m.raw_job.company ? ' @ ' + m.raw_job.company : '');
+            try {
+                new Notification(title, { body, tag: `job-match-${m.id}` });
+            } catch (e) { /* silent — manche Browser blocken im Tab */ }
+            seen.add(m.id);
+            changed = true;
+        }
+        if (changed) saveSeenIds(seen);
+    }
+
     async function updateBadge() {
         try {
-            const r = await Auth.fetch('/jobs/matches?status=new&min_score=80&limit=1', { method: 'GET' });
+            // Threshold aus User-Settings holen — wir wissen es nicht direkt,
+            // also fragen wir match-Status mit min_score=80 als Fallback.
+            // (Backend ehrt user.job_notification_threshold beim Notify-Stage,
+            // hier ist es nur die Badge-Heuristik.)
+            const r = await Auth.fetch('/jobs/matches?status=new&min_score=80&limit=20', { method: 'GET' });
             const badge = $('nav-jobs-badge');
             if (r && r.total > 0) {
                 badge.textContent = r.total;
@@ -2625,7 +3007,20 @@ const JobsView = (() => {
             } else if (badge) {
                 badge.style.display = 'none';
             }
+            // Browser-Push für ungesehene Matches
+            if (r && Array.isArray(r.matches)) {
+                maybeNotify(r.matches);
+            }
         } catch (e) { /* silent */ }
+    }
+
+    function ensureNotificationPermission() {
+        if (!('Notification' in window)) return;
+        if (Notification.permission === 'default') {
+            // Wir fragen nicht aufdringlich — nur wenn der User bewusst auf
+            // den Tab klickt. Bei "denied" akzeptieren wir das.
+            try { Notification.requestPermission(); } catch (e) { /* iOS Safari etc. */ }
+        }
     }
 
     function bindEvents() {
@@ -2634,21 +3029,55 @@ const JobsView = (() => {
         slider.addEventListener('input', e => { display.textContent = e.target.value; });
         slider.addEventListener('change', e => {
             state.filters.minScore = parseInt(e.target.value, 10);
+            state.offset = 0;
             fetchMatches();
         });
         $('jobs-status-filter').addEventListener('change', e => {
             state.filters.status = e.target.value;
+            state.offset = 0;
             fetchMatches();
+        });
+        $('jobs-source-filter').addEventListener('change', e => {
+            state.filters.sourceId = e.target.value || null;
+            state.offset = 0;
+            fetchMatches();
+        });
+        let searchTimer = null;
+        $('jobs-search').addEventListener('input', e => {
+            clearTimeout(searchTimer);
+            const v = e.target.value.trim();
+            searchTimer = setTimeout(() => {
+                state.filters.q = v;
+                state.offset = 0;
+                fetchMatches();
+            }, 300);
         });
     }
 
     return {
         onShow() {
-            if (!state.initialized) { bindEvents(); state.initialized = true; }
+            if (!state.initialized) {
+                bindEvents();
+                ensureNotificationPermission();
+                state.initialized = true;
+            }
+            fetchSources();
             fetchMatches();
             updateBadge();
         },
-        refresh() { fetchMatches(); updateBadge(); },
+        refresh() { fetchSources(); fetchMatches(); updateBadge(); },
+        nextPage() {
+            if (state.offset + PAGE_SIZE < state.total) {
+                state.offset += PAGE_SIZE;
+                fetchMatches();
+            }
+        },
+        prevPage() {
+            if (state.offset > 0) {
+                state.offset = Math.max(0, state.offset - PAGE_SIZE);
+                fetchMatches();
+            }
+        },
         async importMatch(id) {
             if (!confirm('Diese Stelle als Bewerbung übernehmen?')) return;
             try {

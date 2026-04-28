@@ -10,7 +10,7 @@
 
 // Bump bei jedem Frontend-Release das index.html / static assets ändert,
 // sonst bleibt die alte Version aus dem SW-Cache hängen.
-const CACHE_NAME = 'bewerbungs-tracker-v5';
+const CACHE_NAME = 'bewerbungs-tracker-v6';
 const OFFLINE_URL = '/';
 
 // Static assets to pre-cache on install. Explicitly excludes service-worker.js
