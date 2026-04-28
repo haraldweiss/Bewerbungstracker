@@ -34,6 +34,9 @@ class User(db.Model):
 
     # Job-Discovery Settings (Phase A)
     job_discovery_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    # Wenn gesetzt: User hat Aktivierung angefragt, wartet auf Admin-Approval.
+    # Bei job_discovery_enabled=true ist das Field idR auch gesetzt (Audit-Trail).
+    job_discovery_requested_at = db.Column(db.DateTime, nullable=True)
     job_notification_threshold = db.Column(db.Integer, default=80, nullable=False)
     job_claude_budget_per_tick = db.Column(db.Integer, default=5, nullable=False)
     job_daily_budget_cents = db.Column(db.Integer, default=50, nullable=False)
