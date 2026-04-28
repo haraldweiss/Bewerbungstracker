@@ -117,6 +117,7 @@ def create_app(config_class=None):
     from api.admin import admin_bp
     from api.backup import backup_bp
     from api.profile import profile_bp
+    from api.jobs_cron import jobs_cron_bp
     from claude_integration import claude_bp
 
     app.register_blueprint(auth_bp)
@@ -125,6 +126,7 @@ def create_app(config_class=None):
     app.register_blueprint(admin_bp)
     app.register_blueprint(backup_bp)
     app.register_blueprint(profile_bp)
+    app.register_blueprint(jobs_cron_bp)
     app.register_blueprint(claude_bp)
 
     # Error handlers
