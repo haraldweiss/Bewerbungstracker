@@ -58,3 +58,36 @@ def test_user_job_sources_backref(app, user_factory):
     db.session.refresh(user)
     assert len(user.job_sources) == 2
     assert {s.name for s in user.job_sources} == {"A", "B"}
+
+
+from models import RawJob
+
+
+def test_raw_job_dedup_per_source(app):
+    src = JobSource(name="Test", type="rss", config={"url": "x"})
+    db.session.add(src)
+    db.session.flush()
+
+    job1 = RawJob(
+        source_id=src.id,
+        external_id="abc-123",
+        title="Frontend",
+        company="ACME",
+        url="https://example.com/job/1",
+        crawl_status="raw",
+    )
+    db.session.add(job1)
+    db.session.commit()
+
+    # Selbe (source_id, external_id) sollte UNIQUE-Constraint verletzen
+    job_dup = RawJob(
+        source_id=src.id,
+        external_id="abc-123",
+        title="Andere Daten",
+        url="https://example.com/job/2",
+        crawl_status="raw",
+    )
+    db.session.add(job_dup)
+    with pytest.raises(Exception):
+        db.session.commit()
+    db.session.rollback()

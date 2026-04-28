@@ -224,5 +224,43 @@ class JobSource(db.Model):
     def config(self, value: dict):
         self._config_json = _json.dumps(value or {})
 
+    raw_jobs = db.relationship('RawJob', backref='source', cascade='all, delete-orphan')
+
     def __repr__(self):
         return f'<JobSource {self.id} {self.type}:{self.name}>'
+
+
+class RawJob(db.Model):
+    """Gecrawlte Stellenausschreibung (geteilt zwischen Usern bei globalen Quellen).
+
+    Pro User entsteht ein eigener JobMatch-Eintrag.
+    """
+    __tablename__ = 'raw_jobs'
+    __table_args__ = (
+        db.UniqueConstraint('source_id', 'external_id', name='uq_raw_job_source_external'),
+        db.Index('ix_raw_jobs_status', 'crawl_status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    source_id = db.Column(db.Integer, db.ForeignKey('job_sources.id'), nullable=False, index=True)
+    external_id = db.Column(db.String(512), nullable=False)
+    title = db.Column(db.String(512), nullable=False)
+    company = db.Column(db.String(255))
+    location = db.Column(db.String(255))
+    url = db.Column(db.String(1024), nullable=False)
+    description = db.Column(db.Text)
+    posted_at = db.Column(db.DateTime, nullable=True)
+    _raw_payload = db.Column('raw_payload', db.Text, nullable=True)
+    crawl_status = db.Column(db.String(16), default='raw', nullable=False)  # raw|prefiltered|matched|archived
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def raw_payload(self) -> dict:
+        return _json.loads(self._raw_payload) if self._raw_payload else {}
+
+    @raw_payload.setter
+    def raw_payload(self, value: dict):
+        self._raw_payload = _json.dumps(value) if value else None
+
+    def __repr__(self):
+        return f'<RawJob {self.id} {self.title[:30]}>'
