@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 import re
 
 
-_TOKEN_RE = re.compile(r"[a-zA-ZäöüÄÖÜß0-9\.\+#]{2,}")
+_TOKEN_RE = re.compile(r"[a-zA-ZäöüÄÖÜß0-9]+(?:[.\+#][a-zA-ZäöüÄÖÜß0-9]+)*")
 
 
 @dataclass

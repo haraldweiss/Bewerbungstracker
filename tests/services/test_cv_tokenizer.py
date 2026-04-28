@@ -27,3 +27,9 @@ def test_handles_empty_cv():
 def test_handles_none():
     tokens = tokenize_cv(None)
     assert tokens.skills == set()
+
+def test_handles_german_umlauts():
+    cv_data = {"cv": {"skills": ["Verkäufer", "Bürokauffrau"]}}
+    tokens = tokenize_cv(cv_data)
+    assert "verkäufer" in tokens.skills
+    assert "bürokauffrau" in tokens.skills

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from services.job_matching.cv_tokenizer import CVTokens
 
 
-_TOKEN_RE = re.compile(r"[a-zA-ZäöüÄÖÜß0-9]+(?:[.\+#][a-zA-Z0-9]+)*")
+_TOKEN_RE = re.compile(r"[a-zA-ZäöüÄÖÜß0-9]+(?:[.\+#][a-zA-ZäöüÄÖÜß0-9]+)*")
 _REMOTE_RE = re.compile(r"\bremote\b|\bhomeoffice\b|fully\s+remote", re.IGNORECASE)
 _PLZ_RE = re.compile(r"\b\d{5}\b")
 
