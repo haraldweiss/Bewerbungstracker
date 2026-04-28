@@ -5,7 +5,20 @@ Extrahiert aus dem cv_data_json eines Users drei Token-Mengen:
 - titles (Job-Titel-Historie)
 - freetext (Tokens aus Summary/Cover-Letter, lowercased)
 
-Das Format orientiert sich am bestehenden cv_data_json-Schema.
+Akzeptiert ZWEI cv_data_json-Schemas:
+
+1. Strukturiert: ``{"cv": {"skills": [...], "experiences": [...], "summary": "..."}}``
+   — vom hypothetischen CV-Editor in Phase 1/2 vorgesehen.
+
+2. Text-Blob: ``{"cvData": {"fileName": "...", "text": "<volltext>"}, ...}``
+   — tatsächliches Format des bestehenden Frontend-CV-Uploads (PDF/DOCX
+   → Mammoth/pdf.js → Plaintext-Extraktion in einen `text`-String).
+
+Bei Format 2 wandert der ganze CV-Text in `freetext` (keine strukturierte
+Skill-Trennung möglich). Stop-Wörter (Adress-/Datum-Boilerplate) werden
+NICHT herausgefiltert — die Hoffnung ist, dass die Job-Description bei
+einem echten Match auch einige Skill-Wörter enthält und die Boilerplate
+einfach nicht overlappt.
 """
 
 from __future__ import annotations
@@ -32,28 +45,32 @@ def _tokenize_text(text: str) -> set:
 def tokenize_cv(cv_data: dict | None) -> CVTokens:
     """Extrahiert Tokens aus cv_data_json.
 
-    Args:
-        cv_data: dict mit Schlüssel 'cv' → {skills, experiences, summary, ...}
+    Akzeptiert beide Frontend-Formate (siehe Modul-Docstring).
     """
     tokens = CVTokens()
     if not cv_data or not isinstance(cv_data, dict):
         return tokens
 
+    # ─── Format 1: strukturiert ─────────────────────────────────────────
     cv = cv_data.get('cv') or {}
+    if isinstance(cv, dict):
+        for skill in cv.get('skills') or []:
+            if isinstance(skill, str):
+                tokens.skills.add(skill.strip().lower())
 
-    # Skills: Liste von Strings
-    for skill in cv.get('skills') or []:
-        if isinstance(skill, str):
-            tokens.skills.add(skill.strip().lower())
+        for exp in cv.get('experiences') or []:
+            if isinstance(exp, dict) and exp.get('title'):
+                tokens.titles.add(exp['title'].strip().lower())
 
-    # Titel: aus experiences[].title
-    for exp in cv.get('experiences') or []:
-        if isinstance(exp, dict) and exp.get('title'):
-            tokens.titles.add(exp['title'].strip().lower())
+        for field_name in ('summary', 'bio', 'cover_letter'):
+            if cv.get(field_name):
+                tokens.freetext |= _tokenize_text(cv[field_name])
 
-    # Freetext: Summary, Bio, Cover-Letter-Templates
-    for field_name in ('summary', 'bio', 'cover_letter'):
-        if cv.get(field_name):
-            tokens.freetext |= _tokenize_text(cv[field_name])
+    # ─── Format 2: Text-Blob aus PDF/DOCX-Upload ────────────────────────
+    blob = cv_data.get('cvData') or {}
+    if isinstance(blob, dict):
+        text = blob.get('text')
+        if isinstance(text, str) and text.strip():
+            tokens.freetext |= _tokenize_text(text)
 
     return tokens

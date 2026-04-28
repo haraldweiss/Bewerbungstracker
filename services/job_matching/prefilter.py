@@ -75,6 +75,12 @@ def score_job(cv: CVTokens, job: dict, ctx: PrefilterContext) -> float:
     freetext_hits = len(cv.freetext & job_tokens)
 
     raw_score = skill_hits * 3 + title_hits * 2 + freetext_hits * 1
-    cv_size = max(len(cv.skills) * 3 + len(cv.titles) * 2 + len(cv.freetext), 1)
-    pct = min(raw_score / cv_size, 1.0) * 100
+
+    # Normalisierungs-Pool: bei Text-Blob-CVs (PDF/DOCX-Upload, freetext kann
+    # 300+ Tokens inkl. Adresse/Boilerplate enthalten) würde der echte
+    # CV-Pool den Score auf einstellige Prozent verdünnen. Cap bei 50 — das
+    # entspricht ungefähr der Größe einer typischen strukturierten Skill-Liste.
+    raw_pool = len(cv.skills) * 3 + len(cv.titles) * 2 + len(cv.freetext)
+    effective_pool = max(min(raw_pool, 50), 1)
+    pct = min(raw_score / effective_pool, 1.0) * 100
     return round(pct, 2)

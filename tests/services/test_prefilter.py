@@ -40,3 +40,26 @@ def test_remote_ok_overrides_region_filter():
     job = {"title": "React Dev (Remote)", "description": "React, fully remote", "location": "Munich"}
     ctx = _ctx(region_filter={"plz_prefixes": ["10"], "remote_ok": True})
     assert score_job(cv, job, ctx) > 0
+
+
+def test_text_blob_cv_normalization_capped():
+    """Bei Text-Blob-CVs (CV-Volltext-Upload) wird das Pool gecappt damit
+    der Score nicht von hunderten Boilerplate-Tokens (Adresse, Floskeln)
+    verdünnt wird. Sonst würden relevante Hits in einstelligen Prozent-
+    Werten ertrinken.
+    """
+    # Riesiger freetext-Pool wie bei einem PDF-CV-Upload
+    cv = CVTokens(
+        skills=set(),
+        titles=set(),
+        freetext={f"boilerplate{i}" for i in range(300)} | {"python", "docker", "siem", "kubernetes"},
+    )
+    job = {
+        "title": "Senior Security Engineer",
+        "description": "Wir suchen Erfahrung mit Python, Docker, Kubernetes und SIEM.",
+        "location": "Berlin",
+    }
+    score = score_job(cv, job, _ctx())
+    # Vor dem Cap-Fix wäre der Score ~1-2% gewesen (4 Hits / 304 Pool).
+    # Nach Cap auf 50: 4 / 50 = 8% → noch besser durch zusätzliche Token-Hits.
+    assert score >= 8, f"Erwarte score >= 8, got {score}"

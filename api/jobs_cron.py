@@ -22,7 +22,12 @@ jobs_cron_bp = Blueprint('jobs_cron', __name__, url_prefix='/api/jobs')
 # Tick-Limits
 MAX_NEW_JOBS_PER_TICK = 50
 MAX_PREFILTER_PER_TICK = 100
-PREFILTER_DISMISS_THRESHOLD = 30
+# Score-Threshold nach Pre-Filter. Tuning-Hintergrund:
+# Bei Text-Blob-CVs (PDF/DOCX-Upload-Format) ist die Token-Verteilung
+# breiter als bei strukturierten Skill-Listen. Score 15-25 entspricht
+# typischerweise "passende Branche, einige Skill-Overlaps" und ist die
+# Schwelle ab der eine Claude-Bewertung sinnvoll wird.
+PREFILTER_DISMISS_THRESHOLD = 15
 MAX_NOTIFICATIONS_PER_TICK = 20
 HARD_TIME_LIMIT_SEC = 25
 AUTO_DISABLE_FAILURE_COUNT = 5
@@ -57,17 +62,38 @@ def _user_today_cost_cents(user_id: str) -> int:
 
 
 def _build_cv_summary(cv_data_json: str) -> str:
+    """CV-Zusammenfassung für Claude-Prompt.
+
+    Akzeptiert beide cv_data_json-Schemas (analog zum cv_tokenizer):
+    1. Strukturiert: ``{"cv": {summary, skills, experiences}}``
+    2. Text-Blob: ``{"cvData": {"text": "<volltext>"}}`` aus PDF/DOCX-Upload
+
+    Bei Text-Blob wird der CV-Volltext direkt durchgereicht (auf 3000 Zeichen
+    gekappt im Prompt-Builder weiter unten).
+    """
     if not cv_data_json:
         return ""
-    cv = json.loads(cv_data_json).get("cv") or {}
+    data = json.loads(cv_data_json)
     parts = []
-    if cv.get("summary"):
-        parts.append(f"Zusammenfassung: {cv['summary']}")
-    if cv.get("skills"):
-        parts.append(f"Skills: {', '.join(cv['skills'])}")
-    if cv.get("experiences"):
-        titles = [e.get("title", "") for e in cv["experiences"][:5]]
-        parts.append(f"Letzte Positionen: {' | '.join(titles)}")
+
+    # Format 1: strukturiert
+    cv = data.get("cv") or {}
+    if isinstance(cv, dict):
+        if cv.get("summary"):
+            parts.append(f"Zusammenfassung: {cv['summary']}")
+        if cv.get("skills"):
+            parts.append(f"Skills: {', '.join(cv['skills'])}")
+        if cv.get("experiences"):
+            titles = [e.get("title", "") for e in cv["experiences"][:5]]
+            parts.append(f"Letzte Positionen: {' | '.join(titles)}")
+
+    # Format 2: Text-Blob (PDF/DOCX-Upload)
+    blob = data.get("cvData") or {}
+    if isinstance(blob, dict):
+        text = blob.get("text")
+        if isinstance(text, str) and text.strip():
+            parts.append(f"CV-Volltext:\n{text}")
+
     return "\n".join(parts)
 
 
