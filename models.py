@@ -42,6 +42,7 @@ class User(db.Model):
     api_calls = db.relationship('ApiCall', backref='user', cascade='all, delete-orphan')
     job_sources = db.relationship('JobSource', backref='user', cascade='all, delete')
     confirmation_tokens = db.relationship('EmailConfirmationToken', backref='user', cascade='all, delete-orphan')
+    job_matches = db.relationship('JobMatch', backref='user', cascade='all, delete-orphan', foreign_keys='JobMatch.user_id')
 
     @property
     def decrypted_imap_password(self) -> str:
@@ -264,3 +265,40 @@ class RawJob(db.Model):
 
     def __repr__(self):
         return f'<RawJob {self.id} {self.title[:30]}>'
+
+
+class JobMatch(db.Model):
+    """Per-User-Bewertung eines RawJob.
+
+    status: 'new' = noch nicht angesehen, 'seen' = User hat ihn gesehen,
+    'imported' = übernommen, 'dismissed' = verworfen oder Auto-Verworfen.
+    """
+    __tablename__ = 'job_matches'
+    __table_args__ = (
+        db.UniqueConstraint('raw_job_id', 'user_id', name='uq_match_job_user'),
+        db.Index('ix_match_user_status_score', 'user_id', 'status', 'match_score'),
+        db.Index('ix_match_prefilter_pending', 'prefilter_score'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    raw_job_id = db.Column(db.Integer, db.ForeignKey('raw_jobs.id'), nullable=False)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    prefilter_score = db.Column(db.Float, nullable=True)
+    match_score = db.Column(db.Float, nullable=True)
+    match_reasoning = db.Column(db.Text, nullable=True)
+    _missing_skills = db.Column('missing_skills', db.Text, nullable=True)
+    status = db.Column(db.String(16), default='new', nullable=False)
+    notified_at = db.Column(db.DateTime, nullable=True)
+    imported_application_id = db.Column(db.Integer, db.ForeignKey('applications.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    raw_job = db.relationship('RawJob', backref='matches')
+
+    @property
+    def missing_skills(self) -> list:
+        return _json.loads(self._missing_skills) if self._missing_skills else []
+
+    @missing_skills.setter
+    def missing_skills(self, value: list):
+        self._missing_skills = _json.dumps(value) if value else None

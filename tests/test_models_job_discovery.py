@@ -91,3 +91,28 @@ def test_raw_job_dedup_per_source(app):
     with pytest.raises(Exception):
         db.session.commit()
     db.session.rollback()
+
+
+from models import JobMatch
+
+
+def test_job_match_per_user_unique(app, user_factory):
+    user = user_factory()
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="x1", title="t",
+                 url="http://x", crawl_status="raw")
+    db.session.add(raw); db.session.flush()
+
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    db.session.add(m); db.session.commit()
+    assert m.id is not None
+    assert m.match_score is None  # noch nicht bewertet
+    assert m.status == 'new'
+
+    # Dupe in derselben (raw_job_id, user_id) Kombo soll fehlschlagen
+    dup = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    db.session.add(dup)
+    with pytest.raises(Exception):
+        db.session.commit()
+    db.session.rollback()
