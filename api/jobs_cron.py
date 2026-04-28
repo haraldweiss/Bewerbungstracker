@@ -24,6 +24,7 @@ PREFILTER_DISMISS_THRESHOLD = 30
 MAX_NOTIFICATIONS_PER_TICK = 20
 HARD_TIME_LIMIT_SEC = 25
 AUTO_DISABLE_FAILURE_COUNT = 5
+ARCHIVE_AFTER_DAYS = 60
 
 DEFAULT_MODEL = os.getenv("CLAUDE_DEFAULT_MODEL", "claude-haiku-4-5-20251001")
 COST_USD_PER_1M_TOKENS_IN = 0.80
@@ -312,3 +313,37 @@ def notify():
 
     db.session.commit()
     return jsonify({"notified": notified, "duration_sec": round(time.time() - started, 2)}), 200
+
+
+@jobs_cron_bp.post('/cleanup')
+@require_cron_token
+def cleanup():
+    cutoff = datetime.utcnow() - timedelta(days=ARCHIVE_AFTER_DAYS)
+
+    candidates = RawJob.query.filter(
+        RawJob.created_at < cutoff,
+        RawJob.crawl_status != 'archived',
+    ).all()
+
+    archived = 0
+    for raw in candidates:
+        active = JobMatch.query.filter(
+            JobMatch.raw_job_id == raw.id,
+            JobMatch.status.in_(['new', 'imported']),
+        ).count()
+        if active == 0:
+            raw.crawl_status = 'archived'
+            archived += 1
+
+    src_cutoff = datetime.utcnow() - timedelta(days=7)
+    healthy_sources = JobSource.query.filter(
+        JobSource.last_error.is_(None),
+        JobSource.consecutive_failures > 0,
+        JobSource.updated_at < src_cutoff,
+    ).all()
+    for s in healthy_sources:
+        s.consecutive_failures = 0
+
+    db.session.commit()
+    return jsonify({"archived_raw_jobs": archived,
+                    "reset_failure_counters": len(healthy_sources)}), 200

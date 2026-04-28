@@ -174,3 +174,22 @@ def test_notify_sends_for_high_score_only(mock_push, app, client, user_factory):
     r = client.post("/api/jobs/notify", headers={"X-Cron-Token": "test-token"})
     assert r.get_json()["notified"] == 1
     assert mock_push.call_count == 1
+
+
+def test_cleanup_archives_old_unused_raw_jobs(app, client):
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    old_raw = RawJob(source_id=src.id, external_id="old", title="t", url="x",
+                     crawl_status='matched',
+                     created_at=datetime.utcnow() - timedelta(days=70))
+    new_raw = RawJob(source_id=src.id, external_id="new", title="t", url="x",
+                     crawl_status='matched')
+    db.session.add_all([old_raw, new_raw]); db.session.commit()
+
+    r = client.post("/api/jobs/cleanup", headers={"X-Cron-Token": "test-token"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["archived_raw_jobs"] == 1
+
+    db.session.refresh(old_raw)
+    assert old_raw.crawl_status == 'archived'
