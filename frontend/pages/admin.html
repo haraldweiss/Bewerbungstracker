@@ -600,6 +600,24 @@
         <!-- Alert Container -->
         <div id="alertContainer"></div>
 
+        <!-- Job-Discovery Pending Requests -->
+        <div class="table-wrapper" id="jdRequestsSection" style="display:none; margin-bottom: 1.5rem;">
+            <h2 style="padding: 1rem 1rem 0.5rem;">🔍 Ausstehende Job-Discovery Anfragen <span id="jdRequestsBadge" class="badge"></span></h2>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Angefragt am</th>
+                            <th>CV vorhanden</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jdRequestsTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Users Table -->
         <div class="table-wrapper">
             <div class="table-responsive">
@@ -748,9 +766,87 @@
 
             // Load users
             loadUsers();
+            loadJdRequests();
 
             // Attach event listeners
             attachEventListeners();
+        }
+
+        /**
+         * Load Job-Discovery pending requests
+         */
+        async function loadJdRequests() {
+            try {
+                const response = await Auth.fetch('/admin/job-discovery-requests', { method: 'GET' });
+                const reqs = (response && response.requests) || [];
+                renderJdRequests(reqs);
+            } catch (error) {
+                // Silent fail — Section bleibt einfach hidden, kein Aufschrei
+                console.warn('Job-Discovery Requests konnten nicht geladen werden:', error.message);
+            }
+        }
+
+        function renderJdRequests(reqs) {
+            const section = document.getElementById('jdRequestsSection');
+            const tbody = document.getElementById('jdRequestsTableBody');
+            const badge = document.getElementById('jdRequestsBadge');
+
+            if (!reqs || reqs.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+
+            section.style.display = '';
+            badge.textContent = reqs.length;
+            tbody.innerHTML = reqs.map(r => {
+                const requestedDate = new Date(r.requested_at).toLocaleString('de-DE');
+                const cvBadge = r.has_cv
+                    ? '<span style="color: var(--secondary, #10B981)">✓ Ja</span>'
+                    : '<span style="color: var(--danger, #EF4444)">✗ Nein</span>';
+                return `
+                    <tr>
+                        <td>${escapeAttr(r.email)}</td>
+                        <td>${requestedDate}</td>
+                        <td>${cvBadge}</td>
+                        <td>
+                            <button class="btn btn-success btn-sm"
+                                    data-action="approve-jd"
+                                    data-user-id="${r.user_id}"
+                                    data-user-email="${escapeAttr(r.email)}"
+                                    ${r.has_cv ? '' : 'disabled title="Kein CV hinterlegt"'}>
+                                ✓ Aktivieren
+                            </button>
+                            <button class="btn btn-danger btn-sm"
+                                    data-action="deny-jd"
+                                    data-user-id="${r.user_id}"
+                                    data-user-email="${escapeAttr(r.email)}">
+                                ✗ Ablehnen
+                            </button>
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
+
+        async function approveJd(userId, email) {
+            if (!confirm(`Job-Discovery für ${email} aktivieren?`)) return;
+            try {
+                await Auth.fetch(`/admin/users/${userId}/approve-job-discovery`, { method: 'POST' });
+                showAlert(`Job-Discovery für ${email} aktiviert`, 'success');
+                loadJdRequests();
+            } catch (error) {
+                handleApiError(error, 'Aktivierung fehlgeschlagen');
+            }
+        }
+
+        async function denyJd(userId, email) {
+            if (!confirm(`Job-Discovery-Anfrage von ${email} ablehnen?`)) return;
+            try {
+                await Auth.fetch(`/admin/users/${userId}/deny-job-discovery`, { method: 'POST' });
+                showAlert(`Anfrage von ${email} abgelehnt`, 'success');
+                loadJdRequests();
+            } catch (error) {
+                handleApiError(error, 'Ablehnen fehlgeschlagen');
+            }
         }
 
         /**
@@ -1207,6 +1303,10 @@
                     openResetPassword(userId, userEmail);
                 } else if (action === 'approve-user') {
                     openApproveUser(userId, userEmail);
+                } else if (action === 'approve-jd') {
+                    approveJd(userId, userEmail);
+                } else if (action === 'deny-jd') {
+                    denyJd(userId, userEmail);
                 } else if (action === 'promote-admin') {
                     openPromoteAdmin(userId, userEmail);
                 } else if (action === 'delete-user') {

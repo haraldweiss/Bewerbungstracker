@@ -86,6 +86,11 @@ def update_cv(user):
 
     Body: {cv: {...}, comparisons: [...]} (oder beliebiges JSON-Objekt –
     Frontend bestimmt Schema).
+
+    Im Response-Feld `is_first_cv_upload` informiert das Backend das Frontend,
+    ob der Job-Discovery-Aktivierungs-Modal angezeigt werden soll (true wenn
+    der User bislang keine CV-Daten hatte UND noch nicht nach Aktivierung
+    gefragt hat UND nicht schon aktiviert ist).
     """
     data = request.get_json()
     if data is None:
@@ -93,7 +98,56 @@ def update_cv(user):
     if not isinstance(data, dict):
         return {'error': 'Body muss ein JSON-Objekt sein'}, 400
 
+    is_first_cv_upload = (
+        not user.cv_data_json
+        and not user.job_discovery_requested_at
+        and not user.job_discovery_enabled
+    )
+
     user.cv_data_json = json.dumps(data)
     user.updated_at = datetime.utcnow()
     db.session.commit()
-    return {'cv': data, 'updated_at': user.updated_at.isoformat()}, 200
+    return {
+        'cv': data,
+        'updated_at': user.updated_at.isoformat(),
+        'is_first_cv_upload': is_first_cv_upload,
+    }, 200
+
+
+# ─── Job-Discovery Aktivierungs-Anfrage ───────────────────────────────────
+
+@profile_bp.route('/profile/job-discovery/request', methods=['POST'])
+@token_required
+def request_job_discovery(user):
+    """User fragt Aktivierung der automatischen Job-Suche an.
+
+    Idempotent: bereits gestellte Anfragen werden nicht überschrieben (das
+    erste requested_at bleibt erhalten — relevant für Audit/Statistik).
+    Bereits aktivierte User bekommen 200 mit Status zurück.
+    """
+    if not user.job_discovery_enabled and not user.job_discovery_requested_at:
+        user.job_discovery_requested_at = datetime.utcnow()
+        db.session.commit()
+
+    return {
+        'enabled': user.job_discovery_enabled,
+        'requested_at': user.job_discovery_requested_at.isoformat() if user.job_discovery_requested_at else None,
+        'status': (
+            'enabled' if user.job_discovery_enabled
+            else ('pending_approval' if user.job_discovery_requested_at else 'not_requested')
+        ),
+    }, 200
+
+
+@profile_bp.route('/profile/job-discovery/status', methods=['GET'])
+@token_required
+def get_job_discovery_status(user):
+    """Liefert den aktuellen Aktivierungs-Status für das Frontend."""
+    return {
+        'enabled': user.job_discovery_enabled,
+        'requested_at': user.job_discovery_requested_at.isoformat() if user.job_discovery_requested_at else None,
+        'status': (
+            'enabled' if user.job_discovery_enabled
+            else ('pending_approval' if user.job_discovery_requested_at else 'not_requested')
+        ),
+    }, 200

@@ -137,6 +137,91 @@ def approve_user(user, user_id):
     }, 200
 
 
+# ─── Job-Discovery Approval ──────────────────────────────────────────────
+
+@admin_bp.route('/job-discovery-requests', methods=['GET'])
+@token_required
+@admin_required
+def list_job_discovery_requests(user):
+    """Liste aller User mit ausstehender Job-Discovery-Aktivierungs-Anfrage.
+
+    Filtert auf: requested_at IS NOT NULL UND noch nicht enabled. Sortiert
+    nach requested_at ASC (älteste zuerst).
+    """
+    pending = (
+        User.query
+        .filter(User.job_discovery_requested_at.isnot(None))
+        .filter(User.job_discovery_enabled.is_(False))
+        .order_by(User.job_discovery_requested_at.asc())
+        .all()
+    )
+    return {
+        'requests': [
+            {
+                'user_id': u.id,
+                'email': u.email,
+                'requested_at': u.job_discovery_requested_at.isoformat(),
+                'has_cv': bool(u.cv_data_json),
+                'is_active': u.is_active,
+                'email_confirmed': u.email_confirmed,
+            }
+            for u in pending
+        ],
+        'count': len(pending),
+    }, 200
+
+
+@admin_bp.route('/users/<user_id>/approve-job-discovery', methods=['POST'])
+@token_required
+@admin_required
+def approve_job_discovery(user, user_id):
+    """Aktiviert Job-Discovery für einen User (setzt enabled=True).
+
+    Erfordert dass der User die Aktivierung angefragt hat (requested_at gesetzt).
+    Idempotent: bereits aktivierte User bekommen 200 zurück.
+    """
+    target_user = User.query.get(user_id)
+    if not target_user:
+        return {'error': 'User not found'}, 404
+
+    if not target_user.job_discovery_requested_at:
+        return {'error': 'User has not requested Job-Discovery activation'}, 400
+
+    if not target_user.cv_data_json:
+        return {'error': 'User hat keinen Lebenslauf hinterlegt — Job-Discovery ohne CV nicht sinnvoll'}, 400
+
+    target_user.job_discovery_enabled = True
+    db.session.commit()
+
+    return {
+        'message': f'Job-Discovery für {target_user.email} aktiviert',
+        'email': target_user.email,
+        'job_discovery_enabled': target_user.job_discovery_enabled,
+    }, 200
+
+
+@admin_bp.route('/users/<user_id>/deny-job-discovery', methods=['POST'])
+@token_required
+@admin_required
+def deny_job_discovery(user, user_id):
+    """Lehnt eine Aktivierungs-Anfrage ab (setzt requested_at zurück auf NULL).
+
+    User kann später erneut anfragen. Bestehende job_discovery_enabled-Werte
+    werden NICHT verändert — Disable-Aktion ist separat.
+    """
+    target_user = User.query.get(user_id)
+    if not target_user:
+        return {'error': 'User not found'}, 404
+
+    target_user.job_discovery_requested_at = None
+    db.session.commit()
+
+    return {
+        'message': f'Job-Discovery-Anfrage von {target_user.email} abgelehnt',
+        'email': target_user.email,
+    }, 200
+
+
 @admin_bp.route('/users/<user_id>', methods=['DELETE'])
 @token_required
 @admin_required

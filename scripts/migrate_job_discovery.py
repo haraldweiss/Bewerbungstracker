@@ -21,6 +21,7 @@ from database import db
 
 NEW_USER_COLUMNS = [
     ("job_discovery_enabled", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("job_discovery_requested_at", "DATETIME"),
     ("job_notification_threshold", "INTEGER NOT NULL DEFAULT 80"),
     ("job_claude_budget_per_tick", "INTEGER NOT NULL DEFAULT 5"),
     ("job_daily_budget_cents", "INTEGER NOT NULL DEFAULT 50"),

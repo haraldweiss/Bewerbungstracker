@@ -2133,12 +2133,68 @@ async function syncProfileToDB() {
     try {
         const cvData = JSON.parse(localStorage.getItem('cvData') || 'null');
         const cvComparisons = JSON.parse(localStorage.getItem('cvComparisons') || '[]');
-        await Auth.fetch('/profile/cv', {
+        const r = await Auth.fetch('/profile/cv', {
             method: 'PUT',
             body: JSON.stringify({ cvData, cvComparisons }),
         });
+        // Backend signalisiert via is_first_cv_upload, ob der Job-Discovery-
+        // Aktivierungs-Modal jetzt angeboten werden soll. Frontend respektiert
+        // zusätzlich den localStorage-Flag (User hat "Nein, danke" gesagt).
+        if (r && r.is_first_cv_upload && !localStorage.getItem('jdModalDismissed')) {
+            showJobDiscoveryModal();
+        }
     } catch (e) {
         console.warn('CV-Sync zur DB fehlgeschlagen:', e.message);
+    }
+}
+
+function showJobDiscoveryModal() {
+    if (document.getElementById('jd-modal-wrap')) return;  // schon offen
+    const html = `
+    <div class="modal-overlay" id="jd-modal-overlay">
+        <div class="modal" style="max-width:560px">
+            <h3>🔍 Automatische Job-Suche aktivieren?</h3>
+            <p>Du hast deinen Lebenslauf hinterlegt. Möchtest du, dass wir
+               automatisch passende Stellen aus verschiedenen Job-Portalen
+               (Bundesagentur, Adzuna, RSS-Feeds) suchen und dir Vorschläge
+               machen?</p>
+            <p class="text-muted" style="font-size:0.9em">
+                Aktivierung erfordert Admin-Freigabe. Du wirst benachrichtigt,
+                sobald deine Anfrage genehmigt wurde.
+            </p>
+            <div class="modal-actions">
+                <button class="btn" onclick="dismissJdModal(true)">Nein, danke</button>
+                <button class="btn btn-primary" onclick="requestJobDiscovery()">Ja, gerne</button>
+            </div>
+        </div>
+    </div>`;
+    const wrap = document.createElement('div');
+    wrap.id = 'jd-modal-wrap';
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+}
+
+function dismissJdModal(remember) {
+    if (remember) {
+        localStorage.setItem('jdModalDismissed', '1');
+    }
+    const m = document.getElementById('jd-modal-wrap');
+    if (m) m.remove();
+}
+
+async function requestJobDiscovery() {
+    try {
+        const r = await Auth.fetch('/profile/job-discovery/request', { method: 'POST' });
+        if (r && (r.status === 'pending_approval' || r.status === 'enabled')) {
+            alert(r.status === 'enabled'
+                ? '✅ Job-Discovery ist bereits für dich aktiviert.'
+                : '✅ Anfrage gesendet. Du wirst benachrichtigt, sobald der Admin sie freigeschaltet hat.');
+            dismissJdModal(false);  // nicht remembern — User wollte ja, kein Re-Prompt nötig
+        } else {
+            alert('Anfrage konnte nicht versendet werden.');
+        }
+    } catch (e) {
+        alert('Fehler: ' + (e && e.message ? e.message : 'unbekannt'));
     }
 }
 
