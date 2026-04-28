@@ -2,6 +2,7 @@ from database import db
 from datetime import datetime
 from enum import Enum
 import uuid
+import json as _json
 from imap_service import IMAPCredentialManager
 
 
@@ -191,3 +192,36 @@ class ApiCall(db.Model):
 
     def __repr__(self):
         return f'<ApiCall {self.model} ${self.cost:.4f}>'
+
+
+class JobSource(db.Model):
+    """Quelle für Job-Crawl (universelle Feed-Verwaltung).
+
+    user_id NULL = system-globale Quelle, sonst user-eigen.
+    config ist type-spezifisches JSON (RSS-URL, Adzuna-Query, etc.).
+    """
+    __tablename__ = 'job_sources'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=True, index=True)
+    name = db.Column(db.String(255), nullable=False)
+    type = db.Column(db.String(32), nullable=False)
+    _config_json = db.Column('config', db.Text, nullable=False, default='{}')
+    enabled = db.Column(db.Boolean, default=True, nullable=False)
+    crawl_interval_min = db.Column(db.Integer, default=60, nullable=False)
+    last_crawled_at = db.Column(db.DateTime, nullable=True)
+    last_error = db.Column(db.Text, nullable=True)
+    consecutive_failures = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def config(self) -> dict:
+        return _json.loads(self._config_json or '{}')
+
+    @config.setter
+    def config(self, value: dict):
+        self._config_json = _json.dumps(value or {})
+
+    def __repr__(self):
+        return f'<JobSource {self.id} {self.type}:{self.name}>'
