@@ -925,6 +925,57 @@
         <button class="btn btn-primary" onclick="saveSettings()">💾 Speichern</button>
     </div>
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:1rem;">🔍 Job-Vorschläge Filter</div>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem">
+            Filtert die automatisch gecrawlten Job-Vorschläge nach deinen Präferenzen.
+            Passt nichts? Dann wird der Job nicht angezeigt.
+        </p>
+        <div class="form-group" style="margin-bottom:0.75rem">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+                <input type="checkbox" id="jdRemoteOnly" style="width:18px;height:18px">
+                <span>Remote-Jobs OK akzeptieren (auch wenn Standort nicht passt)</span>
+            </label>
+        </div>
+        <div class="form-group" style="margin-bottom:0.75rem">
+            <label>Bevorzugte PLZ-Präfixe (kommagetrennt, z.B. <code>44, 97</code> für Dortmund + Würzburg)</label>
+            <input type="text" id="jdPlzPrefixes" placeholder="44, 97" style="width:200px">
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem">
+                Leer lassen = alle Standorte akzeptieren
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0.75rem">
+            <label>Anstellungsart</label>
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.3rem">
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+                    <input type="checkbox" id="jdEmpVollzeit" checked> Vollzeit
+                </label>
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+                    <input type="checkbox" id="jdEmpTeilzeit"> Teilzeit
+                </label>
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+                    <input type="checkbox" id="jdEmpUnbefristet" checked> Unbefristet
+                </label>
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+                    <input type="checkbox" id="jdEmpBefristet"> Befristet
+                </label>
+            </div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem">
+                Wirkt nur auf Quellen die diese Info liefern (z.B. Bundesagentur).
+                Jobs ohne Info werden nicht herausgefiltert.
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0.75rem">
+            <label>Notification-Schwellwert (Match-Score)</label>
+            <input type="range" id="jdNotifyThreshold" min="50" max="95" step="5" value="80" style="vertical-align:middle">
+            <span id="jdNotifyThresholdDisplay">80</span>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem">
+                Push-Notification ab diesem Match-Score
+            </div>
+        </div>
+        <button class="btn btn-primary" onclick="saveJobDiscoveryFilters()">💾 Filter speichern</button>
+        <div id="jdFiltersStatus" style="margin-top:0.5rem;font-size:0.85em;color:var(--text-muted)"></div>
+    </div>
+    <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">🔔 Benachrichtigungen</div>
         <div class="form-group" style="margin-bottom:1rem;">
             <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
@@ -2379,6 +2430,97 @@ function showView(name) {
     // Initialize BackupManager when Settings view is shown
     if (name === 'settings') {
         BackupManager.init();
+        loadJobDiscoveryFilters();
+    }
+}
+
+/* ═══════════════════════════════════════════════════════
+   JOB-DISCOVERY FILTER (Settings-Section)
+═══════════════════════════════════════════════════════ */
+async function loadJobDiscoveryFilters() {
+    if (typeof Auth === 'undefined' || !Auth.getToken()) return;
+    try {
+        // Profile holen — User-Modell hat job_region_filter, job_notification_threshold etc.
+        // Backend liefert das aktuell nicht aggregiert; wir holen es via /admin/users/me wenn admin,
+        // oder via separater Status-Endpoint. Da kein dedicated user-self-info Endpoint:
+        // POST /profile/job-discovery/request gibt status zurück (idempotent).
+        const status = await Auth.fetch('/profile/job-discovery/status', { method: 'GET' });
+        // Status-Display
+        const statusEl = document.getElementById('jdFiltersStatus');
+        if (statusEl) {
+            const txt = status && status.status === 'enabled'
+                ? '✅ Job-Discovery ist aktiviert'
+                : status && status.status === 'pending_approval'
+                    ? '⏳ Wartet auf Admin-Freigabe'
+                    : '⏸️ Nicht aktiviert (Modal beim ersten CV-Upload)';
+            statusEl.textContent = txt;
+        }
+    } catch (e) {
+        // silent — Endpoint braucht ggf. Re-Login
+    }
+
+    // Filter-Werte aus localStorage als Cache (UI-State, nicht autoritativ)
+    try {
+        const cached = JSON.parse(localStorage.getItem('jdFiltersCache') || 'null');
+        if (cached) {
+            if (typeof cached.remote_ok === 'boolean') document.getElementById('jdRemoteOnly').checked = cached.remote_ok;
+            if (Array.isArray(cached.plz_prefixes)) document.getElementById('jdPlzPrefixes').value = cached.plz_prefixes.join(', ');
+            if (Array.isArray(cached.employment_types)) {
+                document.getElementById('jdEmpVollzeit').checked = cached.employment_types.includes('vollzeit');
+                document.getElementById('jdEmpTeilzeit').checked = cached.employment_types.includes('teilzeit');
+                document.getElementById('jdEmpUnbefristet').checked = cached.employment_types.includes('unbefristet');
+                document.getElementById('jdEmpBefristet').checked = cached.employment_types.includes('befristet');
+            }
+            if (typeof cached.notification_threshold === 'number') {
+                document.getElementById('jdNotifyThreshold').value = cached.notification_threshold;
+                document.getElementById('jdNotifyThresholdDisplay').textContent = cached.notification_threshold;
+            }
+        }
+    } catch (e) { /* silent */ }
+
+    // Slider-Display live-update
+    const slider = document.getElementById('jdNotifyThreshold');
+    const display = document.getElementById('jdNotifyThresholdDisplay');
+    if (slider && display && !slider.dataset.bound) {
+        slider.addEventListener('input', e => { display.textContent = e.target.value; });
+        slider.dataset.bound = '1';
+    }
+}
+
+async function saveJobDiscoveryFilters() {
+    const remote_ok = document.getElementById('jdRemoteOnly').checked;
+    const plzRaw = document.getElementById('jdPlzPrefixes').value || '';
+    const plz_prefixes = plzRaw.split(',').map(s => s.trim()).filter(Boolean);
+    const employment_types = [];
+    if (document.getElementById('jdEmpVollzeit').checked) employment_types.push('vollzeit');
+    if (document.getElementById('jdEmpTeilzeit').checked) employment_types.push('teilzeit');
+    if (document.getElementById('jdEmpUnbefristet').checked) employment_types.push('unbefristet');
+    if (document.getElementById('jdEmpBefristet').checked) employment_types.push('befristet');
+    const notification_threshold = parseInt(document.getElementById('jdNotifyThreshold').value, 10);
+
+    const region_filter = (plz_prefixes.length || remote_ok)
+        ? { plz_prefixes, remote_ok, employment_types }
+        : null;
+
+    try {
+        const r = await Auth.fetch('/profile/job-discovery/filters', {
+            method: 'PATCH',
+            body: JSON.stringify({
+                job_region_filter: region_filter,
+                job_notification_threshold: notification_threshold,
+            }),
+        });
+        // Frontend-Cache für nächsten Load
+        localStorage.setItem('jdFiltersCache', JSON.stringify({
+            remote_ok, plz_prefixes, employment_types, notification_threshold,
+        }));
+        if (typeof showToast === 'function') {
+            showToast('✅ Filter gespeichert', 'success');
+        } else {
+            alert('✅ Filter gespeichert');
+        }
+    } catch (e) {
+        alert('❌ Fehler beim Speichern: ' + (e && e.message ? e.message : 'unbekannt'));
     }
 }
 

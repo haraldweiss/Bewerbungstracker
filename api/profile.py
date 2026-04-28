@@ -150,4 +150,60 @@ def get_job_discovery_status(user):
             'enabled' if user.job_discovery_enabled
             else ('pending_approval' if user.job_discovery_requested_at else 'not_requested')
         ),
+        # Aktuelle Filter zurückgeben damit Settings-UI sie laden kann.
+        'filters': {
+            'job_region_filter': user.job_region_filter,
+            'job_language_filter': user.job_language_filter,
+            'job_notification_threshold': user.job_notification_threshold,
+        },
+    }, 200
+
+
+@profile_bp.route('/profile/job-discovery/filters', methods=['PATCH'])
+@token_required
+def update_job_discovery_filters(user):
+    """User-Filter für Job-Vorschläge aktualisieren.
+
+    Akzeptierte Felder (alle optional, partial-update):
+        - job_region_filter: dict | null
+            { plz_prefixes: ["44","97"], remote_ok: bool, employment_types: [...] }
+            oder null = alle Standorte/Anstellungsarten akzeptieren.
+        - job_language_filter: ["de", "en"]
+        - job_notification_threshold: int (50-95)
+    """
+    data = request.get_json() or {}
+
+    if 'job_region_filter' in data:
+        rf = data['job_region_filter']
+        if rf is not None and not isinstance(rf, dict):
+            return {'error': 'job_region_filter muss dict oder null sein'}, 400
+        # PLZ-Prefixe sanity-check (3-stellige Strings vermeiden Spam)
+        if isinstance(rf, dict):
+            prefixes = rf.get('plz_prefixes') or []
+            if not isinstance(prefixes, list) or any(not isinstance(p, str) for p in prefixes):
+                return {'error': 'plz_prefixes muss list of strings sein'}, 400
+        user.job_region_filter = rf
+
+    if 'job_language_filter' in data:
+        lf = data['job_language_filter']
+        if not isinstance(lf, list) or any(not isinstance(l, str) for l in lf):
+            return {'error': 'job_language_filter muss list of strings sein'}, 400
+        user.job_language_filter = lf
+
+    if 'job_notification_threshold' in data:
+        try:
+            t = int(data['job_notification_threshold'])
+            if not (0 <= t <= 100):
+                raise ValueError
+            user.job_notification_threshold = t
+        except (TypeError, ValueError):
+            return {'error': 'job_notification_threshold muss int 0-100 sein'}, 400
+
+    user.updated_at = datetime.utcnow()
+    db.session.commit()
+
+    return {
+        'job_region_filter': user.job_region_filter,
+        'job_language_filter': user.job_language_filter,
+        'job_notification_threshold': user.job_notification_threshold,
     }, 200

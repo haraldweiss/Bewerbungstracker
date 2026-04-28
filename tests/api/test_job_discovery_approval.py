@@ -152,3 +152,61 @@ def test_non_admin_cannot_list_requests(client, auth_headers):
     headers, _ = auth_headers
     r = client.get("/api/admin/job-discovery-requests", headers=headers)
     assert r.status_code in (401, 403)
+
+
+# ─── Filter-PATCH-Endpoint ───────────────────────────────────────────
+
+def test_patch_filters_updates_region_and_threshold(client, auth_headers):
+    headers, user = auth_headers
+    r = client.patch('/api/profile/job-discovery/filters', json={
+        'job_region_filter': {'plz_prefixes': ['44', '97'], 'remote_ok': True,
+                              'employment_types': ['vollzeit']},
+        'job_notification_threshold': 75,
+    }, headers=headers)
+    assert r.status_code == 200
+    db.session.refresh(user)
+    assert user.job_region_filter == {
+        'plz_prefixes': ['44', '97'], 'remote_ok': True, 'employment_types': ['vollzeit']
+    }
+    assert user.job_notification_threshold == 75
+
+
+def test_patch_filters_clears_region_when_null(client, auth_headers):
+    headers, user = auth_headers
+    user.job_region_filter = {'plz_prefixes': ['10'], 'remote_ok': False}
+    db.session.commit()
+
+    r = client.patch('/api/profile/job-discovery/filters',
+                     json={'job_region_filter': None}, headers=headers)
+    assert r.status_code == 200
+    db.session.refresh(user)
+    assert user.job_region_filter is None
+
+
+def test_patch_filters_validates_threshold_range(client, auth_headers):
+    headers, _ = auth_headers
+    r = client.patch('/api/profile/job-discovery/filters',
+                     json={'job_notification_threshold': 150}, headers=headers)
+    assert r.status_code == 400
+
+
+def test_patch_filters_validates_plz_prefixes_format(client, auth_headers):
+    headers, _ = auth_headers
+    r = client.patch('/api/profile/job-discovery/filters', json={
+        'job_region_filter': {'plz_prefixes': [44, 97], 'remote_ok': True}
+    }, headers=headers)
+    # Numbers statt Strings → 400
+    assert r.status_code == 400
+
+
+def test_status_endpoint_returns_filters(client, auth_headers):
+    headers, user = auth_headers
+    user.job_notification_threshold = 65
+    user.job_region_filter = {'plz_prefixes': ['44'], 'remote_ok': True}
+    db.session.commit()
+
+    r = client.get('/api/profile/job-discovery/status', headers=headers)
+    body = r.get_json()
+    assert 'filters' in body
+    assert body['filters']['job_notification_threshold'] == 65
+    assert body['filters']['job_region_filter']['plz_prefixes'] == ['44']
