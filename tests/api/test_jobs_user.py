@@ -425,3 +425,37 @@ def test_import_match_null_score(client, auth_header):
     app_id = r.get_json()["application_id"]
     app_obj = Application.query.get(app_id)
     assert "–" in app_obj.notes  # score_str bei None
+
+
+def test_import_match_transfers_all_fields(client, auth_header):
+    """Import überträgt alle Felder: location, source, applied_date."""
+    from datetime import datetime
+    headers, user = auth_header
+    src = JobSource(name="TestSource", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    posted_date = datetime(2026, 4, 25, 10, 0, 0)
+    raw = RawJob(
+        source_id=src.id, external_id="full-fields",
+        title="React Developer",
+        company="TechCorp",
+        location="Berlin, Germany",
+        url="https://example.com/job/123",
+        posted_at=posted_date,
+        crawl_status='matched'
+    )
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=85)
+    db.session.add(m); db.session.commit()
+
+    r = client.post(f"/api/jobs/matches/{m.id}/import", headers=headers)
+    assert r.status_code == 201
+    app_id = r.get_json()["application_id"]
+    app_obj = Application.query.get(app_id)
+
+    # Überprüfe, dass alle Felder übertragen wurden
+    assert app_obj.company == "TechCorp"
+    assert app_obj.position == "React Developer"
+    assert app_obj.location == "Berlin, Germany"
+    assert app_obj.applied_date == posted_date.date()
+    assert app_obj.source == "TestSource"
+    assert app_obj.link == "https://example.com/job/123"

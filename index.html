@@ -3560,36 +3560,76 @@ function editBewerbung(id) {
     openModal('addModal');
 }
 
-function saveBewerbung(e) {
+async function saveBewerbung(e) {
     if (e) e.preventDefault();
-    const firma = document.getElementById('f_firma').value.trim();
-    if (!firma) { showToast('Firma ist erforderlich!', 'error'); return; }
-    const data = {
-        firma,
+    const company = document.getElementById('f_firma').value.trim();
+    if (!company) { showToast('Firma ist erforderlich!', 'error'); return; }
+
+    // Feldname-Mapping: Deutsch → Englisch (für API)
+    const apiData = {
+        company,
         position: document.getElementById('f_position').value.trim(),
-        status:   document.getElementById('f_status').value,
-        datum:    document.getElementById('f_datum').value,
-        gehalt:   document.getElementById('f_gehalt').value.trim(),
-        ort:      document.getElementById('f_ort').value.trim(),
-        email:    document.getElementById('f_email').value.trim(),
-        quelle:   document.getElementById('f_quelle').value,
-        link:     document.getElementById('f_link').value.trim(),
-        notizen:  document.getElementById('f_notizen').value.trim(),
-        updatedAt: new Date().toISOString()
+        status: document.getElementById('f_status').value,
+        applied_date: document.getElementById('f_datum').value,
+        salary: document.getElementById('f_gehalt').value.trim(),
+        location: document.getElementById('f_ort').value.trim(),
+        contact_email: document.getElementById('f_email').value.trim(),
+        source: document.getElementById('f_quelle').value,
+        link: document.getElementById('f_link').value.trim(),
+        notes: document.getElementById('f_notizen').value.trim(),
     };
-    if (state.currentEditId) {
-        const idx = state.bewerbungen.findIndex(x => x.id === state.currentEditId);
-        if (idx !== -1) { state.bewerbungen[idx] = { ...state.bewerbungen[idx], ...data }; }
-        showToast('Bewerbung aktualisiert ✓', 'success');
-    } else {
-        data.id = 'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
-        data.createdAt = new Date().toISOString();
-        state.bewerbungen.unshift(data);
-        showToast('Bewerbung hinzugefügt ✓', 'success');
+
+    try {
+        if (state.currentEditId) {
+            // Update existierende Bewerbung
+            const response = await fetchAPI(`/api/applications/${state.currentEditId}`, {
+                method: 'PATCH',
+                body: JSON.stringify(apiData)
+            });
+            if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+            const updated = await response.json();
+            const idx = state.bewerbungen.findIndex(x => x.id === state.currentEditId);
+            if (idx !== -1) {
+                state.bewerbungen[idx] = _mapBackendToDB(updated);
+            }
+            showToast('Bewerbung aktualisiert ✓', 'success');
+        } else {
+            // Neue Bewerbung
+            const response = await fetchAPI('/api/applications', {
+                method: 'POST',
+                body: JSON.stringify(apiData)
+            });
+            if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+            const created = await response.json();
+            state.bewerbungen.unshift(_mapBackendToDB(created));
+            showToast('Bewerbung hinzugefügt ✓', 'success');
+        }
+        saveToStorage();
+        renderAll();
+        closeModal('addModal');
+    } catch (error) {
+        console.error('Save error:', error);
+        showToast('❌ Fehler beim Speichern: ' + (error.message || 'unbekannt'), 'error');
     }
-    saveToStorage();
-    renderAll();
-    closeModal('addModal');
+}
+
+// Backend → Frontend: Englische Feldnamen zu Deutsch mappen (konsistent mit loadFromDatabase)
+function _mapBackendToDB(apiObj) {
+    return {
+        id: apiObj.id,
+        firma: apiObj.company,
+        position: apiObj.position || '',
+        status: apiObj.status || 'beworben',
+        datum: apiObj.applied_date || '',
+        quelle: apiObj.source || '',
+        gehalt: apiObj.salary || '',
+        ort: apiObj.location || '',
+        email: apiObj.contact_email || '',
+        link: apiObj.link || '',
+        notizen: apiObj.notes || '',
+        createdAt: apiObj.created_at || new Date().toISOString(),
+        updatedAt: apiObj.updated_at || new Date().toISOString()
+    };
 }
 
 async function deleteBewerbung(id) {

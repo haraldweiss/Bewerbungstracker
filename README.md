@@ -17,15 +17,34 @@ Ein datenschutzfreundliches Tool zur Verwaltung von Bewerbungen mit automatische
 - 🎯 **Bewerbungsverfolgung** - Status, Datum, Gehalt, Notizen, Ghosting-Erkennung
 - 🗂️ **Kanban-Board** - Visuelle Übersicht nach Status
 - 📋 **CV Vergleich** - Vergleiche deine CV mit Bewerbungsanforderungen
-- 🔍 **Job-Discovery** - Automatische Stellensuche aus RSS-Feeds + Bundesagentur/Adzuna/Arbeitnow APIs mit Claude-basiertem Match-Score gegen deinen CV
+- 🔍 **Job-Discovery** - Automatische Stellensuche aus RSS-Feeds + Bundesagentur/Adzuna/Arbeitnow APIs mit Claude-basiertem Match-Score gegen deinen CV. Inkl. Quellen-Verwaltung, Pagination, Volltextsuche, Filter (Remote/PLZ/Anstellungsart), Browser-Push für Top-Matches und Onboarding-Checkliste
+- 👤 **Multi-User mit Admin-Approval** - User registrieren sich selbst, Admin schaltet Konten + Job-Discovery frei
+- 🔐 **Envelope-Encryption** - Pro-User-DEK + KEK aus Passwort, Backups bleiben bei Passwort-Reset entschlüsselbar
 - 🌙 **Dark/Light Mode** - Responsive Design für alle Geräte
 
 ### 🚀 Quick Start
 
-1. **Öffne die App:** `index.html` im Browser öffnen
-2. **Bewerbung hinzufügen:** "+ Bewerbung" Button oben rechts
-3. **Email-Monitoring:** Gehe zu "📧 Mail Connector" und verbinde deinen Email-Account
-4. **Daten speichern:** Nutze die Backup-Funktion in den Einstellungen
+**Für User:**
+1. **Account anlegen:** `/login` aufrufen → Registrieren → Email bestätigen → Admin-Freigabe abwarten
+2. **CV hochladen:** Tab "📋 CV Vergleich" → Upload (PDF/DOCX)
+3. **Job-Discovery aktivieren:** Modal beim ersten CV-Upload bestätigen → Admin schaltet frei
+4. **Bewerbungen tracken:** "+ Bewerbung" Button oder Übernahme aus Job-Vorschlägen
+5. **Email-Monitoring:** Tab "📧 Mail Connector" → Provider verbinden
+
+**Für Admins (Server-Setup):**
+```bash
+# Initial-Setup
+python scripts/migrate_job_discovery.py     # DB-Schema
+python scripts/seed_job_sources.py          # 3 globale Default-Quellen
+
+# ENV-Vars
+export JOB_CRON_TOKEN=<random-secret-32+chars>
+export ANTHROPIC_API_KEY=<dein-key>
+export CLAUDE_DEFAULT_MODEL=claude-haiku-4-5-20251001
+
+# Cron einrichten (entweder system-cron oder cron-job.org)
+# 5 Endpoints: /api/jobs/{crawl-source,prefilter,claude-match,notify,cleanup}
+```
 
 ### 📚 Dokumentation
 
@@ -33,6 +52,7 @@ Ein datenschutzfreundliches Tool zur Verwaltung von Bewerbungen mit automatische
 - **[Features](docs/FEATURES/)** - Detaillierte Feature-Dokumentation
   - [CV Vergleich & Verarbeitung](docs/FEATURES/CV.md)
   - [Email-Integration](docs/FEATURES/EMAIL.md)
+  - [Job-Discovery](docs/FEATURES/JOB_DISCOVERY.md)
 - **[Deployment](docs/DEPLOYMENT/)** - Installation & Hosting
   - [Generic Server](docs/DEPLOYMENT/DEPLOYMENT_GENERIC.md)
   - [IONOS Shared Hosting](docs/DEPLOYMENT/DEPLOYMENT_IONOS.md)
@@ -43,16 +63,21 @@ Ein datenschutzfreundliches Tool zur Verwaltung von Bewerbungen mit automatische
 
 ### 🔧 Technologie
 
-- **Frontend:** Vanilla JavaScript, HTML5, CSS3 (keine Frameworks)
-- **Backend:** Python 3 (Flask) + SQLite
-- **Libraries:** jsPDF, TweetNaCl.js (Encryption), Mammoth (DOCX), pdf.js
+- **Frontend:** Vanilla JavaScript, HTML5, CSS3 (keine Frameworks), PWA mit Service-Worker
+- **Backend:** Python 3 (Flask) + SQLite + JWT-Auth
+- **Job-Pipeline:** 5 Cron-Stages (crawl → prefilter → claude-match → notify → cleanup), idempotent + Token-geschützt
+- **Source-Adapter:** RSS (`feedparser`), Adzuna-API, Bundesagentur Jobsuche-API (mit parallel Detail-Fetch), Arbeitnow-API
+- **AI:** Anthropic Claude SDK (Haiku-4.5 default) für Job↔CV Match-Scoring mit Cost-Tracking pro User
+- **Libraries:** jsPDF, TweetNaCl.js, Mammoth (DOCX), pdf.js, cryptography (Fernet)
 
 ### 💾 Datenschutz
 
-- ✅ Alle Daten lokal im Browser (localStorage)
-- ✅ Keine Cloud-Server, keine Tracking
-- ✅ Passwörter verschlüsselt mit AES-128-CBC
+- ✅ Self-Hosted — keine Cloud-Abhängigkeiten, keine Tracker, keine Analytics
+- ✅ **Envelope-Encryption** für sensible User-Daten (Backups, IMAP-Credentials): pro-User Data-Encryption-Key (DEK), gewrapped mit aus Passwort abgeleitetem KEK (PBKDF2 600k iterations)
+- ✅ User-spezifischer localStorage wird beim Logout vollständig gelöscht (kein Daten-Leak zwischen Usern auf gemeinsamen Browsern)
+- ✅ Passwörter verschlüsselt mit AES-128-CBC + Fernet
 - ✅ IMAP-Proxy läuft auf localhost (Port 8765)
+- ✅ JWT-Tokens mit konfigurierbarer TTL, Refresh-Token-Flow
 
 ### 📋 System-Anforderungen
 
@@ -78,15 +103,34 @@ A privacy-friendly job application tracker with automated email monitoring, stat
 - 🎯 **Application Tracking** - Status, dates, salary, notes, ghosting detection
 - 🗂️ **Kanban Board** - Visual overview by status
 - 📋 **CV Comparison** - Compare your CV against job requirements
-- 🔍 **Job-Discovery** - Automated job search from RSS feeds + Bundesagentur/Adzuna/Arbeitnow APIs with Claude-based match-scoring against your CV
+- 🔍 **Job-Discovery** - Automated job search from RSS feeds + Bundesagentur/Adzuna/Arbeitnow APIs with Claude-based match-scoring against your CV. Includes source management, pagination, full-text search, filters (Remote/postal-code/employment-type), browser push notifications for top matches, and onboarding checklist
+- 👤 **Multi-User with Admin Approval** - Users self-register, admin approves accounts + Job-Discovery activation
+- 🔐 **Envelope-Encryption** - Per-user DEK + KEK derived from password, backups remain decryptable on password reset
 - 🌙 **Dark/Light Mode** - Responsive design for all devices
 
 ### 🚀 Quick Start
 
-1. **Open the App:** Open `index.html` in your browser
-2. **Add Application:** Click "+ Application" button in top right
-3. **Email Monitoring:** Go to "📧 Mail Connector" and connect your email account
-4. **Save Data:** Use the backup feature in Settings
+**For users:**
+1. **Create account:** Visit `/login` → Register → Confirm email → Wait for admin approval
+2. **Upload CV:** Tab "📋 CV Comparison" → Upload (PDF/DOCX)
+3. **Activate Job-Discovery:** Confirm modal on first CV upload → Admin approves
+4. **Track applications:** "+ Application" button or import from Job suggestions
+5. **Email monitoring:** Tab "📧 Mail Connector" → Connect provider
+
+**For admins (server setup):**
+```bash
+# Initial setup
+python scripts/migrate_job_discovery.py     # DB schema
+python scripts/seed_job_sources.py          # 3 global default sources
+
+# ENV vars
+export JOB_CRON_TOKEN=<random-secret-32+chars>
+export ANTHROPIC_API_KEY=<your-key>
+export CLAUDE_DEFAULT_MODEL=claude-haiku-4-5-20251001
+
+# Cron setup (system cron or cron-job.org)
+# 5 endpoints: /api/jobs/{crawl-source,prefilter,claude-match,notify,cleanup}
+```
 
 ### 📚 Documentation
 
