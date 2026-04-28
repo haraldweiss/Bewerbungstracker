@@ -1,9 +1,15 @@
-from flask import Blueprint, jsonify
+import secrets
+from datetime import datetime, timedelta
+
+from flask import Blueprint, request, jsonify, current_app
 from functools import wraps
+
 from api.auth import token_required, admin_required
-from models import User, Application
+from models import User, Application, EmailConfirmationToken
 from database import db
-from services.email_service import send_approval_notification
+from services.email_service import send_approval_notification, send_confirmation_email
+from services.encryption_service import EncryptionService
+from auth_service import AuthService
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
@@ -28,6 +34,82 @@ def list_users(user):
             for u in users
         ]
     }, 200
+
+
+@admin_bp.route('/users', methods=['POST'])
+@token_required
+@admin_required
+def create_user(user):
+    """Admin: Neuen User anlegen + Bestätigungs-Email versenden.
+
+    Flow:
+      1. User wird mit is_active=True, email_confirmed=False angelegt.
+      2. EmailConfirmationToken (24h gültig) wird generiert.
+      3. Bestätigungs-Email mit Aktivierungslink geht raus.
+      4. Login bleibt blockiert bis User den Link klickt → email_confirmed=True.
+
+    Body: {email, password, is_admin? (default false)}
+    """
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+    is_admin = bool(data.get('is_admin', False))
+
+    if not email or '@' not in email:
+        return {'error': 'Gültige Email erforderlich'}, 400
+    if not password or len(password) < 8:
+        return {'error': 'Passwort mit mindestens 8 Zeichen erforderlich'}, 400
+
+    if User.query.filter_by(email=email).first():
+        return {'error': 'Email bereits registriert'}, 400
+
+    try:
+        # Envelope-Encryption: per-User-Salt + verschlüsselter DEK
+        salt, encrypted_dek, _dek = EncryptionService.create_user_keys(password)
+        new_user = User(
+            email=email,
+            password_hash=AuthService.hash_password(password),
+            is_admin=is_admin,
+            is_active=True,           # Admin hat User legitimiert
+            email_confirmed=False,    # Confirmation-Link blockt Login bis dahin
+            encryption_salt=salt,
+            encrypted_data_key=encrypted_dek,
+        )
+        db.session.add(new_user)
+        db.session.flush()  # damit user.id gesetzt ist für FK
+
+        # Token + Email
+        confirmation_token = secrets.token_urlsafe(32)
+        token_record = EmailConfirmationToken(
+            token=confirmation_token,
+            user_id=new_user.id,
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+        )
+        db.session.add(token_record)
+        db.session.commit()
+
+        app_url = current_app.config.get('APP_URL', 'https://bewerbungen.wolfinisoftware.de')
+        confirmation_link = f"{app_url}/api/auth/confirm-email?token={confirmation_token}"
+        email_sent = send_confirmation_email(new_user.email, confirmation_link)
+
+        return {
+            'id': new_user.id,
+            'email': new_user.email,
+            'is_admin': new_user.is_admin,
+            'is_active': new_user.is_active,
+            'email_confirmed': new_user.email_confirmed,
+            'email_sent': email_sent,
+            'created_at': new_user.created_at.isoformat(),
+            'message': (
+                'User angelegt + Bestätigungs-Email versendet.'
+                if email_sent
+                else 'User angelegt, aber Bestätigungs-Email konnte NICHT versendet werden.'
+                     ' Bitte SMTP-Konfiguration prüfen.'
+            ),
+        }, 201
+    except Exception as e:
+        db.session.rollback()
+        return {'error': f'User-Anlage fehlgeschlagen: {e}'}, 500
 
 
 @admin_bp.route('/users/<user_id>/approve', methods=['POST'])
@@ -128,16 +210,21 @@ def get_user_applications(user, user_id):
 @token_required
 @admin_required
 def promote_user(user, user_id):
-    """Promote a user to admin"""
+    """Toggle admin status for a user"""
+    if str(user.id) == str(user_id):
+        return {'error': 'Cannot change your own admin status'}, 400
+
     target_user = User.query.get(user_id)
     if not target_user:
         return {'error': 'User not found'}, 404
 
-    target_user.is_admin = True
+    # Toggle admin status
+    target_user.is_admin = not target_user.is_admin
     db.session.commit()
 
+    action = 'promoted to admin' if target_user.is_admin else 'demoted from admin'
     return {
-        'message': f'User {target_user.email} promoted to admin',
+        'message': f'User {target_user.email} {action}',
         'email': target_user.email,
         'is_admin': target_user.is_admin
     }, 200

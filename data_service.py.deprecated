@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """
-Bewerbungs-Tracker Data Service
-Persistent SQLite storage for applications and settings
-API on port 8767 (localhost only)
+Bewerbungs-Tracker Data Service – DEPRECATED LEGACY SERVICE.
+
+⚠️  Dieser Service hat KEINE Authentifizierung und KEIN User-Scoping. Er war
+ein früher Stand-alone-Storage und ist durch die Flask-App + SQLAlchemy
+(`api/applications.py`, `models.py`, User-gescopte Endpoints) ersetzt worden.
+
+Beim Start prüft der Service die Umgebungsvariable `LEGACY_DATA_SERVICE`. Ist
+sie nicht auf `1` gesetzt, beendet sich der Prozess sofort, damit kein
+Auth-Bypass-Endpoint versehentlich auf 127.0.0.1:8767 lauscht.
 """
 
 import json
 import sqlite3
 import os
+import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
@@ -527,4 +534,14 @@ def run_server(port=8767):
         print("\n⏹️  Server stopped")
 
 if __name__ == '__main__':
+    # Hard-Off-Switch: Legacy-Service nur auf explizites Opt-in starten.
+    if os.environ.get('LEGACY_DATA_SERVICE') != '1':
+        print(
+            "❌ data_service.py ist deprecated und ohne Auth.\n"
+            "   Die Flask-App (app.py + api/applications.py) ist der Ersatz.\n"
+            "   Falls du diesen Legacy-Service wirklich brauchst:\n"
+            "   LEGACY_DATA_SERVICE=1 python3 data_service.py",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     run_server()

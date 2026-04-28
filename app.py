@@ -4,16 +4,20 @@ Bewerbungstracker - Modernized Flask App with SQLAlchemy & JWT Auth
 Factory pattern for Flask application creation
 """
 
+import os
 from dotenv import load_dotenv
+
+# .env MUSS vor `from config import config` geladen werden – Config wertet
+# os.getenv(...) zur Import-Zeit aus, also vor jeglicher Modul-Initialisierung.
+# Im gunicorn-Pfad reicht systemd's `source .env`, aber bei direktem
+# `python script.py` (z.B. scripts/*) muss load_dotenv() ganz oben stehen.
+load_dotenv()
+
 from flask import Flask, jsonify, send_file
 from flask_cors import CORS
 from config import config
-import os
 from database import db
 from services.email_service import init_email
-
-# Load environment variables from .env file
-load_dotenv()
 
 
 def create_app(config_class=None):
@@ -83,12 +87,36 @@ def create_app(config_class=None):
     def serve_backup_client_js():
         return send_file('frontend/backup-client.js', mimetype='application/javascript')
 
+    # PWA Static-Files (manifest, service-worker) – ohne diese gibt's
+    # 404-Errors in der Konsole und keine Push/Offline-Funktionalität.
+    @app.route('/manifest.json')
+    def serve_manifest():
+        return send_file('manifest.json', mimetype='application/manifest+json')
+
+    @app.route('/service-worker.js')
+    def serve_service_worker():
+        # Service Worker MUSS mit Service-Worker-Allowed Header serviert werden,
+        # damit der Scope auf '/' liegt.
+        resp = send_file('service-worker.js', mimetype='application/javascript')
+        resp.headers['Service-Worker-Allowed'] = '/'
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
+    @app.route('/favicon.ico')
+    def serve_favicon():
+        # 204 No Content falls keine favicon.ico existiert (verhindert 404-Spam).
+        path = os.path.join(app.root_path, 'favicon.ico')
+        if os.path.exists(path):
+            return send_file('favicon.ico')
+        return '', 204
+
     # Register blueprints
     from api.auth import auth_bp
     from api.applications import apps_bp
     from api.emails import emails_bp
     from api.admin import admin_bp
     from api.backup import backup_bp
+    from api.profile import profile_bp
     from claude_integration import claude_bp
 
     app.register_blueprint(auth_bp)
@@ -96,6 +124,7 @@ def create_app(config_class=None):
     app.register_blueprint(emails_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(backup_bp)
+    app.register_blueprint(profile_bp)
     app.register_blueprint(claude_bp)
 
     # Error handlers

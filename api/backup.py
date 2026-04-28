@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, make_response
 from api.auth import token_required
 from models import BackupHistory, Application, User
 from database import db
-from services.backup_service import BackupService
+from services.backup_service import BackupService, BackupKeyUnavailable
 from services.encryption_service import EncryptionService
 import json
 import csv
@@ -155,12 +155,7 @@ def get_backup(user, version):
 
         if decrypt:
             try:
-                # Decrypt the backup data
-                decrypted_data = BackupService.get_backup_decrypted(
-                    backup,
-                    user.email,
-                    user.password_hash
-                )
+                decrypted_data = BackupService.get_backup_decrypted(backup, user)
 
                 return {
                     'version': backup.version,
@@ -170,7 +165,9 @@ def get_backup(user, version):
                     'data': decrypted_data
                 }, 200
 
-            except Exception as e:
+            except BackupKeyUnavailable:
+                return {'error': 'Session expired – please log in again'}, 401
+            except Exception:
                 return {'error': 'Failed to decrypt backup'}, 400
 
         else:
@@ -214,13 +211,10 @@ def restore_backup(user, version):
             return {'error': 'Backup not found'}, 404
 
         try:
-            # Decrypt backup
-            decrypted_data = BackupService.get_backup_decrypted(
-                backup,
-                user.email,
-                user.password_hash
-            )
-        except Exception as e:
+            decrypted_data = BackupService.get_backup_decrypted(backup, user)
+        except BackupKeyUnavailable:
+            return {'error': 'Session expired – please log in again'}, 401
+        except Exception:
             return {'error': 'Failed to decrypt backup'}, 400
 
         # Clear existing data if requested

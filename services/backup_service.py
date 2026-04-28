@@ -4,7 +4,12 @@ import json
 from datetime import datetime
 from models import User, Application, Email, BackupHistory
 from services.encryption_service import EncryptionService
+from services.key_cache import get_key_cache
 from database import db
+
+
+class BackupKeyUnavailable(RuntimeError):
+    """Wird geworfen, wenn kein DEK im KeyCache liegt (Re-Login nötig)."""
 
 
 class BackupService:
@@ -19,6 +24,17 @@ class BackupService:
     """
 
     MAX_BACKUPS_PER_USER = 10
+
+    @staticmethod
+    def _get_dek(user: User) -> bytes:
+        """Holt den DEK aus dem KeyCache. Wirft BackupKeyUnavailable bei Miss."""
+        dek = get_key_cache().get(user.id)
+        if dek is None:
+            raise BackupKeyUnavailable(
+                "DEK nicht im Cache – User muss sich erneut anmelden, um Backups "
+                "zu verschlüsseln/entschlüsseln."
+            )
+        return dek
 
     @staticmethod
     def create_backup(user: User, backup_type: str = 'automatic') -> BackupHistory:
@@ -38,7 +54,7 @@ class BackupService:
         # Collect emails for this user
         emails = Email.query.filter_by(user_id=user.id).all()
 
-        # Build backup data structure
+        # Build backup data structure – inkl. Legacy-Felder + Soft-Delete-State.
         backup_data = {
             'applications': [
                 {
@@ -47,6 +63,14 @@ class BackupService:
                     'position': app.position,
                     'status': app.status,
                     'applied_date': app.applied_date.isoformat() if app.applied_date else None,
+                    'salary': app.salary,
+                    'location': app.location,
+                    'contact_email': app.contact_email,
+                    'source': app.source,
+                    'link': app.link,
+                    'notes': app.notes,
+                    'deleted': app.deleted,
+                    'deleted_at': app.deleted_at.isoformat() if app.deleted_at else None,
                     'created_at': app.created_at.isoformat(),
                     'updated_at': app.updated_at.isoformat(),
                 }
@@ -69,14 +93,11 @@ class BackupService:
         # Serialize to JSON
         plaintext = json.dumps(backup_data, indent=2)
 
-        # Derive encryption key from user email and password hash
-        encryption_key = EncryptionService.derive_user_key(
-            user.email,
-            user.password_hash
-        )
-
-        # Encrypt the backup data
-        encrypted_data = EncryptionService.encrypt_data(plaintext, encryption_key)
+        # Envelope-Encryption: DEK aus dem In-Memory-Cache (befüllt beim Login)
+        # statt aus password_hash ableiten. Dadurch bleiben Backups bei einem
+        # Passwort-Reset gültig (DEK ändert sich nicht, nur die KEK-Verpackung).
+        dek = BackupService._get_dek(user)
+        encrypted_data = EncryptionService.encrypt_data(plaintext, dek)
 
         # Determine next version number
         latest_backup = BackupHistory.query.filter_by(
@@ -131,38 +152,17 @@ class BackupService:
             db.session.commit()
 
     @staticmethod
-    def get_backup_decrypted(
-        backup: BackupHistory,
-        user_email: str,
-        user_password_hash: str
-    ) -> dict:
-        """
-        Decrypt a backup and return the decrypted data.
-
-        Args:
-            backup: BackupHistory object to decrypt
-            user_email: User's email for key derivation
-            user_password_hash: User's password hash for key derivation
-
-        Returns:
-            Dictionary with decrypted applications and emails
+    def get_backup_decrypted(backup: BackupHistory, user: User) -> dict:
+        """Entschlüsselt ein Backup mit dem im KeyCache liegenden DEK.
 
         Raises:
-            cryptography.fernet.InvalidToken: If decryption fails (wrong credentials)
+            BackupKeyUnavailable: Wenn DEK nicht gecacht ist (User muss sich
+                neu anmelden, damit der DEK aus encrypted_data_key entsperrt wird).
+            cryptography.fernet.InvalidToken: Bei korrupten Daten / falschem DEK.
         """
-        # Derive encryption key
-        encryption_key = EncryptionService.derive_user_key(
-            user_email,
-            user_password_hash
-        )
-
-        # Decrypt the data
-        plaintext = EncryptionService.decrypt_data(backup.encrypted_data, encryption_key)
-
-        # Parse JSON
-        decrypted_data = json.loads(plaintext)
-
-        return decrypted_data
+        dek = BackupService._get_dek(user)
+        plaintext = EncryptionService.decrypt_data(backup.encrypted_data, dek)
+        return json.loads(plaintext)
 
     @staticmethod
     def get_user_backups(user_id: str, limit: int = 10) -> list:

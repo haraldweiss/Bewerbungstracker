@@ -6,7 +6,7 @@
 
 class BackupClient {
     constructor() {
-        this.baseUrl = '/api/backup';
+        this.baseUrl = '/backup';  // Auth.fetch() adds '/api' prefix automatically
     }
 
     /**

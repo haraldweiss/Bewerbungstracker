@@ -28,6 +28,7 @@ import time
 import hashlib
 from datetime import datetime, timedelta
 from email.header import decode_header as mime_decode
+from typing import Optional
 from email.utils import parsedate_to_datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import os
@@ -100,7 +101,7 @@ class ResponseCache:
         key_str = f"{host}:{user}:{folder}:{limit}:{offset}"
         return hashlib.md5(key_str.encode()).hexdigest()
 
-    def get(self, host: str, user: str, folder: str, limit: int, offset: int) -> dict | None:
+    def get(self, host: str, user: str, folder: str, limit: int, offset: int) -> Optional[dict]:
         """Return cached response if exists and not expired."""
         key = self._make_key(host, user, folder, limit, offset)
         with self._lock:
@@ -180,7 +181,7 @@ def _collect_uids(data: list) -> set[bytes]:
     return uids
 
 
-def _extract_raw_headers(data: list) -> bytes | None:
+def _extract_raw_headers(data: list) -> Optional[bytes]:
     """Extract raw header bytes from an imaplib FETCH response list."""
     for item in data:
         if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], bytes):

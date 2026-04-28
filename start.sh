@@ -84,8 +84,8 @@ kill_existing_process() {
 
 # Check if ports are available and stop existing services if needed
 echo -e "${BLUE}Checking port availability...${NC}"
-PORTS=(8080 8765 8766 8767)
-NAMES=("Web Server" "IMAP Proxy" "Email Service" "Data Service")
+PORTS=(8080 8765 8766)
+NAMES=("Web Server" "IMAP Proxy" "Email Service")
 
 CLEANUP_NEEDED=false
 for i in "${!PORTS[@]}"; do
@@ -115,7 +115,6 @@ echo ""
 WEB_PID=""
 IMAP_PID=""
 EMAIL_PID=""
-DATA_PID=""
 FAILED_SERVICES=""
 
 # Function to verify service started
@@ -180,21 +179,10 @@ else
 fi
 echo ""
 
-# Start Data Service
-echo -e "${BLUE}Starting Data Service (port 8767)...${NC}"
-if [ -f "data_service.py" ]; then
-    python3 data_service.py > /tmp/data_service.log 2>&1 &
-    DATA_PID=$!
-    if verify_service 8767 "Data Service"; then
-        echo -e "${GREEN}   PID: $DATA_PID${NC}"
-    else
-        FAILED_SERVICES="$FAILED_SERVICES Data Service"
-        cat /tmp/data_service.log | head -20
-    fi
-else
-    echo -e "${YELLOW}⚠️  data_service.py not found, skipping Data Service${NC}"
-fi
-echo ""
+# Data Service entfernt: data_service.py war ein Legacy-Storage ohne Auth/User-
+# Scoping (Auth-Bypass auf Port 8767). Ersetzt durch Flask-App + SQLAlchemy
+# (api/applications.py). Datei liegt nur noch als data_service.py.deprecated
+# vor; die alte SQLite-DB als bewerbungen.db.bak.
 
 # Print final status
 echo ""
@@ -212,17 +200,15 @@ echo -e "${BLUE}📍 Service URLs:${NC}"
 echo "  🌐 Web App:       ${BLUE}http://localhost:8080${NC}"
 echo "  📧 IMAP Proxy:    ${BLUE}http://localhost:8765${NC}"
 echo "  💌 Email Service:  ${BLUE}http://localhost:8766${NC}"
-echo "  💾 Data Service:   ${BLUE}http://localhost:8767${NC}"
 echo ""
 echo -e "${YELLOW}📝 Log files:${NC}"
 echo "  Web Server:   /tmp/webserver.log"
 echo "  IMAP Proxy:   /tmp/imap_proxy.log"
 echo "  Email Service: /tmp/email_service.log"
-echo "  Data Service: /tmp/data_service.log"
 echo ""
 
 # Create a save PIDs for cleanup
-PIDS_TO_KILL="$WEB_PID $IMAP_PID $EMAIL_PID $DATA_PID"
+PIDS_TO_KILL="$WEB_PID $IMAP_PID $EMAIL_PID"
 echo -e "${YELLOW}🛑 To stop all services:${NC}"
 echo "  • Use the stop script: ${BLUE}./stop.sh${NC}"
 echo "  • Or manually: ${BLUE}kill $PIDS_TO_KILL${NC}"
