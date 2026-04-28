@@ -139,6 +139,44 @@ describe('Auth Module', () => {
             expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
             expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull();
         });
+
+        test('should clear all user-specific data keys (no leak between users)', async () => {
+            // User A loggt ein, hat CV + Comparisons + Bewerbungen
+            localStorage.setItem(TOKEN_KEY, 'token-A');
+            localStorage.setItem('cvData', JSON.stringify({text: 'CV von User A'}));
+            localStorage.setItem('cvComparisons', JSON.stringify([{id: 1}]));
+            localStorage.setItem('bewerbungsTrackerV3', JSON.stringify({bewerbungen: []}));
+            localStorage.setItem('customAIPlatforms', JSON.stringify([{id: 'x'}]));
+            localStorage.setItem('jdModalDismissed', '1');
+            localStorage.setItem('masterPasswordSet', '1');
+            // Nicht-User-spezifisch — sollte erhalten bleiben
+            localStorage.setItem('colorScheme', 'dark');
+
+            await Auth.logout();
+
+            // Alle User-Daten weg
+            expect(localStorage.getItem('cvData')).toBeNull();
+            expect(localStorage.getItem('cvComparisons')).toBeNull();
+            expect(localStorage.getItem('bewerbungsTrackerV3')).toBeNull();
+            expect(localStorage.getItem('customAIPlatforms')).toBeNull();
+            expect(localStorage.getItem('jdModalDismissed')).toBeNull();
+            expect(localStorage.getItem('masterPasswordSet')).toBeNull();
+            // UI-Settings bleiben
+            expect(localStorage.getItem('colorScheme')).toBe('dark');
+        });
+    });
+
+    describe('clearUserData()', () => {
+        test('should clear user data without removing tokens', () => {
+            localStorage.setItem(TOKEN_KEY, 'still-here');
+            localStorage.setItem('cvData', JSON.stringify({text: 'leak'}));
+
+            Auth.clearUserData();
+
+            expect(localStorage.getItem('cvData')).toBeNull();
+            // Token bleibt — clearUserData ist NICHT logout
+            expect(localStorage.getItem(TOKEN_KEY)).toBe('still-here');
+        });
     });
 
     describe('refreshToken()', () => {

@@ -13,6 +13,24 @@ const Auth = (() => {
     const API_BASE = window.location.origin + '/api';
 
     /**
+     * User-spezifische localStorage-Keys, die beim Logout gelöscht werden müssen.
+     *
+     * Hintergrund: Login-Daten + DB-Werte werden in localStorage gecacht
+     * (DB ist Source-of-Truth). Bei User-Wechsel ohne Clear sieht User B
+     * die Daten von User A — schwerwiegender Datenschutz-Bug.
+     *
+     * Geräte-/UI-Settings (`colorScheme`, ...) bleiben erhalten.
+     */
+    const USER_DATA_KEYS = [
+        'bewerbungsTrackerV3',  // Bewerbungen-Liste (legacy v3)
+        'cvData',               // CV-Inhalt
+        'cvComparisons',        // CV-Match-Vergleiche
+        'customAIPlatforms',    // User-spezifische KI-Plattform-Configs
+        'jdModalDismissed',     // Job-Discovery Modal "Nein, danke"-Flag
+        'masterPasswordSet',    // Encryption-Setup-Flag
+    ];
+
+    /**
      * Get current access token from localStorage
      * @returns {string|null} Access token or null if not authenticated
      */
@@ -94,12 +112,18 @@ const Auth = (() => {
     };
 
     /**
-     * Logout user - clears tokens and redirects to login
+     * Logout user - clears tokens AND alle User-Daten und redirects to login
+     *
+     * WICHTIG: Cleart `USER_DATA_KEYS` damit beim Login eines anderen Users
+     * keine Daten des vorigen Users sichtbar sind (Datenschutz-Bug
+     * andernfalls — gefunden 2026-04-28: User B sah CV von User A).
+     *
      * @throws Does not throw, clears localStorage and redirects
      */
     const logout = async () => {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_TOKEN_KEY);
+        USER_DATA_KEYS.forEach(k => localStorage.removeItem(k));
         // In browser environment, redirect; in test environment, just clear
         if (typeof window !== 'undefined' && window.location) {
             try {
@@ -108,6 +132,17 @@ const Auth = (() => {
                 // Navigation not available in test environment
             }
         }
+    };
+
+    /**
+     * Cleart alle User-spezifischen localStorage-Keys ohne Logout/Redirect.
+     *
+     * Use case: defensive Initialization am Login-Flow — falls Logout vom
+     * vorigen User vergessen oder unterbrochen wurde, sicherstellen dass
+     * keine fremden Daten mehr im Browser hängen.
+     */
+    const clearUserData = () => {
+        USER_DATA_KEYS.forEach(k => localStorage.removeItem(k));
     };
 
     /**
@@ -238,10 +273,12 @@ const Auth = (() => {
         register,
         login,
         logout,
+        clearUserData,
         refreshToken,
         fetch,
         getCurrentUser,
-        isAdmin
+        isAdmin,
+        USER_DATA_KEYS  // exposed für Tests
     };
 })();
 
