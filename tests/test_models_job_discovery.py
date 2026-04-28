@@ -116,3 +116,31 @@ def test_job_match_per_user_unique(app, user_factory):
     with pytest.raises(Exception):
         db.session.commit()
     db.session.rollback()
+
+
+from models import ApiCall
+
+
+def test_user_has_job_settings_defaults(app, user_factory):
+    u = user_factory()
+    db.session.refresh(u)
+    assert u.job_discovery_enabled is False
+    assert u.job_notification_threshold == 80
+    assert u.job_claude_budget_per_tick == 5
+    assert u.job_daily_budget_cents == 50
+    assert u.job_language_filter == ["de", "en"]
+    assert u.job_region_filter is None
+
+
+def test_api_call_has_key_owner_default(app, user_factory):
+    u = user_factory()
+    call = ApiCall(
+        user_id=u.id,
+        endpoint='/test',
+        model='claude-haiku',
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.001,
+    )
+    db.session.add(call); db.session.commit()
+    assert call.key_owner == 'server'

@@ -32,6 +32,14 @@ class User(db.Model):
     settings_json = db.Column(db.Text)   # JSON-Objekt, null = noch nicht gesetzt
     cv_data_json = db.Column(db.Text)    # JSON-Objekt {cv: {...}, comparisons: [...]}
 
+    # Job-Discovery Settings (Phase A)
+    job_discovery_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    job_notification_threshold = db.Column(db.Integer, default=80, nullable=False)
+    job_claude_budget_per_tick = db.Column(db.Integer, default=5, nullable=False)
+    job_daily_budget_cents = db.Column(db.Integer, default=50, nullable=False)
+    _job_language_filter = db.Column('job_language_filter', db.Text, default='["de","en"]')
+    _job_region_filter = db.Column('job_region_filter', db.Text, nullable=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -50,6 +58,22 @@ class User(db.Model):
         if self.imap_password_encrypted:
             return IMAPCredentialManager.decrypt_password(self.imap_password_encrypted)
         return None
+
+    @property
+    def job_language_filter(self) -> list:
+        return _json.loads(self._job_language_filter or '["de","en"]')
+
+    @job_language_filter.setter
+    def job_language_filter(self, value: list):
+        self._job_language_filter = _json.dumps(value)
+
+    @property
+    def job_region_filter(self):
+        return _json.loads(self._job_region_filter) if self._job_region_filter else None
+
+    @job_region_filter.setter
+    def job_region_filter(self, value):
+        self._job_region_filter = _json.dumps(value) if value else None
 
     def __repr__(self):
         return f'<User {self.email}>'
@@ -191,6 +215,7 @@ class ApiCall(db.Model):
     tokens_out = db.Column(db.Integer, default=0)
     cost = db.Column(db.Float, default=0.0)  # USD
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    key_owner = db.Column(db.String(20), default='server', nullable=False)  # server|user|custom_endpoint
 
     def __repr__(self):
         return f'<ApiCall {self.model} ${self.cost:.4f}>'
