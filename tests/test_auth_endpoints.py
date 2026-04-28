@@ -31,12 +31,15 @@ def test_register_duplicate(client):
     assert response.status_code == 400
 
 
-def test_login_endpoint(client):
+def test_login_endpoint(client, activate_user_after_register):
     """Test /api/auth/login"""
     client.post(
         '/api/auth/register',
         json={'email': 'test@example.com', 'password': 'password123'}
     )
+    # Email-Confirmation + Admin-Approval wird via Helper umgangen, sodass
+    # der eigentliche Login-Flow getestet werden kann.
+    activate_user_after_register('test@example.com')
 
     response = client.post(
         '/api/auth/login',
@@ -50,13 +53,13 @@ def test_login_endpoint(client):
     assert data['token_type'] == 'Bearer'
 
 
-def test_get_current_user(client):
+def test_get_current_user(client, activate_user_after_register):
     """Test /api/auth/me with token"""
-    # Register and login
     client.post(
         '/api/auth/register',
         json={'email': 'test@example.com', 'password': 'password123'}
     )
+    activate_user_after_register('test@example.com')
 
     login_response = client.post(
         '/api/auth/login',
@@ -65,7 +68,6 @@ def test_get_current_user(client):
 
     token = login_response.get_json()['access_token']
 
-    # Get current user
     response = client.get(
         '/api/auth/me',
         headers={'Authorization': f'Bearer {token}'}

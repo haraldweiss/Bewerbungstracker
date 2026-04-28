@@ -10,6 +10,8 @@ Negative Filter (Score = 0):
 - Region-Filter (PLZ-Präfix) und nicht "Remote"
 - Sprache-Filter (Heuristik: deutsche/englische Wörter im Titel)
 """
+
+from __future__ import annotations
 import re
 from dataclasses import dataclass
 

@@ -2,6 +2,8 @@
 
 Phase A: Stub mit logging — wird durch echten Push-Service ersetzt.
 """
+
+from __future__ import annotations
 import logging
 
 logger = logging.getLogger(__name__)

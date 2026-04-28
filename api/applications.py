@@ -120,7 +120,7 @@ def list_deleted_applications(user):
 @apps_bp.route('/<app_id>', methods=['GET'])
 @token_required
 def get_application(user, app_id):
-    app = Application.query.filter_by(id=app_id, user_id=user.id).first()
+    app = Application.query.filter_by(id=app_id, user_id=user.id, deleted=False).first()
     if not app:
         return {'error': 'Application not found'}, 404
     return _serialize(app), 200
@@ -129,7 +129,7 @@ def get_application(user, app_id):
 @apps_bp.route('/<app_id>', methods=['PATCH'])
 @token_required
 def update_application(user, app_id):
-    app = Application.query.filter_by(id=app_id, user_id=user.id).first()
+    app = Application.query.filter_by(id=app_id, user_id=user.id, deleted=False).first()
     if not app:
         return {'error': 'Application not found'}, 404
 

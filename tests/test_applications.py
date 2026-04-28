@@ -1,21 +1,6 @@
 import pytest
-from auth_service import AuthService
 
-
-@pytest.fixture
-def auth_token(client):
-    """Register and login user, return token"""
-    client.post(
-        '/api/auth/register',
-        json={'email': 'test@example.com', 'password': 'password123'}
-    )
-
-    response = client.post(
-        '/api/auth/login',
-        json={'email': 'test@example.com', 'password': 'password123'}
-    )
-
-    return response.get_json()['access_token']
+# auth_token kommt aus tests/conftest.py (zentrale Fixture mit aktiviertem User)
 
 
 def test_create_application(client, auth_token):
