@@ -2,7 +2,7 @@
 from flask import Blueprint, request, jsonify
 
 from database import db
-from models import JobSource
+from models import JobSource, RawJob, JobMatch, Application
 from api.auth import token_required
 from services.ssrf_guard import is_url_safe_for_rss
 
@@ -129,3 +129,111 @@ def test_crawl_source(user, source_id: int):
                         "sample_titles": [j.title for j in jobs[:5]]}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 200
+
+
+# ---------------------------------------------------------------------------
+# Match-Endpoints
+# ---------------------------------------------------------------------------
+
+def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
+    return {
+        "id": m.id,
+        "match_score": m.match_score,
+        "match_reasoning": m.match_reasoning,
+        "missing_skills": m.missing_skills,
+        "status": m.status,
+        "notified_at": m.notified_at.isoformat() if m.notified_at else None,
+        "imported_application_id": m.imported_application_id,
+        "raw_job": {
+            "id": raw.id, "title": raw.title, "company": raw.company,
+            "location": raw.location, "url": raw.url, "description": raw.description,
+            "posted_at": raw.posted_at.isoformat() if raw.posted_at else None,
+            "source_name": src.name, "source_id": src.id,
+        },
+    }
+
+
+@jobs_user_bp.get('/matches')
+@token_required
+def list_matches(user):
+    min_score = request.args.get('min_score', type=float, default=0)
+    status_filter = request.args.getlist('status') or ['new']
+    source_id = request.args.get('source_id', type=int)
+    q_text = (request.args.get('q') or '').strip().lower()
+    limit = min(request.args.get('limit', type=int, default=50), 200)
+    offset = request.args.get('offset', type=int, default=0)
+
+    query = (db.session.query(JobMatch, RawJob, JobSource)
+             .join(RawJob, RawJob.id == JobMatch.raw_job_id)
+             .join(JobSource, JobSource.id == RawJob.source_id)
+             .filter(JobMatch.user_id == user.id,
+                     JobMatch.status.in_(status_filter)))
+
+    if min_score > 0:
+        query = query.filter(JobMatch.match_score >= min_score)
+    if source_id:
+        query = query.filter(JobSource.id == source_id)
+    if q_text:
+        query = query.filter(db.or_(
+            db.func.lower(RawJob.title).contains(q_text),
+            db.func.lower(RawJob.company).contains(q_text),
+        ))
+
+    total = query.count()
+    rows = (query.order_by(JobMatch.match_score.desc().nullslast(),
+                           JobMatch.created_at.desc())
+                 .offset(offset).limit(limit).all())
+
+    return jsonify({
+        "matches": [_serialize_match(m, r, s) for (m, r, s) in rows],
+        "total": total, "limit": limit, "offset": offset,
+    }), 200
+
+
+@jobs_user_bp.patch('/matches/<int:match_id>')
+@token_required
+def update_match(user, match_id: int):
+    m = JobMatch.query.get_or_404(match_id)
+    if m.user_id != user.id:
+        return jsonify({"error": "Forbidden"}), 403
+    data = request.get_json() or {}
+    new_status = data.get("status")
+    if new_status not in ('seen', 'dismissed', 'new'):
+        return jsonify({"error": "status muss 'seen'|'dismissed'|'new' sein"}), 400
+    m.status = new_status
+    db.session.commit()
+    return jsonify({"id": m.id, "status": m.status}), 200
+
+
+@jobs_user_bp.post('/matches/<int:match_id>/import')
+@token_required
+def import_match(user, match_id: int):
+    m = JobMatch.query.get_or_404(match_id)
+    if m.user_id != user.id:
+        return jsonify({"error": "Forbidden"}), 403
+    raw = RawJob.query.get(m.raw_job_id)
+
+    score_str = f"{m.match_score:.0f}" if m.match_score is not None else "–"
+    note_text = (
+        f"Aus Job-Vorschlag importiert (Match-Score {score_str}).\n\n"
+        f"Begruendung: {m.match_reasoning or '–'}\n\n"
+        f"Fehlende Skills: {', '.join(m.missing_skills) if m.missing_skills else '–'}\n\n"
+        f"Original-Link: {raw.url}"
+    )
+
+    application = Application(
+        user_id=user.id,
+        company=raw.company or "Unbekannt",
+        position=raw.title,
+        status='beworben',
+        link=raw.url,
+        notes=note_text,
+    )
+    db.session.add(application)
+    db.session.flush()
+
+    m.status = 'imported'
+    m.imported_application_id = application.id
+    db.session.commit()
+
+    return jsonify({"application_id": application.id}), 201
