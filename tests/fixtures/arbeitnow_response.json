@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "slug": "senior-react-engineer-acme",
+      "title": "Senior React Engineer",
+      "company_name": "ACME",
+      "location": "Berlin (Remote)",
+      "url": "https://www.arbeitnow.com/view/senior-react-engineer-acme",
+      "description": "Looking for a senior React engineer...",
+      "tags": ["javascript", "react", "remote"],
+      "created_at": 1714291200,
+      "remote": true,
+      "visa_sponsorship": false
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+  <title>StepStone Jobs Frontend</title>
+  <link>https://www.stepstone.de</link>
+  <item>
+    <title>Senior Frontend Developer (m/w/d) - React/TypeScript</title>
+    <link>https://www.stepstone.de/jobs/senior-frontend-12345</link>
+    <guid isPermaLink="false">stepstone-12345</guid>
+    <pubDate>Mon, 28 Apr 2026 10:00:00 +0200</pubDate>
+    <description><![CDATA[Wir suchen einen erfahrenen Frontend-Entwickler mit React, TypeScript und 5+ Jahren Erfahrung. Standort: Berlin. Remote möglich.]]></description>
+    <category>Berlin</category>
+  </item>
+  <item>
+    <title>Junior Backend Developer Python</title>
+    <link>https://www.stepstone.de/jobs/junior-backend-67890</link>
+    <guid isPermaLink="false">stepstone-67890</guid>
+    <pubDate>Sun, 27 Apr 2026 14:00:00 +0200</pubDate>
+    <description><![CDATA[Einstiegsposition Backend mit Python und Flask. München. Vollzeit.]]></description>
+    <category>München</category>
+  </item>
+</channel>
+</rss>

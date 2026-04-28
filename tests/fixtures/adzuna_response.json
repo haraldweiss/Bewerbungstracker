@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "id": "1234567890",
+      "title": "Senior React Developer",
+      "company": {"display_name": "ACME GmbH"},
+      "location": {"display_name": "Berlin", "area": ["Deutschland", "Berlin"]},
+      "redirect_url": "https://www.adzuna.de/land/ad/1234567890",
+      "description": "We need a senior React developer with 5+ years of experience.",
+      "created": "2026-04-28T08:00:00Z",
+      "salary_min": 65000,
+      "salary_max": 85000
+    }
+  ],
+  "count": 1
+}
