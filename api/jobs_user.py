@@ -214,6 +214,7 @@ def import_match(user, match_id: int):
     if m.user_id != user.id:
         return jsonify({"error": "Forbidden"}), 403
     raw = RawJob.query.get(m.raw_job_id)
+    src = JobSource.query.get(raw.source_id)
 
     score_str = f"{m.match_score:.0f}" if m.match_score is not None else "–"
     note_text = (
@@ -223,11 +224,15 @@ def import_match(user, match_id: int):
         f"Original-Link: {raw.url}"
     )
 
+    # Übertrage alle verfügbaren Felder vom RawJob
     application = Application(
         user_id=user.id,
         company=raw.company or "Unbekannt",
         position=raw.title,
         status='beworben',
+        applied_date=raw.posted_at.date() if raw.posted_at else None,
+        location=raw.location,
+        source=src.name if src else None,
         link=raw.url,
         notes=note_text,
     )
