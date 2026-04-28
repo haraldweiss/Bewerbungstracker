@@ -7,6 +7,8 @@ Extrahiert aus dem cv_data_json eines Users drei Token-Mengen:
 
 Das Format orientiert sich am bestehenden cv_data_json-Schema.
 """
+
+from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 
