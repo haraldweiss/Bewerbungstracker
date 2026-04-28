@@ -1,0 +1,146 @@
+import pytest
+from datetime import datetime
+from app import create_app
+from database import db
+from models import JobSource
+
+
+@pytest.fixture
+def app():
+    app = create_app()
+    app.config['TESTING'] = True
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    with app.app_context():
+        db.create_all()
+        yield app
+        db.session.remove()
+        db.drop_all()
+
+
+def test_job_source_creates_global(app):
+    src = JobSource(
+        name="Bundesagentur Frontend",
+        type="bundesagentur",
+        config={"was": "Frontend", "wo": "10115"},
+        enabled=True,
+        crawl_interval_min=60,
+    )
+    db.session.add(src)
+    db.session.commit()
+
+    assert src.id is not None
+    assert src.user_id is None  # global
+    assert src.consecutive_failures == 0
+    assert src.config == {"was": "Frontend", "wo": "10115"}
+
+
+def test_job_source_user_owned(app, user_factory):
+    user = user_factory()
+    src = JobSource(
+        user_id=user.id,
+        name="Mein RSS-Feed",
+        type="rss",
+        config={"url": "https://example.com/feed.xml"},
+    )
+    db.session.add(src)
+    db.session.commit()
+
+    assert src.user_id == user.id
+
+
+def test_user_job_sources_backref(app, user_factory):
+    user = user_factory()
+    db.session.add(JobSource(user_id=user.id, name="A", type="rss",
+                              config={"url": "x"}))
+    db.session.add(JobSource(user_id=user.id, name="B", type="rss",
+                              config={"url": "y"}))
+    db.session.commit()
+    db.session.refresh(user)
+    assert len(user.job_sources) == 2
+    assert {s.name for s in user.job_sources} == {"A", "B"}
+
+
+from models import RawJob
+
+
+def test_raw_job_dedup_per_source(app):
+    src = JobSource(name="Test", type="rss", config={"url": "x"})
+    db.session.add(src)
+    db.session.flush()
+
+    job1 = RawJob(
+        source_id=src.id,
+        external_id="abc-123",
+        title="Frontend",
+        company="ACME",
+        url="https://example.com/job/1",
+        crawl_status="raw",
+    )
+    db.session.add(job1)
+    db.session.commit()
+
+    # Selbe (source_id, external_id) sollte UNIQUE-Constraint verletzen
+    job_dup = RawJob(
+        source_id=src.id,
+        external_id="abc-123",
+        title="Andere Daten",
+        url="https://example.com/job/2",
+        crawl_status="raw",
+    )
+    db.session.add(job_dup)
+    with pytest.raises(Exception):
+        db.session.commit()
+    db.session.rollback()
+
+
+from models import JobMatch
+
+
+def test_job_match_per_user_unique(app, user_factory):
+    user = user_factory()
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="x1", title="t",
+                 url="http://x", crawl_status="raw")
+    db.session.add(raw); db.session.flush()
+
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    db.session.add(m); db.session.commit()
+    assert m.id is not None
+    assert m.match_score is None  # noch nicht bewertet
+    assert m.status == 'new'
+
+    # Dupe in derselben (raw_job_id, user_id) Kombo soll fehlschlagen
+    dup = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    db.session.add(dup)
+    with pytest.raises(Exception):
+        db.session.commit()
+    db.session.rollback()
+
+
+from models import ApiCall
+
+
+def test_user_has_job_settings_defaults(app, user_factory):
+    u = user_factory()
+    db.session.refresh(u)
+    assert u.job_discovery_enabled is False
+    assert u.job_notification_threshold == 80
+    assert u.job_claude_budget_per_tick == 5
+    assert u.job_daily_budget_cents == 50
+    assert u.job_language_filter == ["de", "en"]
+    assert u.job_region_filter is None
+
+
+def test_api_call_has_key_owner_default(app, user_factory):
+    u = user_factory()
+    call = ApiCall(
+        user_id=u.id,
+        endpoint='/test',
+        model='claude-haiku',
+        tokens_in=10,
+        tokens_out=20,
+        cost=0.001,
+    )
+    db.session.add(call); db.session.commit()
+    assert call.key_owner == 'server'

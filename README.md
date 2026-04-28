@@ -17,6 +17,7 @@ Ein datenschutzfreundliches Tool zur Verwaltung von Bewerbungen mit automatische
 - 🎯 **Bewerbungsverfolgung** - Status, Datum, Gehalt, Notizen, Ghosting-Erkennung
 - 🗂️ **Kanban-Board** - Visuelle Übersicht nach Status
 - 📋 **CV Vergleich** - Vergleiche deine CV mit Bewerbungsanforderungen
+- 🔍 **Job-Discovery** - Automatische Stellensuche aus RSS-Feeds + Bundesagentur/Adzuna/Arbeitnow APIs mit Claude-basiertem Match-Score gegen deinen CV
 - 🌙 **Dark/Light Mode** - Responsive Design für alle Geräte
 
 ### 🚀 Quick Start
@@ -77,6 +78,7 @@ A privacy-friendly job application tracker with automated email monitoring, stat
 - 🎯 **Application Tracking** - Status, dates, salary, notes, ghosting detection
 - 🗂️ **Kanban Board** - Visual overview by status
 - 📋 **CV Comparison** - Compare your CV against job requirements
+- 🔍 **Job-Discovery** - Automated job search from RSS feeds + Bundesagentur/Adzuna/Arbeitnow APIs with Claude-based match-scoring against your CV
 - 🌙 **Dark/Light Mode** - Responsive design for all devices
 
 ### 🚀 Quick Start

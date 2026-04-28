@@ -2,6 +2,7 @@ from database import db
 from datetime import datetime
 from enum import Enum
 import uuid
+import json as _json
 from imap_service import IMAPCredentialManager
 
 
@@ -31,6 +32,14 @@ class User(db.Model):
     settings_json = db.Column(db.Text)   # JSON-Objekt, null = noch nicht gesetzt
     cv_data_json = db.Column(db.Text)    # JSON-Objekt {cv: {...}, comparisons: [...]}
 
+    # Job-Discovery Settings (Phase A)
+    job_discovery_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    job_notification_threshold = db.Column(db.Integer, default=80, nullable=False)
+    job_claude_budget_per_tick = db.Column(db.Integer, default=5, nullable=False)
+    job_daily_budget_cents = db.Column(db.Integer, default=50, nullable=False)
+    _job_language_filter = db.Column('job_language_filter', db.Text, default='["de","en"]')
+    _job_region_filter = db.Column('job_region_filter', db.Text, nullable=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -39,7 +48,9 @@ class User(db.Model):
     applications = db.relationship('Application', backref='user', cascade='all, delete-orphan')
     emails = db.relationship('Email', backref='user', cascade='all, delete-orphan')
     api_calls = db.relationship('ApiCall', backref='user', cascade='all, delete-orphan')
+    job_sources = db.relationship('JobSource', backref='user', cascade='all, delete')
     confirmation_tokens = db.relationship('EmailConfirmationToken', backref='user', cascade='all, delete-orphan')
+    job_matches = db.relationship('JobMatch', backref='user', cascade='all, delete-orphan', foreign_keys='JobMatch.user_id')
 
     @property
     def decrypted_imap_password(self) -> str:
@@ -47,6 +58,22 @@ class User(db.Model):
         if self.imap_password_encrypted:
             return IMAPCredentialManager.decrypt_password(self.imap_password_encrypted)
         return None
+
+    @property
+    def job_language_filter(self) -> list:
+        return _json.loads(self._job_language_filter or '["de","en"]')
+
+    @job_language_filter.setter
+    def job_language_filter(self, value: list):
+        self._job_language_filter = _json.dumps(value)
+
+    @property
+    def job_region_filter(self):
+        return _json.loads(self._job_region_filter) if self._job_region_filter else None
+
+    @job_region_filter.setter
+    def job_region_filter(self, value):
+        self._job_region_filter = _json.dumps(value) if value else None
 
     def __repr__(self):
         return f'<User {self.email}>'
@@ -188,6 +215,115 @@ class ApiCall(db.Model):
     tokens_out = db.Column(db.Integer, default=0)
     cost = db.Column(db.Float, default=0.0)  # USD
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    key_owner = db.Column(db.String(20), default='server', nullable=False)  # server|user|custom_endpoint
 
     def __repr__(self):
         return f'<ApiCall {self.model} ${self.cost:.4f}>'
+
+
+class JobSource(db.Model):
+    """Quelle für Job-Crawl (universelle Feed-Verwaltung).
+
+    user_id NULL = system-globale Quelle, sonst user-eigen.
+    config ist type-spezifisches JSON (RSS-URL, Adzuna-Query, etc.).
+    """
+    __tablename__ = 'job_sources'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=True, index=True)
+    name = db.Column(db.String(255), nullable=False)
+    type = db.Column(db.String(32), nullable=False)
+    _config_json = db.Column('config', db.Text, nullable=False, default='{}')
+    enabled = db.Column(db.Boolean, default=True, nullable=False)
+    crawl_interval_min = db.Column(db.Integer, default=60, nullable=False)
+    last_crawled_at = db.Column(db.DateTime, nullable=True)
+    last_error = db.Column(db.Text, nullable=True)
+    consecutive_failures = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def config(self) -> dict:
+        return _json.loads(self._config_json or '{}')
+
+    @config.setter
+    def config(self, value: dict):
+        self._config_json = _json.dumps(value or {})
+
+    raw_jobs = db.relationship('RawJob', backref='source', cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<JobSource {self.id} {self.type}:{self.name}>'
+
+
+class RawJob(db.Model):
+    """Gecrawlte Stellenausschreibung (geteilt zwischen Usern bei globalen Quellen).
+
+    Pro User entsteht ein eigener JobMatch-Eintrag.
+    """
+    __tablename__ = 'raw_jobs'
+    __table_args__ = (
+        db.UniqueConstraint('source_id', 'external_id', name='uq_raw_job_source_external'),
+        db.Index('ix_raw_jobs_status', 'crawl_status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    source_id = db.Column(db.Integer, db.ForeignKey('job_sources.id'), nullable=False, index=True)
+    external_id = db.Column(db.String(512), nullable=False)
+    title = db.Column(db.String(512), nullable=False)
+    company = db.Column(db.String(255))
+    location = db.Column(db.String(255))
+    url = db.Column(db.String(1024), nullable=False)
+    description = db.Column(db.Text)
+    posted_at = db.Column(db.DateTime, nullable=True)
+    _raw_payload = db.Column('raw_payload', db.Text, nullable=True)
+    crawl_status = db.Column(db.String(16), default='raw', nullable=False)  # raw|prefiltered|matched|archived
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def raw_payload(self) -> dict:
+        return _json.loads(self._raw_payload) if self._raw_payload else {}
+
+    @raw_payload.setter
+    def raw_payload(self, value: dict):
+        self._raw_payload = _json.dumps(value) if value else None
+
+    def __repr__(self):
+        return f'<RawJob {self.id} {self.title[:30]}>'
+
+
+class JobMatch(db.Model):
+    """Per-User-Bewertung eines RawJob.
+
+    status: 'new' = noch nicht angesehen, 'seen' = User hat ihn gesehen,
+    'imported' = übernommen, 'dismissed' = verworfen oder Auto-Verworfen.
+    """
+    __tablename__ = 'job_matches'
+    __table_args__ = (
+        db.UniqueConstraint('raw_job_id', 'user_id', name='uq_match_job_user'),
+        db.Index('ix_match_user_status_score', 'user_id', 'status', 'match_score'),
+        db.Index('ix_match_prefilter_pending', 'prefilter_score'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    raw_job_id = db.Column(db.Integer, db.ForeignKey('raw_jobs.id'), nullable=False)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    prefilter_score = db.Column(db.Float, nullable=True)
+    match_score = db.Column(db.Float, nullable=True)
+    match_reasoning = db.Column(db.Text, nullable=True)
+    _missing_skills = db.Column('missing_skills', db.Text, nullable=True)
+    status = db.Column(db.String(16), default='new', nullable=False)
+    notified_at = db.Column(db.DateTime, nullable=True)
+    imported_application_id = db.Column(db.String(36), db.ForeignKey('applications.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    raw_job = db.relationship('RawJob', backref='matches')
+
+    @property
+    def missing_skills(self) -> list:
+        return _json.loads(self._missing_skills) if self._missing_skills else []
+
+    @missing_skills.setter
+    def missing_skills(self, value: list):
+        self._missing_skills = _json.dumps(value) if value else None
