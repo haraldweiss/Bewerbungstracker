@@ -2,7 +2,7 @@ from services.job_sources.base import JobSourceAdapter, FetchedJob
 from services.job_sources.rss import RssAdapter
 from services.job_sources.adzuna import AdzunaAdapter
 from services.job_sources.bundesagentur import BundesagenturAdapter
-# Arbeitnow folgt in Task 13
+from services.job_sources.arbeitnow import ArbeitnowAdapter
 
 
 def get_adapter(source_type: str, config: dict) -> JobSourceAdapter:
@@ -10,7 +10,7 @@ def get_adapter(source_type: str, config: dict) -> JobSourceAdapter:
         "rss": RssAdapter,
         "adzuna": AdzunaAdapter,
         "bundesagentur": BundesagenturAdapter,
-        # 'arbeitnow': ArbeitnowAdapter,
+        "arbeitnow": ArbeitnowAdapter,
     }
     cls = registry.get(source_type)
     if not cls:
