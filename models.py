@@ -40,6 +40,7 @@ class User(db.Model):
     applications = db.relationship('Application', backref='user', cascade='all, delete-orphan')
     emails = db.relationship('Email', backref='user', cascade='all, delete-orphan')
     api_calls = db.relationship('ApiCall', backref='user', cascade='all, delete-orphan')
+    job_sources = db.relationship('JobSource', backref='user', cascade='all, delete')
     confirmation_tokens = db.relationship('EmailConfirmationToken', backref='user', cascade='all, delete-orphan')
 
     @property

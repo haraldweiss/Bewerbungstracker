@@ -46,3 +46,15 @@ def test_job_source_user_owned(app, user_factory):
     db.session.commit()
 
     assert src.user_id == user.id
+
+
+def test_user_job_sources_backref(app, user_factory):
+    user = user_factory()
+    db.session.add(JobSource(user_id=user.id, name="A", type="rss",
+                              config={"url": "x"}))
+    db.session.add(JobSource(user_id=user.id, name="B", type="rss",
+                              config={"url": "y"}))
+    db.session.commit()
+    db.session.refresh(user)
+    assert len(user.job_sources) == 2
+    assert {s.name for s in user.job_sources} == {"A", "B"}
