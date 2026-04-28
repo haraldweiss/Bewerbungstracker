@@ -2200,6 +2200,12 @@ async function requestJobDiscovery() {
 
 async function loadProfileFromDB() {
     if (typeof Auth === 'undefined' || !Auth.getToken()) return;
+
+    // Defense in depth: User-spezifische Caches VOR dem Reload clearen,
+    // sodass beim User-Wechsel keine fremden Daten überleben — selbst wenn
+    // Logout vom vorigen User ausgefallen oder die DB-Antwort leer ist.
+    if (Auth.clearUserData) Auth.clearUserData();
+
     try {
         const r = await Auth.fetch('/settings', { method: 'GET' });
         if (r && r.settings && typeof r.settings === 'object') {
@@ -2211,9 +2217,17 @@ async function loadProfileFromDB() {
     try {
         const r = await Auth.fetch('/profile/cv', { method: 'GET' });
         const cv = (r && r.cv) || {};
-        if (cv.cvData) localStorage.setItem('cvData', JSON.stringify(cv.cvData));
-        if (Array.isArray(cv.cvComparisons)) {
+        // ALWAYS write/remove — auch bei leerer DB. Sonst überleben alte
+        // localStorage-Werte vom vorigen User (siehe oben: Defense in Depth).
+        if (cv.cvData) {
+            localStorage.setItem('cvData', JSON.stringify(cv.cvData));
+        } else {
+            localStorage.removeItem('cvData');
+        }
+        if (Array.isArray(cv.cvComparisons) && cv.cvComparisons.length > 0) {
             localStorage.setItem('cvComparisons', JSON.stringify(cv.cvComparisons));
+        } else {
+            localStorage.removeItem('cvComparisons');
         }
     } catch (e) {
         console.warn('CV-Load aus DB fehlgeschlagen:', e.message);
