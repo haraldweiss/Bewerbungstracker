@@ -13,51 +13,15 @@ import jwt
 from config import Config
 
 
-@pytest.fixture
-def app():
-    """Create application for testing"""
-    app = create_app()
-    app.config['TESTING'] = True
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
-    app.config['SECRET_KEY'] = 'test-secret-key'
-    app.config['JWT_SECRET_KEY'] = 'test-secret-key'
-
-    with app.app_context():
-        db.create_all()
-        yield app
-        db.session.remove()
-        db.drop_all()
+# app, client und auth_headers kommen aus tests/conftest.py.
+# Backup-Endpoints brauchen Envelope-Encryption-Keys (DEK im Cache),
+# daher hier auf die zentrale Variante mit Crypto umstellen.
 
 
 @pytest.fixture
-def client(app):
-    """Create test client"""
-    return app.test_client()
-
-
-@pytest.fixture
-def auth_headers(app, client):
-    """Create authenticated user and return auth headers"""
-    with app.app_context():
-        # Create user
-        password = 'test_password_123'
-        password_hash = AuthService.hash_password(password)
-        user = User(
-            email='test@example.com',
-            password_hash=password_hash,
-            email_confirmed=True,
-            is_active=True
-        )
-        db.session.add(user)
-        db.session.commit()
-
-        # Create JWT token using AuthService
-        token = AuthService.create_access_token(user.id)
-
-        yield {
-            'Authorization': f'Bearer {token}',
-            'Content-Type': 'application/json'
-        }, user
+def auth_headers(auth_headers_with_keys):
+    """Backup-Tests benötigen aktivierte Envelope-Encryption + DEK-Cache."""
+    return auth_headers_with_keys
 
 
 @pytest.fixture
@@ -349,7 +313,7 @@ class TestImportBackup:
 
         response = client.post(
             '/api/backup/import',
-            data={'file': (BytesIO(b'invalid json'), 'backup.json')},
+            data={'backup': (BytesIO(b'invalid json'), 'backup.json')},
             headers={
                 'Authorization': headers['Authorization']
             }
@@ -365,7 +329,7 @@ class TestImportBackup:
         invalid_data = json.dumps({'emails': []})
         response = client.post(
             '/api/backup/import',
-            data={'file': (BytesIO(invalid_data.encode()), 'backup.json')},
+            data={'backup': (BytesIO(invalid_data.encode()), 'backup.json')},
             headers={
                 'Authorization': headers['Authorization']
             }
@@ -391,7 +355,7 @@ class TestImportBackup:
 
         response = client.post(
             '/api/backup/import',
-            data={'file': (BytesIO(json.dumps(import_data).encode()), 'backup.json')},
+            data={'backup': (BytesIO(json.dumps(import_data).encode()), 'backup.json')},
             headers={
                 'Authorization': headers['Authorization']
             }

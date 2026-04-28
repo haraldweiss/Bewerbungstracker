@@ -3,42 +3,26 @@ from models import Email
 from database import db
 from datetime import datetime
 
-
-@pytest.fixture
-def auth_token(client):
-    """Register and login user, return token"""
-    client.post(
-        '/api/auth/register',
-        json={'email': 'test@example.com', 'password': 'password123'}
-    )
-
-    response = client.post(
-        '/api/auth/login',
-        json={'email': 'test@example.com', 'password': 'password123'}
-    )
-
-    return response.get_json()['access_token']
+# auth_token + auth_headers kommen aus tests/conftest.py
 
 
 @pytest.fixture
-def user_with_email(app, auth_token):
-    """Create user and add test email"""
-    from models import User
-
-    with app.app_context():
-        user = User.query.filter_by(email='test@example.com').first()
-
-        email = Email(
-            user_id=user.id,
-            subject='Test email',
-            from_address='sender@example.com',
-            body='This is a test email',
-            timestamp=datetime.utcnow()
-        )
-        db.session.add(email)
-        db.session.commit()
-
-        return user, email
+def user_with_email(app, auth_headers):
+    """Create test email for the authenticated user."""
+    _, user = auth_headers
+    email = Email(
+        user_id=user.id,
+        subject='Test email',
+        from_address='sender@example.com',
+        body='This is a test email',
+        timestamp=datetime.utcnow()
+    )
+    db.session.add(email)
+    db.session.commit()
+    # Lade die ID jetzt, damit nach Session-Schließung kein Detached-Refresh
+    # nötig ist (Tests greifen auf email.id und email.body zu).
+    db.session.refresh(email)
+    return user, email
 
 
 def test_list_emails(client, user_with_email, auth_token):

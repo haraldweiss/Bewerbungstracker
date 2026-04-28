@@ -172,12 +172,12 @@ class TestStep3EmailConfirmation:
             token_record = EmailConfirmationToken.query.filter_by(user_id=user.id).first()
             token = token_record.token
 
-        # Confirm email
+        # Confirm email — endpoint liefert HTML-Response (vom Email-Client
+        # direkt aufgerufen), Erfolg signalisiert via 200 + User-State.
         response = client.get(f'/api/auth/confirm-email?token={token}')
 
         assert response.status_code == 200
-        data = response.get_json()
-        assert data['email'] == 'testuser@example.com'
+        # HTML-Response — nicht mehr JSON. Erfolgsbestätigung über User-State.
 
         # Verify user is now confirmed but still inactive (pending approval)
         with app.app_context():
@@ -211,12 +211,12 @@ class TestStep3EmailConfirmation:
             db.session.add(expired_token)
             db.session.commit()
 
-        # Try to confirm with expired token
+        # Try to confirm with expired token — HTML-Response, prüfe Status + Body
         response = client.get('/api/auth/confirm-email?token=expired_token_123')
 
         assert response.status_code == 400
-        data = response.get_json()
-        assert 'expired' in data['error'].lower()
+        body = response.data.decode('utf-8').lower()
+        assert 'abgelaufen' in body or 'expired' in body
 
 
 class TestStep4AdminApprovalWorkflow:

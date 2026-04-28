@@ -8,46 +8,24 @@ from database import db
 from datetime import datetime
 
 
-@pytest.fixture
-def auth_token(client):
-    """Register and login user, return token"""
-    client.post(
-        '/api/auth/register',
-        json={'email': 'test@example.com', 'password': 'password123'}
-    )
-
-    response = client.post(
-        '/api/auth/login',
-        json={'email': 'test@example.com', 'password': 'password123'}
-    )
-
-    return response.get_json()['access_token']
+# auth_token + auth_headers kommen aus tests/conftest.py
 
 
 @pytest.fixture
-def user_email(app, auth_token):
-    """Create test email"""
-    from models import User
-
-    with app.app_context():
-        user = User.query.filter_by(email='test@example.com').first()
-
-        email = Email(
-            user_id=user.id,
-            subject='Interview Request from Google',
-            from_address='recruiter@google.com',
-            body='We would like to invite you for an interview...',
-            timestamp=datetime.utcnow()
-        )
-        db.session.add(email)
-        db.session.commit()
-
-        # Return the ID so we can query it later
-        email_id = email.id
-
-    # Now outside the context, return a fresh query result
-    with app.app_context():
-        return Email.query.get(email_id)
+def user_email(app, auth_headers):
+    """Create test email for the authenticated user."""
+    _, user = auth_headers
+    email = Email(
+        user_id=user.id,
+        subject='Interview Request from Google',
+        from_address='recruiter@google.com',
+        body='We would like to invite you for an interview...',
+        timestamp=datetime.utcnow()
+    )
+    db.session.add(email)
+    db.session.commit()
+    db.session.refresh(email)
+    return email
 
 
 def test_analyze_email(client, user_email, auth_token):
@@ -201,35 +179,30 @@ def test_claude_endpoints_require_auth(client):
     assert response.status_code == 401
 
 
-def test_api_call_logging(client, user_email, auth_token, app):
+def test_api_call_logging(client, user_email, auth_headers, app):
     """Test that API calls are logged to database"""
-    from models import User
+    headers, user = auth_headers
 
-    with app.app_context():
-        user = User.query.filter_by(email='test@example.com').first()
-
-        # Clear any existing calls
-        ApiCall.query.filter_by(user_id=user.id).delete()
-        db.session.commit()
+    # Clear any existing calls (z.B. von früheren Tests im Cluster)
+    ApiCall.query.filter_by(user_id=user.id).delete()
+    db.session.commit()
 
     # Make an API call
     client.post(
         '/api/claude/analyze-email',
         json={'email_id': user_email.id},
-        headers={'Authorization': f'Bearer {auth_token}'}
+        headers=headers,
     )
 
     # Verify logged
-    with app.app_context():
-        user = User.query.filter_by(email='test@example.com').first()
-        api_calls = ApiCall.query.filter_by(
-            user_id=user.id,
-            endpoint='/api/claude/analyze-email'
-        ).all()
+    api_calls = ApiCall.query.filter_by(
+        user_id=user.id,
+        endpoint='/api/claude/analyze-email'
+    ).all()
 
-        assert len(api_calls) == 1
-        call = api_calls[0]
-        assert call.model == 'claude-haiku-3-5'
-        assert call.tokens_in == 150
-        assert call.tokens_out == 500
-        assert call.cost > 0
+    assert len(api_calls) == 1
+    call = api_calls[0]
+    assert call.model == 'claude-haiku-3-5'
+    assert call.tokens_in == 150
+    assert call.tokens_out == 500
+    assert call.cost > 0
