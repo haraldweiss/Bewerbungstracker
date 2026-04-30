@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Stepstone Job-Suche</title>
+    <link>https://www.stepstone.de</link>
+    <description>Job-Feeds</description>
+    <item>
+      <title>Fullstack Entwickler (m/w/d)</title>
+      <link>https://www.stepstone.de/stellenangebote/fullstack-1234</link>
+      <guid>stepstone-1234</guid>
+      <description>Fullstack-Position bei XYZ AG</description>
+      <category>Frankfurt</category>
+      <pubDate>Wed, 30 Apr 2026 09:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>DevOps Engineer</title>
+      <link>https://www.stepstone.de/stellenangebote/devops-5678</link>
+      <guid>stepstone-5678</guid>
+      <description>DevOps-Rolle</description>
+      <category>Köln</category>
+      <pubDate>Wed, 30 Apr 2026 11:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

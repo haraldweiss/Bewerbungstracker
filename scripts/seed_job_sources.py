@@ -33,6 +33,36 @@ DEFAULTS = [
         "type": "arbeitnow",
         "config": {"tags": ["javascript", "python", "remote"]},
     },
+    {
+        "name": "Xing — Python Berlin",
+        "type": "xing",
+        "config": {
+            "rss_url": os.getenv("XING_RSS_URL", ""),
+            "aggregator_key": os.getenv("RAPIDAPI_KEY", ""),
+            "query": "python developer",
+            "location": "Germany",
+        },
+    },
+    {
+        "name": "LinkedIn — Engineering Berlin",
+        "type": "linkedin",
+        "config": {
+            "rss_url": os.getenv("LINKEDIN_RSS_URL", ""),
+            "aggregator_key": os.getenv("RAPIDAPI_KEY", ""),
+            "query": "software engineer",
+            "location": "Germany",
+        },
+    },
+    {
+        "name": "Stepstone — Tech Berlin",
+        "type": "stepstone",
+        "config": {
+            "rss_url": os.getenv("STEPSTONE_RSS_URL", ""),
+            "aggregator_key": os.getenv("RAPIDAPI_KEY", ""),
+            "query": "developer",
+            "location": "Germany",
+        },
+    },
 ]
 
 

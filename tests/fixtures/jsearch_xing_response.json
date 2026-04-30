@@ -1,0 +1,28 @@
+{
+  "status": "OK",
+  "request_id": "abc123",
+  "data": [
+    {
+      "job_id": "xing-12345",
+      "job_title": "Senior Python Developer",
+      "employer_name": "ACME GmbH",
+      "job_apply_link": "https://www.xing.com/jobs/12345",
+      "job_city": "Berlin",
+      "job_country": "DE",
+      "job_description": "We seek a Python expert...",
+      "job_publisher": "Xing",
+      "job_posted_at_timestamp": 1745000000
+    },
+    {
+      "job_id": "xing-67890",
+      "job_title": "Data Engineer",
+      "employer_name": "Beta AG",
+      "job_apply_link": "https://www.xing.com/jobs/67890",
+      "job_city": "München",
+      "job_country": "DE",
+      "job_description": "Big Data role...",
+      "job_publisher": "Xing",
+      "job_posted_at_timestamp": 1745100000
+    }
+  ]
+}
