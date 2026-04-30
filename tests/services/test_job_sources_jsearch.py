@@ -72,3 +72,26 @@ def test_jsearch_returns_empty_on_http_error():
     client = JSearchClient(api_key="fake-key")
     jobs = client.search(query="x", platform="xing", location="DE")
     assert jobs == []
+
+
+@responses.activate
+def test_jsearch_skips_items_without_job_id():
+    """Items ohne job_id werden geskippt (verhindern leere external_id)."""
+    response = {
+        "data": [
+            {"job_title": "No ID", "job_apply_link": "u1",
+             "job_publisher": "Xing", "employer_name": "A"},
+            {"job_id": "valid-1", "job_title": "OK", "job_apply_link": "u2",
+             "job_publisher": "Xing", "employer_name": "B"},
+        ]
+    }
+    responses.add(
+        responses.GET,
+        "https://jsearch.p.rapidapi.com/search",
+        json=response,
+        status=200,
+    )
+    client = JSearchClient(api_key="fake-key")
+    jobs = client.search(query="x", platform="xing", location="DE")
+    assert len(jobs) == 1
+    assert jobs[0].external_id == "valid-1"

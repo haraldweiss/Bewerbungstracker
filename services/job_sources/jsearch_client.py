@@ -31,7 +31,6 @@ class JSearchClient:
         query: str,
         platform: str,
         location: str = "Germany",
-        num_pages: int = 1,
     ) -> list[FetchedJob]:
         """Sucht auf JSearch nach Jobs, filtert per Publisher = platform.
 
@@ -49,7 +48,7 @@ class JSearchClient:
         params = {
             "query": f"{query} {location}",
             "page": "1",
-            "num_pages": str(num_pages),
+            "num_pages": "1",
         }
 
         try:
@@ -67,10 +66,19 @@ class JSearchClient:
             if platform_lower not in publisher:
                 continue
 
+            job_id = item.get("job_id")
+            if not job_id:
+                logger.warning(
+                    f"JSearch: skipping item without job_id: {item.get('job_title', '?')}"
+                )
+                continue
+
             posted_at = None
             ts = item.get("job_posted_at_timestamp")
             if ts:
                 try:
+                    # JSearch liefert Unix-Epoch (UTC). Wir matchen das
+                    # naive-UTC Pattern aus arbeitnow.py für Konsistenz.
                     posted_at = datetime.fromtimestamp(int(ts))
                 except (ValueError, TypeError):
                     pass
@@ -78,7 +86,7 @@ class JSearchClient:
             location_str = item.get("job_city") or item.get("job_country") or None
 
             jobs.append(FetchedJob(
-                external_id=str(item.get("job_id", "")),
+                external_id=str(job_id),
                 title=item.get("job_title", ""),
                 url=item.get("job_apply_link", ""),
                 company=item.get("employer_name"),
