@@ -183,6 +183,21 @@ curl -s  https://bewerbungen.deinedomain.de/email-service/api/status     # 200
 curl -s -X POST https://bewerbungen.deinedomain.de/imap-proxy/ -d '{}'   # 400 (no body)
 ```
 
+### B9. Job-Discovery: Claude-Match Cron-Frequenz
+
+`claude-match` Stage in `/etc/cron.d/job-discovery` läuft **1×/Tag um 08:00 UTC**
+und bewertet **nur prefilter_score ≥ AUTO_CLAUDE_THRESHOLD (50)**. User-getriggerte
+Bewertungen (Single, Bulk, Import) ignorieren diesen Threshold und respektieren
+nur das Tagesbudget (`User.job_daily_budget_cents`).
+
+```cron
+# Stage 3: Claude-Match (1×/Tag, nur prefilter_score >= 50)
+0 8 * * *           root /usr/local/bin/job-discovery-cron.sh claude-match
+```
+
+Falls User-Volume oder Bewertungsbedarf wächst: auf 2×/Tag (`0 8,18 * * *`)
+oder Threshold senken (Konstante `AUTO_CLAUDE_THRESHOLD` in `api/jobs_cron.py`).
+
 ---
 
 ## C) Architektur-Übersicht
