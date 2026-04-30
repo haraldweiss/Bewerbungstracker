@@ -278,3 +278,45 @@ def test_run_claude_match_for_success_writes_all_fields(app, user_factory):
     api_calls = ApiCall.query.filter_by(user_id=user.id).all()
     assert len(api_calls) == 1
     assert api_calls[0].endpoint == '/api/jobs/claude-match'
+
+
+def test_auto_cron_skips_jobs_below_auto_threshold(app, user_factory, monkeypatch):
+    """Auto-Cron bewertet nur prefilter_score >= AUTO_CLAUDE_THRESHOLD (50)."""
+    from unittest.mock import patch, MagicMock
+    from api.jobs_cron import AUTO_CLAUDE_THRESHOLD
+
+    assert AUTO_CLAUDE_THRESHOLD == 50
+
+    user = user_factory(cv_data_json='{"cv": {"summary": "Python Dev", "skills": ["python"]}}')
+    user.job_discovery_enabled = True
+    user.job_claude_budget_per_tick = 5
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+
+    raw_low = RawJob(source_id=src.id, external_id="low", title="Low", url="https://j/low")
+    raw_high = RawJob(source_id=src.id, external_id="high", title="High", url="https://j/high")
+    db.session.add_all([raw_low, raw_high]); db.session.flush()
+
+    m_low = JobMatch(raw_job_id=raw_low.id, user_id=user.id,
+                     status='new', prefilter_score=40, match_score=None)
+    m_high = JobMatch(raw_job_id=raw_high.id, user_id=user.id,
+                      status='new', prefilter_score=60, match_score=None)
+    db.session.add_all([m_low, m_high]); db.session.commit()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+
+    fake_result = MagicMock(score=85, reasoning="ok",
+                            missing_skills=[], tokens_in=10, tokens_out=10)
+    with patch("api.jobs_cron._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        client_t = app.test_client()
+        r = client_t.post("/api/jobs/claude-match", headers={"X-Cron-Token": "test-token"})
+        assert r.status_code == 200
+
+    db.session.refresh(m_low)
+    db.session.refresh(m_high)
+    assert m_low.match_score is None    # geskippt (prefilter < 50)
+    assert m_high.match_score == 85     # bewertet (prefilter >= 50)

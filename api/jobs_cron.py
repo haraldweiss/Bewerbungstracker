@@ -31,6 +31,9 @@ MAX_PREFILTER_PER_TICK = 100
 # typischerweise "passende Branche, einige Skill-Overlaps" und ist die
 # Schwelle ab der eine Claude-Bewertung sinnvoll wird.
 PREFILTER_DISMISS_THRESHOLD = 15
+# Auto-Cron bewertet nur prefilter_score >= AUTO_CLAUDE_THRESHOLD.
+# User-getriggerte Bewertungen (single, bulk, import) ignorieren diesen Threshold.
+AUTO_CLAUDE_THRESHOLD = 50
 MAX_NOTIFICATIONS_PER_TICK = 20
 HARD_TIME_LIMIT_SEC = 25
 AUTO_DISABLE_FAILURE_COUNT = 5
@@ -312,7 +315,7 @@ def claude_match():
     users_with_pending = (db.session.query(User)
                           .join(JobMatch, JobMatch.user_id == User.id)
                           .filter(JobMatch.match_score.is_(None),
-                                  JobMatch.prefilter_score >= PREFILTER_DISMISS_THRESHOLD,
+                                  JobMatch.prefilter_score >= AUTO_CLAUDE_THRESHOLD,
                                   JobMatch.status == 'new')
                           .distinct().all())
 
@@ -327,7 +330,7 @@ def claude_match():
         candidates = (JobMatch.query
                       .filter(JobMatch.user_id == user.id,
                               JobMatch.match_score.is_(None),
-                              JobMatch.prefilter_score >= PREFILTER_DISMISS_THRESHOLD,
+                              JobMatch.prefilter_score >= AUTO_CLAUDE_THRESHOLD,
                               JobMatch.status == 'new')
                       .order_by(JobMatch.prefilter_score.desc())
                       .limit(user.job_claude_budget_per_tick).all())
