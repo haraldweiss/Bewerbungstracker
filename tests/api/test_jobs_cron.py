@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 
 from app import create_app
 from database import db
-from models import User, JobSource, RawJob, JobMatch
+from models import User, JobSource, RawJob, JobMatch, ApiCall
 
 
 @pytest.fixture
@@ -193,3 +193,52 @@ def test_cleanup_archives_old_unused_raw_jobs(app, client):
 
     db.session.refresh(old_raw)
     assert old_raw.crawl_status == 'archived'
+
+
+def test_run_claude_match_for_idempotent(app, user_factory):
+    """Wenn match_score schon gesetzt ist, returnt der Helper sofort False ohne Claude-Call."""
+    from api.jobs_cron import _run_claude_match_for
+    from unittest.mock import MagicMock
+
+    user = user_factory()
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 match_score=80, match_reasoning="bereits bewertet")
+    db.session.add(m); db.session.commit()
+
+    fake_client = MagicMock()
+    result = _run_claude_match_for(fake_client, user, m)
+
+    assert result is False
+    assert m.match_score == 80
+    fake_client.assert_not_called()
+
+
+def test_run_claude_match_for_returns_false_when_budget_exhausted(app, user_factory):
+    """Wenn Tagesbudget erschöpft: Helper returnt False, kein Claude-Call."""
+    from api.jobs_cron import _run_claude_match_for
+    from unittest.mock import MagicMock
+
+    user = user_factory()
+    user.job_daily_budget_cents = 50
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    db.session.add(m)
+    # ApiCall mit cost 1.00 EUR füllt das Budget (50 cents) auf
+    db.session.add(ApiCall(user_id=user.id, endpoint='/test', model='x',
+                           tokens_in=0, tokens_out=0, cost=1.00, key_owner='server'))
+    db.session.commit()
+
+    fake_client = MagicMock()
+    result = _run_claude_match_for(fake_client, user, m)
+
+    assert result is False
+    assert m.match_score is None
