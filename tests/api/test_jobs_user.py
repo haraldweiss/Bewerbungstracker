@@ -706,3 +706,68 @@ def test_score_bulk_classifies_claude_errors_correctly(client, app, user_factory
     assert body["skipped_budget"] == []
     assert len(body["errors"]) == 1
     assert body["errors"][0]["id"] == m.id
+
+
+def test_bulk_status_update_dismisses_matches(client, app, user_factory, auth_header):
+    headers, user = auth_header
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+
+    matches = []
+    for i in range(3):
+        raw = RawJob(source_id=src.id, external_id=f"a{i}", title="Job", url=f"https://j/{i}")
+        db.session.add(raw); db.session.flush()
+        m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+        db.session.add(m); matches.append(m)
+    db.session.commit()
+    ids = [m.id for m in matches]
+
+    r = client.patch("/api/jobs/matches/bulk",
+                     json={"match_ids": ids, "status": "dismissed"},
+                     headers=headers)
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["updated"] == 3
+    for m in matches:
+        db.session.refresh(m)
+        assert m.status == "dismissed"
+
+
+def test_bulk_status_update_skips_other_users_matches(client, app, user_factory, auth_header):
+    headers, user = auth_header
+    other = user_factory(email="other@example.com")
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Job", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+
+    m_mine = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    m_other = JobMatch(raw_job_id=raw.id, user_id=other.id, status='new')
+    db.session.add_all([m_mine, m_other]); db.session.commit()
+
+    r = client.patch("/api/jobs/matches/bulk",
+                     json={"match_ids": [m_mine.id, m_other.id], "status": "seen"},
+                     headers=headers)
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["updated"] == 1
+    assert m_other.id in body["forbidden"]
+
+    db.session.refresh(m_mine)
+    db.session.refresh(m_other)
+    assert m_mine.status == "seen"
+    assert m_other.status == "new"
+
+
+def test_bulk_status_validates_input(client, app, auth_header):
+    headers, _ = auth_header
+    r = client.patch("/api/jobs/matches/bulk", json={}, headers=headers)
+    assert r.status_code == 400
+
+    r = client.patch("/api/jobs/matches/bulk",
+                     json={"match_ids": [], "status": "seen"}, headers=headers)
+    assert r.status_code == 400
+
+    r = client.patch("/api/jobs/matches/bulk",
+                     json={"match_ids": [1], "status": "invalid"}, headers=headers)
+    assert r.status_code == 400

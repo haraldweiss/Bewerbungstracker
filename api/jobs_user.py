@@ -375,3 +375,41 @@ def score_match_bulk(user):
         "forbidden": forbidden,
         "not_found": not_found,
     }), 200
+
+
+@jobs_user_bp.patch('/matches/bulk')
+@token_required
+def update_match_bulk(user):
+    """Bulk-Statuswechsel (kein Claude). Akzeptiert nur 'seen' und 'dismissed'.
+
+    Body: {"match_ids": [...], "status": "seen" | "dismissed"}
+    Returns 200 with: updated, forbidden, not_found
+    """
+    data = request.get_json() or {}
+    ids = data.get("match_ids")
+    new_status = data.get("status")
+
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "match_ids muss nicht-leere Liste sein"}), 400
+    if new_status not in ('seen', 'dismissed'):
+        return jsonify({"error": "status muss 'seen' oder 'dismissed' sein"}), 400
+
+    matches = JobMatch.query.filter(JobMatch.id.in_(ids)).all()
+    found_ids = {m.id for m in matches}
+    not_found = [i for i in ids if i not in found_ids]
+    forbidden = []
+    updated = 0
+
+    for m in matches:
+        if m.user_id != user.id:
+            forbidden.append(m.id)
+            continue
+        m.status = new_status
+        updated += 1
+
+    db.session.commit()
+    return jsonify({
+        "updated": updated,
+        "forbidden": forbidden,
+        "not_found": not_found,
+    }), 200
