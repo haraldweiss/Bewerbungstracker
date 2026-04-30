@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import json
+import logging
 import os
 import time
 from datetime import datetime, timedelta
@@ -15,6 +16,8 @@ from services.job_matching.cv_tokenizer import tokenize_cv
 from services.job_matching.prefilter import score_job, PrefilterContext
 from services.job_matching.claude_matcher import match_job_with_claude
 from services.job_matching.notifier import send_match_notification
+
+logger = logging.getLogger(__name__)
 
 
 jobs_cron_bp = Blueprint('jobs_cron', __name__, url_prefix='/api/jobs')
@@ -271,9 +274,14 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
             client=client, model=DEFAULT_MODEL, cv_summary=cv_summary,
             job={"title": raw.title, "description": raw.description, "location": raw.location},
         )
-    except Exception:
+    except Exception as e:
+        logger.warning(
+            "claude_match failed for match=%s user=%s: %s: %s",
+            match.id, user.id, type(e).__name__, e,
+        )
         return False
 
+    # Ab hier: alles oder nichts — keine Mutation vor erfolgreichem Claude-Call.
     match.match_score = result.score
     match.match_reasoning = result.reasoning
     match.missing_skills = result.missing_skills
@@ -286,6 +294,7 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
         tokens_out=result.tokens_out, cost=cost_cents / 100.0,
         key_owner='server',
     ))
+    db.session.flush()  # damit nachfolgende _user_today_cost_cents() den frischen Cost sieht
     return True
 
 

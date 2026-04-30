@@ -242,3 +242,39 @@ def test_run_claude_match_for_returns_false_when_budget_exhausted(app, user_fact
 
     assert result is False
     assert m.match_score is None
+
+
+def test_run_claude_match_for_success_writes_all_fields(app, user_factory):
+    """Helper schreibt match_score, reasoning, missing_skills, raw.crawl_status, ApiCall."""
+    from api.jobs_cron import _run_claude_match_for
+    from unittest.mock import patch, MagicMock
+
+    user = user_factory(cv_data_json='{"cv": {"summary": "Dev"}}')
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev",
+                 url="https://j/1", crawl_status='raw')
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    db.session.add(m); db.session.commit()
+
+    fake_result = MagicMock(score=88, reasoning="passt",
+                            missing_skills=["docker", "k8s"],
+                            tokens_in=20, tokens_out=20)
+    fake_client = MagicMock()
+    with patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        result = _run_claude_match_for(fake_client, user, m)
+
+    assert result is True
+    db.session.refresh(m); db.session.refresh(raw)
+    assert m.match_score == 88
+    assert m.match_reasoning == "passt"
+    assert m.missing_skills == ["docker", "k8s"]
+    assert raw.crawl_status == "matched"
+    # Verify ApiCall created
+    api_calls = ApiCall.query.filter_by(user_id=user.id).all()
+    assert len(api_calls) == 1
+    assert api_calls[0].endpoint == '/api/jobs/claude-match'
