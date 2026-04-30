@@ -1,0 +1,25 @@
+{
+  "status": "OK",
+  "data": [
+    {
+      "job_id": "linkedin-aaa",
+      "job_title": "Staff Engineer",
+      "employer_name": "TechCorp",
+      "job_apply_link": "https://www.linkedin.com/jobs/view/aaa",
+      "job_city": "Berlin",
+      "job_country": "DE",
+      "job_publisher": "LinkedIn",
+      "job_posted_at_timestamp": 1745200000
+    },
+    {
+      "job_id": "linkedin-bbb",
+      "job_title": "Engineering Manager",
+      "employer_name": "Gamma Inc",
+      "job_apply_link": "https://www.linkedin.com/jobs/view/bbb",
+      "job_city": "Hamburg",
+      "job_country": "DE",
+      "job_publisher": "LinkedIn",
+      "job_posted_at_timestamp": 1745300000
+    }
+  ]
+}
