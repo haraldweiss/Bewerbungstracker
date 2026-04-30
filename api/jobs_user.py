@@ -7,9 +7,24 @@ from database import db
 from models import JobSource, RawJob, JobMatch, Application
 from api.auth import token_required
 from services.ssrf_guard import is_url_safe_for_rss
+from api.jobs_cron import _run_claude_match_for, _user_today_cost_cents
 
 
 jobs_user_bp = Blueprint('jobs_user', __name__, url_prefix='/api/jobs')
+
+
+def _get_anthropic_client():
+    """Liefert einen Anthropic-Client oder None falls API-Key fehlt.
+
+    Eigene Kopie statt Reuse aus jobs_cron — sonst circular-import-Risiko
+    bei Test-Mocks via patch("api.jobs_user._get_anthropic_client").
+    """
+    import os
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    from anthropic import Anthropic  # lazy import — nicht im venv bei Tests
+    return Anthropic(api_key=api_key)
 
 
 _VALID_TYPES = {"rss", "adzuna", "bundesagentur", "arbeitnow"}
@@ -143,6 +158,7 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
         "match_score": m.match_score,
         "match_reasoning": m.match_reasoning,
         "missing_skills": m.missing_skills,
+        "prefilter_score": m.prefilter_score,
         "status": m.status,
         "notified_at": m.notified_at.isoformat() if m.notified_at else None,
         "imported_application_id": m.imported_application_id,
@@ -216,11 +232,30 @@ def import_match(user, match_id: int):
     raw = RawJob.query.get(m.raw_job_id)
     src = JobSource.query.get(raw.source_id)
 
+    # NEU: Wenn noch nicht bewertet, Claude versuchen (mit Budget-Check)
+    budget_skipped = False
+    if m.match_score is None:
+        if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+            budget_skipped = True
+        else:
+            client = _get_anthropic_client()
+            if client is not None:
+                _run_claude_match_for(client, user, m)
+                # Wenn Helper False zurückgibt (Claude-Error), bleibt match_score None.
+                # Application wird trotzdem angelegt — kein Hard-Fail beim Import.
+
     score_str = f"{m.match_score:.0f}" if m.match_score is not None else "–"
+    if budget_skipped:
+        reasoning = "Bewertung übersprungen — Tagesbudget erschöpft"
+        missing_str = "–"
+    else:
+        reasoning = m.match_reasoning or "–"
+        missing_str = ', '.join(m.missing_skills) if m.missing_skills else '–'
+
     note_text = (
         f"Aus Job-Vorschlag importiert (Match-Score {score_str}).\n\n"
-        f"Begruendung: {m.match_reasoning or '–'}\n\n"
-        f"Fehlende Skills: {', '.join(m.missing_skills) if m.missing_skills else '–'}\n\n"
+        f"Begruendung: {reasoning}\n\n"
+        f"Fehlende Skills: {missing_str}\n\n"
         f"Original-Link: {raw.url}"
     )
 
@@ -244,3 +279,157 @@ def import_match(user, match_id: int):
     db.session.commit()
 
     return jsonify({"application_id": application.id}), 201
+
+
+@jobs_user_bp.post('/matches/<int:match_id>/score')
+@token_required
+def score_match(user, match_id: int):
+    """Triggert Claude-Match für einen einzelnen Match. Budget-aware.
+
+    Returns:
+        200 + {match_score, match_reasoning, missing_skills} bei Erfolg
+        200 + existing data, falls match_score schon gesetzt war
+        402 wenn Tagesbudget erschöpft
+        403 wenn nicht Owner
+        404 wenn nicht gefunden
+        503 wenn ANTHROPIC_API_KEY fehlt
+    """
+    m = JobMatch.query.get_or_404(match_id)
+    if m.user_id != user.id:
+        return jsonify({"error": "Forbidden"}), 403
+
+    # Bereits bewertet → existing data zurückgeben (kein Claude-Call)
+    if m.match_score is not None:
+        return jsonify({
+            "match_score": m.match_score,
+            "match_reasoning": m.match_reasoning,
+            "missing_skills": m.missing_skills,
+        }), 200
+
+    # Budget-Check vor Anthropic-Client-Init
+    if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+        return jsonify({"error": "Tagesbudget für Claude-Bewertungen erschöpft"}), 402
+
+    client = _get_anthropic_client()
+    if client is None:
+        return jsonify({"error": "ANTHROPIC_API_KEY nicht gesetzt"}), 503
+
+    success = _run_claude_match_for(client, user, m)
+    if not success:
+        db.session.rollback()
+        # Nochmal Budget prüfen — kann sich gerade in der Helper-Schleife geändert haben
+        if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+            return jsonify({"error": "Tagesbudget für Claude-Bewertungen erschöpft"}), 402
+        return jsonify({"error": "Bewertung fehlgeschlagen"}), 500
+
+    db.session.commit()
+    return jsonify({
+        "match_score": m.match_score,
+        "match_reasoning": m.match_reasoning,
+        "missing_skills": m.missing_skills,
+    }), 200
+
+
+@jobs_user_bp.post('/matches/score-bulk')
+@token_required
+def score_match_bulk(user):
+    """Bulk-Claude-Match. Stoppt bei Budget-Erschoepfung, returnt Status pro Match.
+
+    Body: {"match_ids": [1, 2, 3]}
+    Returns 200 with:
+        scored: [{id, match_score}, ...]
+        skipped_budget: [id, ...]
+        errors: [{id, error}, ...]
+        forbidden: [id, ...] (matches, die anderen Usern gehoeren)
+        not_found: [id, ...]
+    """
+    data = request.get_json() or {}
+    ids = data.get("match_ids")
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "match_ids muss nicht-leere Liste sein"}), 400
+
+    matches = JobMatch.query.filter(JobMatch.id.in_(ids)).all()
+    found_ids = {m.id for m in matches}
+    not_found = [i for i in ids if i not in found_ids]
+
+    forbidden = [m.id for m in matches if m.user_id != user.id]
+    own = [m for m in matches if m.user_id == user.id]
+
+    client = _get_anthropic_client()
+    if client is None:
+        return jsonify({"error": "ANTHROPIC_API_KEY nicht gesetzt"}), 503
+
+    scored = []
+    skipped_budget = []
+    errors = []
+
+    for m in own:
+        # Budget-Check vor jedem Match (kann sich mid-loop aendern durch flush in Helper)
+        if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+            skipped_budget.append(m.id)
+            continue
+        try:
+            success = _run_claude_match_for(client, user, m)
+            if success:
+                scored.append({"id": m.id, "match_score": m.match_score})
+            else:
+                # Helper returnt False bei drei Gruenden — disambiguieren:
+                if m.match_score is not None:
+                    # Schon bewertet (idempotent path)
+                    scored.append({"id": m.id, "match_score": m.match_score})
+                elif _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+                    # Budget mid-call erschoepft
+                    skipped_budget.append(m.id)
+                else:
+                    # Claude-Error (Helper hat schon geloggt)
+                    errors.append({"id": m.id, "error": "Claude-Bewertung fehlgeschlagen"})
+        except Exception as e:
+            errors.append({"id": m.id, "error": str(e)})
+
+    db.session.commit()
+
+    return jsonify({
+        "scored": scored,
+        "skipped_budget": skipped_budget,
+        "errors": errors,
+        "forbidden": forbidden,
+        "not_found": not_found,
+    }), 200
+
+
+@jobs_user_bp.patch('/matches/bulk')
+@token_required
+def update_match_bulk(user):
+    """Bulk-Statuswechsel (kein Claude). Akzeptiert nur 'seen' und 'dismissed'.
+
+    Body: {"match_ids": [...], "status": "seen" | "dismissed"}
+    Returns 200 with: updated, forbidden, not_found
+    """
+    data = request.get_json() or {}
+    ids = data.get("match_ids")
+    new_status = data.get("status")
+
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "match_ids muss nicht-leere Liste sein"}), 400
+    if new_status not in ('seen', 'dismissed'):
+        return jsonify({"error": "status muss 'seen' oder 'dismissed' sein"}), 400
+
+    matches = JobMatch.query.filter(JobMatch.id.in_(ids)).all()
+    found_ids = {m.id for m in matches}
+    not_found = [i for i in ids if i not in found_ids]
+    forbidden = []
+    updated = 0
+
+    for m in matches:
+        if m.user_id != user.id:
+            forbidden.append(m.id)
+            continue
+        m.status = new_status
+        updated += 1
+
+    db.session.commit()
+    return jsonify({
+        "updated": updated,
+        "forbidden": forbidden,
+        "not_found": not_found,
+    }), 200

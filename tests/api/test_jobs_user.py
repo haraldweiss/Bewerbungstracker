@@ -3,7 +3,7 @@ import json
 from unittest.mock import patch, MagicMock
 from app import create_app
 from database import db
-from models import JobSource, RawJob, JobMatch, Application
+from models import JobSource, RawJob, JobMatch, Application, ApiCall
 from services.job_sources.base import FetchedJob
 
 
@@ -459,3 +459,385 @@ def test_import_match_transfers_all_fields(client, auth_header):
     assert app_obj.applied_date == posted_date.date()
     assert app_obj.source == "TestSource"
     assert app_obj.link == "https://example.com/job/123"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/jobs/matches/<id>/score (on-demand single Claude-Match)
+# ---------------------------------------------------------------------------
+
+def test_score_single_returns_match_data(client, app, user_factory, auth_header):
+    """POST /matches/<id>/score: ruft Claude, schreibt Score, returnt Daten."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Python Dev", "skills": ["python"]}}'
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1",
+                 description="Wir suchen Python")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 prefilter_score=42, match_score=None)
+    db.session.add(m); db.session.commit()
+
+    fake_result = MagicMock(score=80, reasoning="passt gut",
+                            missing_skills=["docker"], tokens_in=20, tokens_out=20)
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post(f"/api/jobs/matches/{m.id}/score", headers=headers)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["match_score"] == 80
+    assert body["match_reasoning"] == "passt gut"
+    assert body["missing_skills"] == ["docker"]
+
+
+def test_score_single_returns_402_when_budget_exhausted(client, app, user_factory, auth_header):
+    """POST /matches/<id>/score: Tagesbudget aufgebraucht → 402 Payment Required."""
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 50
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 prefilter_score=42, match_score=None)
+    db.session.add(m)
+    db.session.add(ApiCall(user_id=user.id, endpoint='/test', model='x',
+                           tokens_in=0, tokens_out=0, cost=1.00, key_owner='server'))
+    db.session.commit()
+
+    from unittest.mock import patch, MagicMock
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()):
+        r = client.post(f"/api/jobs/matches/{m.id}/score", headers=headers)
+
+    assert r.status_code == 402
+    assert "budget" in r.get_json()["error"].lower()
+
+
+def test_score_single_returns_403_when_not_owner(client, app, user_factory, auth_header):
+    """POST /matches/<id>/score: anderer User → 403."""
+    headers, user = auth_header
+    other = user_factory(email="other@example.com")
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=other.id, status='new', match_score=None)
+    db.session.add(m); db.session.commit()
+
+    r = client.post(f"/api/jobs/matches/{m.id}/score", headers=headers)
+    assert r.status_code == 403
+
+
+def test_score_single_returns_existing_score_when_already_matched(client, app, user_factory, auth_header):
+    """Wenn match_score schon gesetzt: 200 mit Daten, kein Claude-Call."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 match_score=88, match_reasoning="alt", missing_skills=[])
+    db.session.add(m); db.session.commit()
+
+    fake_client = MagicMock()
+    with patch("api.jobs_user._get_anthropic_client", return_value=fake_client), \
+         patch("api.jobs_cron.match_job_with_claude") as mock_claude:
+        r = client.post(f"/api/jobs/matches/{m.id}/score", headers=headers)
+        mock_claude.assert_not_called()
+
+    assert r.status_code == 200
+    assert r.get_json()["match_score"] == 88
+
+
+# ---------------------------------------------------------------------------
+# POST /api/jobs/matches/score-bulk (on-demand bulk Claude-Match)
+# ---------------------------------------------------------------------------
+
+def test_score_bulk_evaluates_all_when_budget_sufficient(client, app, user_factory, auth_header):
+    """3 Matches, alle bewerten → scored hat 3, skipped_budget leer."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 10000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raws = []
+    for i in range(3):
+        r = RawJob(source_id=src.id, external_id=f"r{i}", title=f"Job {i}",
+                   url=f"https://j/{i}")
+        db.session.add(r); raws.append(r)
+    db.session.flush()
+    matches = []
+    for r in raws:
+        m = JobMatch(raw_job_id=r.id, user_id=user.id, status='new', match_score=None)
+        db.session.add(m); matches.append(m)
+    db.session.commit()
+    ids = [m.id for m in matches]
+
+    fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
+                            tokens_in=10, tokens_out=10)
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post("/api/jobs/matches/score-bulk",
+                        json={"match_ids": ids}, headers=headers)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert len(body["scored"]) == 3
+    assert body["skipped_budget"] == []
+    assert body["errors"] == []
+
+
+def test_score_bulk_stops_at_budget(client, app, user_factory, auth_header):
+    """Budget mid-loop aufgebraucht: scored = N, skipped_budget = Rest."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    # 1 Call = ~5 cents (10000 in + 10000 out @ Haiku-Pricing).
+    # Budget=10 cents → nach 2 Calls ist Tagesbudget aufgebraucht, 3. wird skipped.
+    user.job_daily_budget_cents = 10
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    matches = []
+    for i in range(3):
+        r = RawJob(source_id=src.id, external_id=f"r{i}", title=f"Job {i}",
+                   url=f"https://j/{i}")
+        db.session.add(r); db.session.flush()
+        m = JobMatch(raw_job_id=r.id, user_id=user.id, status='new', match_score=None)
+        db.session.add(m); matches.append(m)
+    db.session.commit()
+    ids = [m.id for m in matches]
+
+    # High tokens → high cost → fast budget exhaustion
+    fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
+                            tokens_in=10000, tokens_out=10000)
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post("/api/jobs/matches/score-bulk",
+                        json={"match_ids": ids}, headers=headers)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert len(body["scored"]) >= 1
+    assert len(body["skipped_budget"]) >= 1
+    assert len(body["scored"]) + len(body["skipped_budget"]) == 3
+
+
+def test_score_bulk_handles_mixed_ownership(client, app, user_factory, auth_header):
+    """Match-IDs von anderem User landen in 'forbidden', kein 403 für ganzen Request."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    other = user_factory(email="other@example.com")
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Job", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+
+    m_mine = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    m_other = JobMatch(raw_job_id=raw.id, user_id=other.id, status='new', match_score=None)
+    db.session.add_all([m_mine, m_other]); db.session.commit()
+
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
+                            tokens_in=10, tokens_out=10)
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post("/api/jobs/matches/score-bulk",
+                        json={"match_ids": [m_mine.id, m_other.id]}, headers=headers)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert len(body["scored"]) == 1
+    assert m_other.id in body["forbidden"]
+
+
+def test_score_bulk_validates_input(client, app, auth_header):
+    """match_ids fehlt oder leer → 400."""
+    headers, _ = auth_header
+    r = client.post("/api/jobs/matches/score-bulk", json={}, headers=headers)
+    assert r.status_code == 400
+
+    r = client.post("/api/jobs/matches/score-bulk",
+                    json={"match_ids": []}, headers=headers)
+    assert r.status_code == 400
+
+
+def test_score_bulk_classifies_claude_errors_correctly(client, app, user_factory, auth_header):
+    """Claude-Exception (Helper returnt False, Budget OK) → landet in 'errors', nicht 'skipped_budget'."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 10000   # viel Budget
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Job", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    db.session.add(m); db.session.commit()
+
+    # Claude raises → Helper logs warning + returns False, match_score bleibt None.
+    # Da Budget reichlich ist, soll der Endpoint dies als "errors" klassifizieren.
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", side_effect=RuntimeError("API down")):
+        r = client.post("/api/jobs/matches/score-bulk",
+                        json={"match_ids": [m.id]}, headers=headers)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["scored"] == []
+    assert body["skipped_budget"] == []
+    assert len(body["errors"]) == 1
+    assert body["errors"][0]["id"] == m.id
+
+
+def test_bulk_status_update_dismisses_matches(client, app, user_factory, auth_header):
+    headers, user = auth_header
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+
+    matches = []
+    for i in range(3):
+        raw = RawJob(source_id=src.id, external_id=f"a{i}", title="Job", url=f"https://j/{i}")
+        db.session.add(raw); db.session.flush()
+        m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+        db.session.add(m); matches.append(m)
+    db.session.commit()
+    ids = [m.id for m in matches]
+
+    r = client.patch("/api/jobs/matches/bulk",
+                     json={"match_ids": ids, "status": "dismissed"},
+                     headers=headers)
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["updated"] == 3
+    for m in matches:
+        db.session.refresh(m)
+        assert m.status == "dismissed"
+
+
+def test_bulk_status_update_skips_other_users_matches(client, app, user_factory, auth_header):
+    headers, user = auth_header
+    other = user_factory(email="other@example.com")
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Job", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+
+    m_mine = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    m_other = JobMatch(raw_job_id=raw.id, user_id=other.id, status='new')
+    db.session.add_all([m_mine, m_other]); db.session.commit()
+
+    r = client.patch("/api/jobs/matches/bulk",
+                     json={"match_ids": [m_mine.id, m_other.id], "status": "seen"},
+                     headers=headers)
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["updated"] == 1
+    assert m_other.id in body["forbidden"]
+
+    db.session.refresh(m_mine)
+    db.session.refresh(m_other)
+    assert m_mine.status == "seen"
+    assert m_other.status == "new"
+
+
+def test_bulk_status_validates_input(client, app, auth_header):
+    headers, _ = auth_header
+    r = client.patch("/api/jobs/matches/bulk", json={}, headers=headers)
+    assert r.status_code == 400
+
+    r = client.patch("/api/jobs/matches/bulk",
+                     json={"match_ids": [], "status": "seen"}, headers=headers)
+    assert r.status_code == 400
+
+    r = client.patch("/api/jobs/matches/bulk",
+                     json={"match_ids": [1], "status": "invalid"}, headers=headers)
+    assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# POST /api/jobs/matches/<id>/import (Claude-on-demand bei match_score=None)
+# ---------------------------------------------------------------------------
+
+def test_import_runs_claude_when_match_score_none(client, app, user_factory, auth_header):
+    """Import bei match_score=None → Claude wird gerufen, Score landet in DB + Notes."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1",
+                 company="ACME", description="Python role")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 prefilter_score=42, match_score=None)
+    db.session.add(m); db.session.commit()
+
+    fake_result = MagicMock(score=88, reasoning="passt sehr gut",
+                            missing_skills=["docker"], tokens_in=20, tokens_out=20)
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post(f"/api/jobs/matches/{m.id}/import", headers=headers)
+
+    assert r.status_code == 201
+    body = r.get_json()
+    db.session.refresh(m)
+    assert m.match_score == 88
+    assert m.match_reasoning == "passt sehr gut"
+
+    app_obj = Application.query.get(body["application_id"])
+    assert "passt sehr gut" in app_obj.notes
+    assert "88" in app_obj.notes
+
+
+def test_import_skips_claude_when_budget_exhausted_but_creates_application(
+    client, app, user_factory, auth_header
+):
+    """Import bei Budget-Erschöpfung: kein Claude, aber Application wird trotzdem angelegt."""
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 50
+    db.session.add(ApiCall(user_id=user.id, endpoint='/test', model='x',
+                           tokens_in=0, tokens_out=0, cost=1.00, key_owner='server'))
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1",
+                 company="ACME")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    db.session.add(m); db.session.commit()
+
+    from unittest.mock import patch, MagicMock
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()):
+        r = client.post(f"/api/jobs/matches/{m.id}/import", headers=headers)
+
+    assert r.status_code == 201
+    body = r.get_json()
+    app_obj = Application.query.get(body["application_id"])
+    assert "Bewertung übersprungen" in app_obj.notes
+    db.session.refresh(m)
+    assert m.match_score is None  # nicht bewertet
+    assert m.status == "imported"  # Import trotzdem erfolgreich

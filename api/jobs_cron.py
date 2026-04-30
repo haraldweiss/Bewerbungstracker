@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import json
+import logging
 import os
 import time
 from datetime import datetime, timedelta
@@ -16,6 +17,8 @@ from services.job_matching.prefilter import score_job, PrefilterContext
 from services.job_matching.claude_matcher import match_job_with_claude
 from services.job_matching.notifier import send_match_notification
 
+logger = logging.getLogger(__name__)
+
 
 jobs_cron_bp = Blueprint('jobs_cron', __name__, url_prefix='/api/jobs')
 
@@ -28,6 +31,9 @@ MAX_PREFILTER_PER_TICK = 100
 # typischerweise "passende Branche, einige Skill-Overlaps" und ist die
 # Schwelle ab der eine Claude-Bewertung sinnvoll wird.
 PREFILTER_DISMISS_THRESHOLD = 15
+# Auto-Cron bewertet nur prefilter_score >= AUTO_CLAUDE_THRESHOLD.
+# User-getriggerte Bewertungen (single, bulk, import) ignorieren diesen Threshold.
+AUTO_CLAUDE_THRESHOLD = 50
 MAX_NOTIFICATIONS_PER_TICK = 20
 HARD_TIME_LIMIT_SEC = 25
 AUTO_DISABLE_FAILURE_COUNT = 5
@@ -243,6 +249,58 @@ def prefilter():
                     "duration_sec": round(time.time() - started, 2)}), 200
 
 
+def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
+    """Führt Claude-Match für einen einzelnen JobMatch aus.
+
+    Returns:
+        True wenn erfolgreich bewertet (DB-Update gemacht).
+        False wenn geskippt (schon bewertet, Budget erschöpft, oder Claude-Error).
+
+    Idempotent: Wenn match.match_score schon gesetzt ist, returnt sofort False.
+    Budget-Check: Wenn _user_today_cost_cents(user.id) >= user.job_daily_budget_cents,
+    returnt False.
+    Caller ist für commit zuständig.
+    """
+    if match.match_score is not None:
+        return False
+
+    if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+        return False
+
+    raw = RawJob.query.get(match.raw_job_id)
+    if raw is None:
+        return False
+
+    cv_summary = _build_cv_summary(user.cv_data_json)
+    try:
+        result = match_job_with_claude(
+            client=client, model=DEFAULT_MODEL, cv_summary=cv_summary,
+            job={"title": raw.title, "description": raw.description, "location": raw.location},
+        )
+    except Exception as e:
+        logger.warning(
+            "claude_match failed for match=%s user=%s: %s: %s",
+            match.id, user.id, type(e).__name__, e,
+        )
+        return False
+
+    # Ab hier: alles oder nichts — keine Mutation vor erfolgreichem Claude-Call.
+    match.match_score = result.score
+    match.match_reasoning = result.reasoning
+    match.missing_skills = result.missing_skills
+    raw.crawl_status = 'matched'
+
+    cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
+    db.session.add(ApiCall(
+        user_id=user.id, endpoint='/api/jobs/claude-match',
+        model=DEFAULT_MODEL, tokens_in=result.tokens_in,
+        tokens_out=result.tokens_out, cost=cost_cents / 100.0,
+        key_owner='server',
+    ))
+    db.session.flush()  # damit nachfolgende _user_today_cost_cents() den frischen Cost sieht
+    return True
+
+
 @jobs_cron_bp.post('/claude-match')
 @require_cron_token
 def claude_match():
@@ -257,7 +315,7 @@ def claude_match():
     users_with_pending = (db.session.query(User)
                           .join(JobMatch, JobMatch.user_id == User.id)
                           .filter(JobMatch.match_score.is_(None),
-                                  JobMatch.prefilter_score >= PREFILTER_DISMISS_THRESHOLD,
+                                  JobMatch.prefilter_score >= AUTO_CLAUDE_THRESHOLD,
                                   JobMatch.status == 'new')
                           .distinct().all())
 
@@ -272,37 +330,20 @@ def claude_match():
         candidates = (JobMatch.query
                       .filter(JobMatch.user_id == user.id,
                               JobMatch.match_score.is_(None),
-                              JobMatch.prefilter_score >= PREFILTER_DISMISS_THRESHOLD,
+                              JobMatch.prefilter_score >= AUTO_CLAUDE_THRESHOLD,
                               JobMatch.status == 'new')
                       .order_by(JobMatch.prefilter_score.desc())
                       .limit(user.job_claude_budget_per_tick).all())
 
-        cv_summary = _build_cv_summary(user.cv_data_json)
         for match in candidates:
             if time.time() - started > HARD_TIME_LIMIT_SEC:
                 break
-            raw = RawJob.query.get(match.raw_job_id)
-            try:
-                result = match_job_with_claude(
-                    client=client, model=DEFAULT_MODEL, cv_summary=cv_summary,
-                    job={"title": raw.title, "description": raw.description, "location": raw.location},
-                )
-            except Exception:
-                continue
-
-            match.match_score = result.score
-            match.match_reasoning = result.reasoning
-            match.missing_skills = result.missing_skills
-            raw.crawl_status = 'matched'
-
-            cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
-            db.session.add(ApiCall(
-                user_id=user.id, endpoint='/api/jobs/claude-match',
-                model=DEFAULT_MODEL, tokens_in=result.tokens_in,
-                tokens_out=result.tokens_out, cost=cost_cents / 100.0,
-                key_owner='server',
-            ))
-            matched += 1
+            if _run_claude_match_for(client, user, match):
+                matched += 1
+            else:
+                # Wenn Budget gerade erschöpft wurde mid-loop → weiter zum nächsten User
+                if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+                    break
 
         db.session.commit()
 

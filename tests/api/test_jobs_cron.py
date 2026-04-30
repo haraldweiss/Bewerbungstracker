@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 
 from app import create_app
 from database import db
-from models import User, JobSource, RawJob, JobMatch
+from models import User, JobSource, RawJob, JobMatch, ApiCall
 
 
 @pytest.fixture
@@ -193,3 +193,130 @@ def test_cleanup_archives_old_unused_raw_jobs(app, client):
 
     db.session.refresh(old_raw)
     assert old_raw.crawl_status == 'archived'
+
+
+def test_run_claude_match_for_idempotent(app, user_factory):
+    """Wenn match_score schon gesetzt ist, returnt der Helper sofort False ohne Claude-Call."""
+    from api.jobs_cron import _run_claude_match_for
+    from unittest.mock import MagicMock
+
+    user = user_factory()
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 match_score=80, match_reasoning="bereits bewertet")
+    db.session.add(m); db.session.commit()
+
+    fake_client = MagicMock()
+    result = _run_claude_match_for(fake_client, user, m)
+
+    assert result is False
+    assert m.match_score == 80
+    fake_client.assert_not_called()
+
+
+def test_run_claude_match_for_returns_false_when_budget_exhausted(app, user_factory):
+    """Wenn Tagesbudget erschöpft: Helper returnt False, kein Claude-Call."""
+    from api.jobs_cron import _run_claude_match_for
+    from unittest.mock import MagicMock
+
+    user = user_factory()
+    user.job_daily_budget_cents = 50
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    db.session.add(m)
+    # ApiCall mit cost 1.00 EUR füllt das Budget (50 cents) auf
+    db.session.add(ApiCall(user_id=user.id, endpoint='/test', model='x',
+                           tokens_in=0, tokens_out=0, cost=1.00, key_owner='server'))
+    db.session.commit()
+
+    fake_client = MagicMock()
+    result = _run_claude_match_for(fake_client, user, m)
+
+    assert result is False
+    assert m.match_score is None
+
+
+def test_run_claude_match_for_success_writes_all_fields(app, user_factory):
+    """Helper schreibt match_score, reasoning, missing_skills, raw.crawl_status, ApiCall."""
+    from api.jobs_cron import _run_claude_match_for
+    from unittest.mock import patch, MagicMock
+
+    user = user_factory(cv_data_json='{"cv": {"summary": "Dev"}}')
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev",
+                 url="https://j/1", crawl_status='raw')
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    db.session.add(m); db.session.commit()
+
+    fake_result = MagicMock(score=88, reasoning="passt",
+                            missing_skills=["docker", "k8s"],
+                            tokens_in=20, tokens_out=20)
+    fake_client = MagicMock()
+    with patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        result = _run_claude_match_for(fake_client, user, m)
+
+    assert result is True
+    db.session.refresh(m); db.session.refresh(raw)
+    assert m.match_score == 88
+    assert m.match_reasoning == "passt"
+    assert m.missing_skills == ["docker", "k8s"]
+    assert raw.crawl_status == "matched"
+    # Verify ApiCall created
+    api_calls = ApiCall.query.filter_by(user_id=user.id).all()
+    assert len(api_calls) == 1
+    assert api_calls[0].endpoint == '/api/jobs/claude-match'
+
+
+def test_auto_cron_skips_jobs_below_auto_threshold(app, user_factory, monkeypatch):
+    """Auto-Cron bewertet nur prefilter_score >= AUTO_CLAUDE_THRESHOLD (50)."""
+    from unittest.mock import patch, MagicMock
+    from api.jobs_cron import AUTO_CLAUDE_THRESHOLD
+
+    assert AUTO_CLAUDE_THRESHOLD == 50
+
+    user = user_factory(cv_data_json='{"cv": {"summary": "Python Dev", "skills": ["python"]}}')
+    user.job_discovery_enabled = True
+    user.job_claude_budget_per_tick = 5
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+
+    raw_low = RawJob(source_id=src.id, external_id="low", title="Low", url="https://j/low")
+    raw_high = RawJob(source_id=src.id, external_id="high", title="High", url="https://j/high")
+    db.session.add_all([raw_low, raw_high]); db.session.flush()
+
+    m_low = JobMatch(raw_job_id=raw_low.id, user_id=user.id,
+                     status='new', prefilter_score=40, match_score=None)
+    m_high = JobMatch(raw_job_id=raw_high.id, user_id=user.id,
+                      status='new', prefilter_score=60, match_score=None)
+    db.session.add_all([m_low, m_high]); db.session.commit()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+
+    fake_result = MagicMock(score=85, reasoning="ok",
+                            missing_skills=[], tokens_in=10, tokens_out=10)
+    with patch("api.jobs_cron._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        client_t = app.test_client()
+        r = client_t.post("/api/jobs/claude-match", headers={"X-Cron-Token": "test-token"})
+        assert r.status_code == 200
+
+    db.session.refresh(m_low)
+    db.session.refresh(m_high)
+    assert m_low.match_score is None    # geskippt (prefilter < 50)
+    assert m_high.match_score == 85     # bewertet (prefilter >= 50)
