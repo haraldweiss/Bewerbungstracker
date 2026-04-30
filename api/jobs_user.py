@@ -7,9 +7,24 @@ from database import db
 from models import JobSource, RawJob, JobMatch, Application
 from api.auth import token_required
 from services.ssrf_guard import is_url_safe_for_rss
+from api.jobs_cron import _run_claude_match_for, _user_today_cost_cents
 
 
 jobs_user_bp = Blueprint('jobs_user', __name__, url_prefix='/api/jobs')
+
+
+def _get_anthropic_client():
+    """Liefert einen Anthropic-Client oder None falls API-Key fehlt.
+
+    Eigene Kopie statt Reuse aus jobs_cron — sonst circular-import-Risiko
+    bei Test-Mocks via patch("api.jobs_user._get_anthropic_client").
+    """
+    import os
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    from anthropic import Anthropic  # lazy import — nicht im venv bei Tests
+    return Anthropic(api_key=api_key)
 
 
 _VALID_TYPES = {"rss", "adzuna", "bundesagentur", "arbeitnow"}
@@ -244,3 +259,52 @@ def import_match(user, match_id: int):
     db.session.commit()
 
     return jsonify({"application_id": application.id}), 201
+
+
+@jobs_user_bp.post('/matches/<int:match_id>/score')
+@token_required
+def score_match(user, match_id: int):
+    """Triggert Claude-Match für einen einzelnen Match. Budget-aware.
+
+    Returns:
+        200 + {match_score, match_reasoning, missing_skills} bei Erfolg
+        200 + existing data, falls match_score schon gesetzt war
+        402 wenn Tagesbudget erschöpft
+        403 wenn nicht Owner
+        404 wenn nicht gefunden
+        503 wenn ANTHROPIC_API_KEY fehlt
+    """
+    m = JobMatch.query.get_or_404(match_id)
+    if m.user_id != user.id:
+        return jsonify({"error": "Forbidden"}), 403
+
+    # Bereits bewertet → existing data zurückgeben (kein Claude-Call)
+    if m.match_score is not None:
+        return jsonify({
+            "match_score": m.match_score,
+            "match_reasoning": m.match_reasoning,
+            "missing_skills": m.missing_skills,
+        }), 200
+
+    # Budget-Check vor Anthropic-Client-Init
+    if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+        return jsonify({"error": "Tagesbudget für Claude-Bewertungen erschöpft"}), 402
+
+    client = _get_anthropic_client()
+    if client is None:
+        return jsonify({"error": "ANTHROPIC_API_KEY nicht gesetzt"}), 503
+
+    success = _run_claude_match_for(client, user, m)
+    if not success:
+        db.session.rollback()
+        # Nochmal Budget prüfen — kann sich gerade in der Helper-Schleife geändert haben
+        if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+            return jsonify({"error": "Tagesbudget für Claude-Bewertungen erschöpft"}), 402
+        return jsonify({"error": "Bewertung fehlgeschlagen"}), 500
+
+    db.session.commit()
+    return jsonify({
+        "match_score": m.match_score,
+        "match_reasoning": m.match_reasoning,
+        "missing_skills": m.missing_skills,
+    }), 200

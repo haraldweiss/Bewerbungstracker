@@ -3,7 +3,7 @@ import json
 from unittest.mock import patch, MagicMock
 from app import create_app
 from database import db
-from models import JobSource, RawJob, JobMatch, Application
+from models import JobSource, RawJob, JobMatch, Application, ApiCall
 from services.job_sources.base import FetchedJob
 
 
@@ -459,3 +459,100 @@ def test_import_match_transfers_all_fields(client, auth_header):
     assert app_obj.applied_date == posted_date.date()
     assert app_obj.source == "TestSource"
     assert app_obj.link == "https://example.com/job/123"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/jobs/matches/<id>/score (on-demand single Claude-Match)
+# ---------------------------------------------------------------------------
+
+def test_score_single_returns_match_data(client, app, user_factory, auth_header):
+    """POST /matches/<id>/score: ruft Claude, schreibt Score, returnt Daten."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Python Dev", "skills": ["python"]}}'
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1",
+                 description="Wir suchen Python")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 prefilter_score=42, match_score=None)
+    db.session.add(m); db.session.commit()
+
+    fake_result = MagicMock(score=80, reasoning="passt gut",
+                            missing_skills=["docker"], tokens_in=20, tokens_out=20)
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post(f"/api/jobs/matches/{m.id}/score", headers=headers)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["match_score"] == 80
+    assert body["match_reasoning"] == "passt gut"
+    assert body["missing_skills"] == ["docker"]
+
+
+def test_score_single_returns_402_when_budget_exhausted(client, app, user_factory, auth_header):
+    """POST /matches/<id>/score: Tagesbudget aufgebraucht → 402 Payment Required."""
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 50
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 prefilter_score=42, match_score=None)
+    db.session.add(m)
+    db.session.add(ApiCall(user_id=user.id, endpoint='/test', model='x',
+                           tokens_in=0, tokens_out=0, cost=1.00, key_owner='server'))
+    db.session.commit()
+
+    from unittest.mock import patch, MagicMock
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()):
+        r = client.post(f"/api/jobs/matches/{m.id}/score", headers=headers)
+
+    assert r.status_code == 402
+    assert "budget" in r.get_json()["error"].lower()
+
+
+def test_score_single_returns_403_when_not_owner(client, app, user_factory, auth_header):
+    """POST /matches/<id>/score: anderer User → 403."""
+    headers, user = auth_header
+    other = user_factory(email="other@example.com")
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=other.id, status='new', match_score=None)
+    db.session.add(m); db.session.commit()
+
+    r = client.post(f"/api/jobs/matches/{m.id}/score", headers=headers)
+    assert r.status_code == 403
+
+
+def test_score_single_returns_existing_score_when_already_matched(client, app, user_factory, auth_header):
+    """Wenn match_score schon gesetzt: 200 mit Daten, kein Claude-Call."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 match_score=88, match_reasoning="alt", missing_skills=[])
+    db.session.add(m); db.session.commit()
+
+    fake_client = MagicMock()
+    with patch("api.jobs_user._get_anthropic_client", return_value=fake_client), \
+         patch("api.jobs_cron.match_job_with_claude") as mock_claude:
+        r = client.post(f"/api/jobs/matches/{m.id}/score", headers=headers)
+        mock_claude.assert_not_called()
+
+    assert r.status_code == 200
+    assert r.get_json()["match_score"] == 88
