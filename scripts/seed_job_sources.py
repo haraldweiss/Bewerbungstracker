@@ -47,6 +47,8 @@ DEFAULTS = [
     {
         "name": "Xing — Python Berlin",
         "type": "xing",
+        # 180 min = JSearch Free-Tier-friendly (~ 8 calls/Tag pro Source)
+        "crawl_interval_min": 180,
         "config": {
             "rss_url": os.getenv("XING_RSS_URL", ""),
             "aggregator_key": os.getenv("RAPIDAPI_KEY", ""),
@@ -57,6 +59,7 @@ DEFAULTS = [
     {
         "name": "LinkedIn — Engineering Berlin",
         "type": "linkedin",
+        "crawl_interval_min": 180,
         "config": {
             "rss_url": os.getenv("LINKEDIN_RSS_URL", ""),
             "aggregator_key": os.getenv("RAPIDAPI_KEY", ""),
@@ -67,6 +70,7 @@ DEFAULTS = [
     {
         "name": "Stepstone — Tech Berlin",
         "type": "stepstone",
+        "crawl_interval_min": 180,
         "config": {
             "rss_url": os.getenv("STEPSTONE_RSS_URL", ""),
             "aggregator_key": os.getenv("RAPIDAPI_KEY", ""),
@@ -114,11 +118,12 @@ def main(update_env_fields: bool = False):
                 continue
             src = JobSource(
                 user_id=None, name=d["name"], type=d["type"],
-                enabled=True, crawl_interval_min=60,
+                enabled=True,
+                crawl_interval_min=d.get("crawl_interval_min", 60),
             )
             src.config = d["config"]
             db.session.add(src)
-            print(f"+ {d['name']}")
+            print(f"+ {d['name']} (interval={src.crawl_interval_min}min)")
         db.session.commit()
         print("✓ Seed abgeschlossen.")
 
