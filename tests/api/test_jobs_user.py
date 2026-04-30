@@ -676,3 +676,33 @@ def test_score_bulk_validates_input(client, app, auth_header):
     r = client.post("/api/jobs/matches/score-bulk",
                     json={"match_ids": []}, headers=headers)
     assert r.status_code == 400
+
+
+def test_score_bulk_classifies_claude_errors_correctly(client, app, user_factory, auth_header):
+    """Claude-Exception (Helper returnt False, Budget OK) → landet in 'errors', nicht 'skipped_budget'."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 10000   # viel Budget
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Job", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    db.session.add(m); db.session.commit()
+
+    # Claude raises → Helper logs warning + returns False, match_score bleibt None.
+    # Da Budget reichlich ist, soll der Endpoint dies als "errors" klassifizieren.
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", side_effect=RuntimeError("API down")):
+        r = client.post("/api/jobs/matches/score-bulk",
+                        json={"match_ids": [m.id]}, headers=headers)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["scored"] == []
+    assert body["skipped_budget"] == []
+    assert len(body["errors"]) == 1
+    assert body["errors"][0]["id"] == m.id

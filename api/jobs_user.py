@@ -353,11 +353,16 @@ def score_match_bulk(user):
             if success:
                 scored.append({"id": m.id, "match_score": m.match_score})
             else:
-                # Helper returnt False bei: schon bewertet ODER Budget gerade voll ODER Claude-Error
+                # Helper returnt False bei drei Gruenden — disambiguieren:
                 if m.match_score is not None:
+                    # Schon bewertet (idempotent path)
                     scored.append({"id": m.id, "match_score": m.match_score})
-                else:
+                elif _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+                    # Budget mid-call erschoepft
                     skipped_budget.append(m.id)
+                else:
+                    # Claude-Error (Helper hat schon geloggt)
+                    errors.append({"id": m.id, "error": "Claude-Bewertung fehlgeschlagen"})
         except Exception as e:
             errors.append({"id": m.id, "error": str(e)})
 
