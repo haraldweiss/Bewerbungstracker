@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Xing Jobs — Python Berlin</title>
+    <link>https://www.xing.com/jobs</link>
+    <description>Job results</description>
+    <item>
+      <title>Senior Python Developer (m/w/d)</title>
+      <link>https://www.xing.com/jobs/python-dev-berlin-100</link>
+      <guid>xing-100</guid>
+      <description>Python role at ACME...</description>
+      <category>Berlin</category>
+      <pubDate>Mon, 28 Apr 2026 10:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>Backend Engineer Python</title>
+      <link>https://www.xing.com/jobs/backend-eng-200</link>
+      <guid>xing-200</guid>
+      <description>Backend role at Beta...</description>
+      <category>München</category>
+      <pubDate>Tue, 29 Apr 2026 10:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>
