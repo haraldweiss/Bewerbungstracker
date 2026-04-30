@@ -31,6 +31,16 @@ def client(app):
 
 
 @pytest.fixture
+def db_session(app):
+    """Convenience-Alias für db.session — innerhalb des app-context.
+
+    Tests die direkt SQLAlchemy-Models persistieren wollen, ohne den
+    Auth/HTTP-Layer zu durchlaufen, nutzen diese Fixture.
+    """
+    return db.session
+
+
+@pytest.fixture
 def runner(app):
     """CLI runner"""
     return app.test_cli_runner()
