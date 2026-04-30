@@ -556,3 +556,123 @@ def test_score_single_returns_existing_score_when_already_matched(client, app, u
 
     assert r.status_code == 200
     assert r.get_json()["match_score"] == 88
+
+
+# ---------------------------------------------------------------------------
+# POST /api/jobs/matches/score-bulk (on-demand bulk Claude-Match)
+# ---------------------------------------------------------------------------
+
+def test_score_bulk_evaluates_all_when_budget_sufficient(client, app, user_factory, auth_header):
+    """3 Matches, alle bewerten → scored hat 3, skipped_budget leer."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 10000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raws = []
+    for i in range(3):
+        r = RawJob(source_id=src.id, external_id=f"r{i}", title=f"Job {i}",
+                   url=f"https://j/{i}")
+        db.session.add(r); raws.append(r)
+    db.session.flush()
+    matches = []
+    for r in raws:
+        m = JobMatch(raw_job_id=r.id, user_id=user.id, status='new', match_score=None)
+        db.session.add(m); matches.append(m)
+    db.session.commit()
+    ids = [m.id for m in matches]
+
+    fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
+                            tokens_in=10, tokens_out=10)
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post("/api/jobs/matches/score-bulk",
+                        json={"match_ids": ids}, headers=headers)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert len(body["scored"]) == 3
+    assert body["skipped_budget"] == []
+    assert body["errors"] == []
+
+
+def test_score_bulk_stops_at_budget(client, app, user_factory, auth_header):
+    """Budget mid-loop aufgebraucht: scored = N, skipped_budget = Rest."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    # 1 Call = ~5 cents (10000 in + 10000 out @ Haiku-Pricing).
+    # Budget=10 cents → nach 2 Calls ist Tagesbudget aufgebraucht, 3. wird skipped.
+    user.job_daily_budget_cents = 10
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    matches = []
+    for i in range(3):
+        r = RawJob(source_id=src.id, external_id=f"r{i}", title=f"Job {i}",
+                   url=f"https://j/{i}")
+        db.session.add(r); db.session.flush()
+        m = JobMatch(raw_job_id=r.id, user_id=user.id, status='new', match_score=None)
+        db.session.add(m); matches.append(m)
+    db.session.commit()
+    ids = [m.id for m in matches]
+
+    # High tokens → high cost → fast budget exhaustion
+    fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
+                            tokens_in=10000, tokens_out=10000)
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post("/api/jobs/matches/score-bulk",
+                        json={"match_ids": ids}, headers=headers)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert len(body["scored"]) >= 1
+    assert len(body["skipped_budget"]) >= 1
+    assert len(body["scored"]) + len(body["skipped_budget"]) == 3
+
+
+def test_score_bulk_handles_mixed_ownership(client, app, user_factory, auth_header):
+    """Match-IDs von anderem User landen in 'forbidden', kein 403 für ganzen Request."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    other = user_factory(email="other@example.com")
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Job", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+
+    m_mine = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    m_other = JobMatch(raw_job_id=raw.id, user_id=other.id, status='new', match_score=None)
+    db.session.add_all([m_mine, m_other]); db.session.commit()
+
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
+                            tokens_in=10, tokens_out=10)
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post("/api/jobs/matches/score-bulk",
+                        json={"match_ids": [m_mine.id, m_other.id]}, headers=headers)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert len(body["scored"]) == 1
+    assert m_other.id in body["forbidden"]
+
+
+def test_score_bulk_validates_input(client, app, auth_header):
+    """match_ids fehlt oder leer → 400."""
+    headers, _ = auth_header
+    r = client.post("/api/jobs/matches/score-bulk", json={}, headers=headers)
+    assert r.status_code == 400
+
+    r = client.post("/api/jobs/matches/score-bulk",
+                    json={"match_ids": []}, headers=headers)
+    assert r.status_code == 400
