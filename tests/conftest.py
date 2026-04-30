@@ -36,8 +36,16 @@ def db_session(app):
 
     Tests die direkt SQLAlchemy-Models persistieren wollen, ohne den
     Auth/HTTP-Layer zu durchlaufen, nutzen diese Fixture.
+
+    Rollt nach jedem Test alle uncommitted Transactions zurück und ruft
+    `session.remove()` auf. Da `app` function-scoped ist und die
+    in-memory-SQLite-DB pro Test neu erzeugt wird (`db.create_all` /
+    `db.drop_all` im `app`-Fixture), ergibt das eine garantiert saubere
+    Ausgangslage pro Test — unabhängig von Test-Reihenfolge.
     """
-    return db.session
+    yield db.session
+    db.session.rollback()
+    db.session.remove()
 
 
 @pytest.fixture

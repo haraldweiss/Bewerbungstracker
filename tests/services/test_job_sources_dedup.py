@@ -72,3 +72,20 @@ def test_deduplicate_preserves_order():
     ]
     result = deduplicate(jobs, existing_urls=set())
     assert [j.url for j in result] == ["https://j.de/1", "https://j.de/2"]
+
+
+def test_deduplicate_handles_empty_input():
+    """Leere Job-Liste → leeres Result."""
+    assert deduplicate([], existing_urls=set()) == []
+
+
+def test_deduplicate_skips_jobs_with_empty_url():
+    """Jobs ohne URL (None oder '') werden übersprungen."""
+    jobs = [
+        FetchedJob(external_id="a", title="T1", url=""),
+        FetchedJob(external_id="b", title="T2", url="https://j.de/2"),
+        FetchedJob(external_id="c", title="T3", url=None),
+    ]
+    result = deduplicate(jobs, existing_urls=set())
+    assert len(result) == 1
+    assert result[0].url == "https://j.de/2"
