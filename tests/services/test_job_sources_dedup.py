@@ -40,6 +40,26 @@ def test_get_existing_job_urls_skips_null_links(app, db_session):
     assert None not in urls
 
 
+def test_get_existing_job_urls_skips_soft_deleted_applications(app, db_session):
+    """Soft-deleted Applications dürfen NICHT als bekannt gelten — sonst
+    kommt ein versehentlich gelöschter Job nie wieder rein."""
+    user = User(id="u3", email="d@d.de", password_hash="x")
+    db_session.add(user)
+    db_session.add(Application(
+        user_id="u3", company="C", position="P",
+        link="https://job.example/deleted", deleted=True,
+    ))
+    db_session.add(Application(
+        user_id="u3", company="C2", position="P2",
+        link="https://job.example/active", deleted=False,
+    ))
+    db_session.commit()
+
+    urls = get_existing_job_urls()
+    assert "https://job.example/active" in urls
+    assert "https://job.example/deleted" not in urls
+
+
 def test_deduplicate_removes_in_batch_url_duplicates():
     """Dieselbe URL 2x in jobs-Liste → nur 1x im Result."""
     jobs = [

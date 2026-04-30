@@ -19,8 +19,12 @@ def get_existing_job_urls() -> set[str]:
     """
     # Loads all known URLs into memory. Acceptable for current scale (<10k jobs).
     # At higher scale, switch to per-URL EXISTS check or batched filtering.
+    # Soft-deleted Applications werden NICHT ausgeschlossen — sonst würde ein
+    # versehentlich gelöschter Job nie wieder neu importiert werden können.
     raw_urls = db.session.query(RawJob.url).all()
-    app_urls = db.session.query(Application.link).all()
+    app_urls = db.session.query(Application.link).filter(
+        Application.deleted == False  # noqa: E712 (SQLAlchemy braucht ==)
+    ).all()
     return {u[0] for u in raw_urls + app_urls if u[0]}
 
 
