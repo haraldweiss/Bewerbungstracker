@@ -2851,9 +2851,16 @@ const JobsView = (() => {
     }
 
     function renderBulkActionBar() {
-        // Task 8 implementiert die Floating Bar
+        const bar = document.getElementById('jobs-bulk-bar');
+        if (!bar) return;
         const count = state.selectedIds.size;
-        console.log(`[JobsView] Selection: ${count} matches selected`);
+        if (count === 0) {
+            bar.style.display = 'none';
+        } else {
+            bar.style.display = 'flex';
+            const counter = document.getElementById('jobs-bulk-count');
+            if (counter) counter.textContent = `${count} ausgewählt`;
+        }
     }
 
     async function fetchSources() {
@@ -3054,16 +3061,22 @@ const JobsView = (() => {
         const display = $('jobs-min-score-display');
         slider.addEventListener('input', e => { display.textContent = e.target.value; });
         slider.addEventListener('change', e => {
+            state.selectedIds.clear();
+            renderBulkActionBar();
             state.filters.minScore = parseInt(e.target.value, 10);
             state.offset = 0;
             fetchMatches();
         });
         $('jobs-status-filter').addEventListener('change', e => {
+            state.selectedIds.clear();
+            renderBulkActionBar();
             state.filters.status = e.target.value;
             state.offset = 0;
             fetchMatches();
         });
         $('jobs-source-filter').addEventListener('change', e => {
+            state.selectedIds.clear();
+            renderBulkActionBar();
             state.filters.sourceId = e.target.value || null;
             state.offset = 0;
             fetchMatches();
@@ -3073,6 +3086,8 @@ const JobsView = (() => {
             clearTimeout(searchTimer);
             const v = e.target.value.trim();
             searchTimer = setTimeout(() => {
+                state.selectedIds.clear();
+                renderBulkActionBar();
                 state.filters.q = v;
                 state.offset = 0;
                 fetchMatches();
@@ -3094,12 +3109,16 @@ const JobsView = (() => {
         refresh() { fetchSources(); fetchMatches(); updateBadge(); },
         nextPage() {
             if (state.offset + PAGE_SIZE < state.total) {
+                state.selectedIds.clear();
+                renderBulkActionBar();
                 state.offset += PAGE_SIZE;
                 fetchMatches();
             }
         },
         prevPage() {
             if (state.offset > 0) {
+                state.selectedIds.clear();
+                renderBulkActionBar();
                 state.offset = Math.max(0, state.offset - PAGE_SIZE);
                 fetchMatches();
             }
@@ -3163,6 +3182,84 @@ const JobsView = (() => {
             if (isChecked) state.selectedIds.add(id);
             else state.selectedIds.delete(id);
             renderBulkActionBar();
+        },
+        async bulkScore() {
+            const ids = Array.from(state.selectedIds);
+            if (ids.length === 0) return;
+            try {
+                const r = await Auth.fetch('/jobs/matches/score-bulk', {
+                    method: 'POST',
+                    body: JSON.stringify({ match_ids: ids }),
+                });
+                if (r) {
+                    const scoredCount = (r.scored || []).length;
+                    const skippedCount = (r.skipped_budget || []).length;
+                    const errCount = (r.errors || []).length;
+                    let msg = `${scoredCount} bewertet`;
+                    if (skippedCount > 0) msg += `, ${skippedCount} wegen Budget übersprungen`;
+                    if (errCount > 0) msg += `, ${errCount} mit Fehler`;
+                    if (typeof showToast === 'function') {
+                        showToast(msg, skippedCount + errCount > 0 ? 'warning' : 'success');
+                    } else {
+                        alert(msg);
+                    }
+                    JobsView.clearSelection();
+                    await fetchMatches();
+                }
+            } catch (e) {
+                if (typeof showToast === 'function') {
+                    showToast('Bulk-Bewertung fehlgeschlagen', 'error');
+                }
+            }
+        },
+        async bulkSeen() {
+            const ids = Array.from(state.selectedIds);
+            if (ids.length === 0) return;
+            try {
+                const r = await Auth.fetch('/jobs/matches/bulk', {
+                    method: 'PATCH',
+                    body: JSON.stringify({ match_ids: ids, status: 'seen' }),
+                });
+                if (r) {
+                    if (typeof showToast === 'function') {
+                        showToast(`${r.updated} verborgen`, 'success');
+                    }
+                    JobsView.clearSelection();
+                    await fetchMatches();
+                }
+            } catch (e) {
+                if (typeof showToast === 'function') {
+                    showToast('Bulk-Verbergen fehlgeschlagen', 'error');
+                }
+            }
+        },
+        async bulkDismiss() {
+            const ids = Array.from(state.selectedIds);
+            if (ids.length === 0) return;
+            if (!confirm(`${ids.length} Jobs verwerfen?`)) return;
+            try {
+                const r = await Auth.fetch('/jobs/matches/bulk', {
+                    method: 'PATCH',
+                    body: JSON.stringify({ match_ids: ids, status: 'dismissed' }),
+                });
+                if (r) {
+                    if (typeof showToast === 'function') {
+                        showToast(`${r.updated} verworfen`, 'success');
+                    }
+                    JobsView.clearSelection();
+                    await fetchMatches();
+                }
+            } catch (e) {
+                if (typeof showToast === 'function') {
+                    showToast('Bulk-Verwerfen fehlgeschlagen', 'error');
+                }
+            }
+        },
+        clearSelection() {
+            state.selectedIds.clear();
+            renderBulkActionBar();
+            // Re-render so checkboxes visually reset
+            fetchMatches();
         },
         updateBadge,
     };
@@ -6895,6 +6992,17 @@ document.addEventListener('DOMContentLoaded', () => {
 <script>
     // BackupClient is initialized by BackupManager in Settings
 </script>
+
+<div id="jobs-bulk-bar" style="position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);
+    display:none;background:var(--bg-card);border:1px solid var(--border);border-radius:999px;
+    padding:0.75rem 1.25rem;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;
+    align-items:center;gap:0.75rem">
+    <span id="jobs-bulk-count" style="font-weight:600">0 ausgewählt</span>
+    <button class="btn btn-primary btn-sm" onclick="JobsView.bulkScore()">🤖 Bewerten</button>
+    <button class="btn btn-secondary btn-sm" onclick="JobsView.bulkSeen()">👁 Verbergen</button>
+    <button class="btn btn-danger btn-sm" onclick="JobsView.bulkDismiss()">🗑️ Verwerfen</button>
+    <button class="btn btn-secondary btn-sm" onclick="JobsView.clearSelection()" title="Auswahl aufheben">✕</button>
+</div>
 
 </body>
 </html>
