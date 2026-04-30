@@ -771,3 +771,73 @@ def test_bulk_status_validates_input(client, app, auth_header):
     r = client.patch("/api/jobs/matches/bulk",
                      json={"match_ids": [1], "status": "invalid"}, headers=headers)
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# POST /api/jobs/matches/<id>/import (Claude-on-demand bei match_score=None)
+# ---------------------------------------------------------------------------
+
+def test_import_runs_claude_when_match_score_none(client, app, user_factory, auth_header):
+    """Import bei match_score=None → Claude wird gerufen, Score landet in DB + Notes."""
+    from unittest.mock import patch, MagicMock
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1",
+                 company="ACME", description="Python role")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 prefilter_score=42, match_score=None)
+    db.session.add(m); db.session.commit()
+
+    fake_result = MagicMock(score=88, reasoning="passt sehr gut",
+                            missing_skills=["docker"], tokens_in=20, tokens_out=20)
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post(f"/api/jobs/matches/{m.id}/import", headers=headers)
+
+    assert r.status_code == 201
+    body = r.get_json()
+    db.session.refresh(m)
+    assert m.match_score == 88
+    assert m.match_reasoning == "passt sehr gut"
+
+    app_obj = Application.query.get(body["application_id"])
+    assert "passt sehr gut" in app_obj.notes
+    assert "88" in app_obj.notes
+
+
+def test_import_skips_claude_when_budget_exhausted_but_creates_application(
+    client, app, user_factory, auth_header
+):
+    """Import bei Budget-Erschöpfung: kein Claude, aber Application wird trotzdem angelegt."""
+    headers, user = auth_header
+    user.cv_data_json = '{"cv": {"summary": "Dev"}}'
+    user.job_daily_budget_cents = 50
+    db.session.add(ApiCall(user_id=user.id, endpoint='/test', model='x',
+                           tokens_in=0, tokens_out=0, cost=1.00, key_owner='server'))
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1",
+                 company="ACME")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    db.session.add(m); db.session.commit()
+
+    from unittest.mock import patch, MagicMock
+    with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()):
+        r = client.post(f"/api/jobs/matches/{m.id}/import", headers=headers)
+
+    assert r.status_code == 201
+    body = r.get_json()
+    app_obj = Application.query.get(body["application_id"])
+    assert "Bewertung übersprungen" in app_obj.notes
+    db.session.refresh(m)
+    assert m.match_score is None  # nicht bewertet
+    assert m.status == "imported"  # Import trotzdem erfolgreich

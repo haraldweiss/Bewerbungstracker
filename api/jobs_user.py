@@ -231,11 +231,30 @@ def import_match(user, match_id: int):
     raw = RawJob.query.get(m.raw_job_id)
     src = JobSource.query.get(raw.source_id)
 
+    # NEU: Wenn noch nicht bewertet, Claude versuchen (mit Budget-Check)
+    budget_skipped = False
+    if m.match_score is None:
+        if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+            budget_skipped = True
+        else:
+            client = _get_anthropic_client()
+            if client is not None:
+                _run_claude_match_for(client, user, m)
+                # Wenn Helper False zurückgibt (Claude-Error), bleibt match_score None.
+                # Application wird trotzdem angelegt — kein Hard-Fail beim Import.
+
     score_str = f"{m.match_score:.0f}" if m.match_score is not None else "–"
+    if budget_skipped:
+        reasoning = "Bewertung übersprungen — Tagesbudget erschöpft"
+        missing_str = "–"
+    else:
+        reasoning = m.match_reasoning or "–"
+        missing_str = ', '.join(m.missing_skills) if m.missing_skills else '–'
+
     note_text = (
         f"Aus Job-Vorschlag importiert (Match-Score {score_str}).\n\n"
-        f"Begruendung: {m.match_reasoning or '–'}\n\n"
-        f"Fehlende Skills: {', '.join(m.missing_skills) if m.missing_skills else '–'}\n\n"
+        f"Begruendung: {reasoning}\n\n"
+        f"Fehlende Skills: {missing_str}\n\n"
         f"Original-Link: {raw.url}"
     )
 
