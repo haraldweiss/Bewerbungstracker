@@ -158,6 +158,7 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
         "match_score": m.match_score,
         "match_reasoning": m.match_reasoning,
         "missing_skills": m.missing_skills,
+        "prefilter_score": m.prefilter_score,
         "status": m.status,
         "notified_at": m.notified_at.isoformat() if m.notified_at else None,
         "imported_application_id": m.imported_application_id,

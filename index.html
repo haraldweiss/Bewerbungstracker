@@ -2776,6 +2776,7 @@ const JobsView = (() => {
         offset: 0,
         total: 0,
         sourcesCache: [],
+        selectedIds: new Set(),
     };
 
     function $(id) { return document.getElementById(id); }
@@ -2796,14 +2797,32 @@ const JobsView = (() => {
 
     function renderCard(m) {
         const r = m.raw_job || {};
-        const score = m.match_score != null ? m.match_score.toFixed(0) : '–';
         const date = r.posted_at ? new Date(r.posted_at).toLocaleDateString('de-DE') : '';
+        const isSelected = state.selectedIds.has(m.id);
+
+        const hasClaudeScore = m.match_score != null;
+        const score = hasClaudeScore ? m.match_score.toFixed(0)
+                                     : (m.prefilter_score != null ? m.prefilter_score.toFixed(0) : '–');
+        const scoreLabel = hasClaudeScore ? '' : 'Vor-Filter: ';
+        const scoreBadgeBg = hasClaudeScore ? 'var(--bg-card2)' : '#444';
+        const scoreEmoji = hasClaudeScore ? badge(m.match_score) : '⚪';
+
         const missing = (m.missing_skills || []).slice(0, 5).map(s => escapeHtml(s));
+
+        const evaluateBtn = hasClaudeScore ? '' : `
+            <button class="btn btn-primary btn-sm" onclick="JobsView.requestSingleScore(${m.id})">
+                🤖 Bewerten lassen
+            </button>`;
+
         return `
             <div class="card" style="margin-bottom:1rem;padding:1rem">
                 <div style="display:flex;align-items:flex-start;gap:0.75rem;flex-wrap:wrap">
-                    <span style="background:var(--bg-card2);padding:6px 12px;border-radius:999px;font-weight:600;font-size:1.05em">
-                        ${badge(m.match_score)} ${score}
+                    <input type="checkbox" class="job-bulk-checkbox" data-match-id="${m.id}"
+                           ${isSelected ? 'checked' : ''}
+                           onchange="JobsView.toggleSelection(${m.id}, this.checked)"
+                           style="margin-top:0.5rem;cursor:pointer">
+                    <span style="background:${scoreBadgeBg};padding:6px 12px;border-radius:999px;font-weight:600;font-size:1.05em">
+                        ${scoreEmoji} ${scoreLabel}${score}
                     </span>
                     <h3 style="margin:0;flex:1;min-width:240px;font-size:1.1em">${escapeHtml(r.title)}</h3>
                 </div>
@@ -2823,11 +2842,18 @@ const JobsView = (() => {
                 ` : ''}
                 <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap">
                     <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">🔗 Original</a>
+                    ${evaluateBtn}
                     <button class="btn btn-success btn-sm" onclick="JobsView.importMatch(${m.id})">📥 Übernehmen</button>
                     <button class="btn btn-secondary btn-sm" onclick="JobsView.markSeen(${m.id})">👁 Verbergen</button>
                     <button class="btn btn-danger btn-sm" onclick="JobsView.dismissMatch(${m.id})">🗑️ Verwerfen</button>
                 </div>
             </div>`;
+    }
+
+    function renderBulkActionBar() {
+        // Task 8 implementiert die Floating Bar
+        const count = state.selectedIds.size;
+        console.log(`[JobsView] Selection: ${count} matches selected`);
     }
 
     async function fetchSources() {
@@ -3111,6 +3137,32 @@ const JobsView = (() => {
                 });
                 fetchMatches();
             } catch (e) { alert('Fehler: ' + e.message); }
+        },
+        async requestSingleScore(id) {
+            try {
+                const r = await Auth.fetch(`/jobs/matches/${id}/score`, { method: 'POST' });
+                if (r && r.match_score != null) {
+                    if (typeof showToast === 'function') {
+                        showToast(`Bewertung erstellt: ${r.match_score.toFixed(0)}/100`, 'success');
+                    }
+                    await fetchMatches();
+                } else if (r && r.error) {
+                    if (typeof showToast === 'function') {
+                        showToast(r.error, 'warning');
+                    } else {
+                        alert(r.error);
+                    }
+                }
+            } catch (e) {
+                if (typeof showToast === 'function') {
+                    showToast('Bewertung fehlgeschlagen', 'error');
+                }
+            }
+        },
+        toggleSelection(id, isChecked) {
+            if (isChecked) state.selectedIds.add(id);
+            else state.selectedIds.delete(id);
+            renderBulkActionBar();
         },
         updateBadge,
     };
