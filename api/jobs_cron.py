@@ -25,12 +25,12 @@ jobs_cron_bp = Blueprint('jobs_cron', __name__, url_prefix='/api/jobs')
 # Tick-Limits
 MAX_NEW_JOBS_PER_TICK = 50
 MAX_PREFILTER_PER_TICK = 100
-# Score-Threshold nach Pre-Filter. Tuning-Hintergrund:
-# Bei Text-Blob-CVs (PDF/DOCX-Upload-Format) ist die Token-Verteilung
-# breiter als bei strukturierten Skill-Listen. Score 15-25 entspricht
-# typischerweise "passende Branche, einige Skill-Overlaps" und ist die
-# Schwelle ab der eine Claude-Bewertung sinnvoll wird.
-PREFILTER_DISMISS_THRESHOLD = 15
+# Score-Threshold ab dem ein Job auto-dismissed wird (NICHT mehr in 'new').
+# Sehr niedrig gehalten (5), damit der User mehr Vorschläge sieht und selbst
+# entscheiden kann — die ausführliche Claude-Bewertung läuft on-demand
+# (POST /matches/<id>/score) oder beim Auto-Cron für AUTO_CLAUDE_THRESHOLD.
+# Vorher: 15 — führte zu 600+ Auto-Dismisses bei breiten Adzuna-Suchen.
+PREFILTER_DISMISS_THRESHOLD = 5
 # Auto-Cron bewertet nur prefilter_score >= AUTO_CLAUDE_THRESHOLD.
 # User-getriggerte Bewertungen (single, bulk, import) ignorieren diesen Threshold.
 AUTO_CLAUDE_THRESHOLD = 50
