@@ -457,7 +457,16 @@
         </div>
     </div>
 
-    <p id="jobs-stats" style="color:var(--text-muted);font-size:0.85em;margin-bottom:1rem"></p>
+    <p id="jobs-stats" style="color:var(--text-muted);font-size:0.85em;margin-bottom:0.5rem"></p>
+
+    <!-- Quellen-Breakdown (zeigt, wie viele Vorschläge pro Quelle in der aktuellen Seite stecken) -->
+    <div id="jobs-source-stats" style="display:none;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.75rem;font-size:0.8em"></div>
+
+    <!-- Select-All Bar -->
+    <div id="jobs-select-all-bar" style="display:none;align-items:center;gap:0.5rem;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:var(--bg-card2);border-radius:6px;font-size:0.88em">
+        <input type="checkbox" id="jobs-select-all" style="width:1.15em;height:1.15em;cursor:pointer">
+        <label for="jobs-select-all" style="cursor:pointer;color:var(--text-muted)">Alle auf dieser Seite auswählen — dann unten Bulk-Aktion (🤖 Bewerten / 👁 Verbergen / 🗑️ Verwerfen) wählen</label>
+    </div>
 
     <div id="jobs-list">
         <p style="color:var(--text-muted);text-align:center;padding:2rem">Lade Vorschläge…</p>
@@ -2820,7 +2829,8 @@ const JobsView = (() => {
                     <input type="checkbox" class="job-bulk-checkbox" data-match-id="${m.id}"
                            ${isSelected ? 'checked' : ''}
                            onchange="JobsView.toggleSelection(${m.id}, this.checked)"
-                           style="margin-top:0.5rem;cursor:pointer">
+                           title="Für Bulk-Aktion auswählen"
+                           style="margin-top:0.5rem;width:1.3em;height:1.3em;cursor:pointer;accent-color:var(--primary)">
                     <span style="background:${scoreBadgeBg};padding:6px 12px;border-radius:999px;font-weight:600;font-size:1.05em">
                         ${scoreEmoji} ${scoreLabel}${score}
                     </span>
@@ -2898,12 +2908,71 @@ const JobsView = (() => {
                 container.innerHTML = matches.map(renderCard).join('');
             }
             $('jobs-stats').textContent = `${matches.length} von ${state.total} Vorschlägen (Status: ${state.filters.status}, min. Score: ${state.filters.minScore}${state.filters.q ? ', Suche: "' + state.filters.q + '"' : ''})`;
+            renderSourceStats(matches);
+            renderSelectAllBar(matches);
             renderPagination();
         } catch (e) {
             $('jobs-list').innerHTML = `<p style="color:var(--danger);text-align:center;padding:2rem">
                 Fehler beim Laden: ${escapeHtml(e.message)}
             </p>`;
         }
+    }
+
+    function renderSourceStats(matches) {
+        const box = $('jobs-source-stats');
+        if (!box) return;
+        if (!matches || matches.length === 0) {
+            box.style.display = 'none';
+            box.innerHTML = '';
+            return;
+        }
+        const counts = {};
+        const withClaude = {};
+        matches.forEach(m => {
+            const name = (m.raw_job && m.raw_job.source_name) || 'unbekannt';
+            counts[name] = (counts[name] || 0) + 1;
+            if (m.match_score != null) {
+                withClaude[name] = (withClaude[name] || 0) + 1;
+            }
+        });
+        const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        const totalClaude = Object.values(withClaude).reduce((s, n) => s + n, 0);
+        const chips = entries.map(([src, cnt]) => {
+            const ki = withClaude[src] || 0;
+            const kiBadge = ki > 0 ? `<span style="opacity:0.75;margin-left:0.25rem">· 🤖 ${ki}</span>` : '';
+            return `<span style="background:var(--bg-card2);border:1px solid var(--border);padding:0.25rem 0.6rem;border-radius:999px;color:var(--text)">${escapeHtml(src)} <strong>${cnt}</strong>${kiBadge}</span>`;
+        }).join('');
+        const summary = `<span style="color:var(--text-muted);align-self:center;margin-right:0.25rem">📊 Quellen-Breakdown (Seite):</span>`;
+        const claudeNote = totalClaude > 0
+            ? `<span style="color:var(--text-muted);align-self:center;margin-left:auto;font-size:0.92em">🤖 = mit KI-Bewertung (${totalClaude}/${matches.length})</span>`
+            : `<span style="color:var(--text-muted);align-self:center;margin-left:auto;font-size:0.92em">Keine KI-Bewertung — Cards einzeln oder bulk bewerten lassen</span>`;
+        box.innerHTML = summary + chips + claudeNote;
+        box.style.display = 'flex';
+    }
+
+    function renderSelectAllBar(matches) {
+        const bar = $('jobs-select-all-bar');
+        const cb = $('jobs-select-all');
+        if (!bar || !cb) return;
+        if (!matches || matches.length === 0) {
+            bar.style.display = 'none';
+            cb.checked = false;
+            return;
+        }
+        bar.style.display = 'flex';
+        const allSelected = matches.every(m => state.selectedIds.has(m.id));
+        cb.checked = allSelected;
+        cb.onchange = (e) => {
+            if (e.target.checked) {
+                matches.forEach(m => state.selectedIds.add(m.id));
+            } else {
+                matches.forEach(m => state.selectedIds.delete(m.id));
+            }
+            // Re-render cards mit aktualisiertem Checkbox-Status
+            const container = $('jobs-list');
+            container.innerHTML = matches.map(renderCard).join('');
+            renderBulkActionBar();
+        };
     }
 
     function renderPagination() {
