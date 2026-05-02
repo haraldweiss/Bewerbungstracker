@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# ===============================================================================
+# Git post-receive Hook — wird vom Bare-Repo nach jedem Push ausgeführt
+#
+# Verhalten:
+#   1. Liest die gepushten Refs von stdin (oldrev newrev refname)
+#   2. Reagiert nur auf master/main
+#   3. Atomarer Checkout in den Working-Tree
+#   4. Wenn requirements.txt geändert: pip install --upgrade
+#   5. Wenn alembic-Migrations dazugekommen: alembic upgrade head
+#   6. Restart des systemd-Services
+#   7. Log nach @@DEPLOY_LOG@@
+#
+# Lock verhindert parallele Deploys.
+# ===============================================================================
+set -euo pipefail
+
+WORK_TREE="@@WORK_TREE@@"
+GIT_DIR="@@BARE_REPO_DIR@@"
+SERVICE_NAME="@@SERVICE_NAME@@"
+DEPLOY_LOG="@@DEPLOY_LOG@@"
+
+LOCK_FILE="/var/lock/bewerbungen-deploy.lock"
+DEPLOY_BRANCH_DEFAULT="master"
+
+ts() { date '+%Y-%m-%d %H:%M:%S'; }
+log() { echo "[$(ts)] $*" | tee -a "$DEPLOY_LOG" ; }
+
+# Lock — wenn parallel gepusht wird, abbrechen statt zu rennen
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    log "⚠ Anderer Deploy läuft — abgebrochen."
+    exit 1
+fi
+
+# stdin: '<oldrev> <newrev> <refname>' pro Push, ggf. mehrfach (push --all)
+while read -r oldrev newrev refname; do
+    branch="${refname#refs/heads/}"
+    if [[ "$branch" != "$DEPLOY_BRANCH_DEFAULT" && "$branch" != "main" ]]; then
+        log "ℹ Push auf '$branch' ignoriert (nur master/main wird deployed)."
+        continue
+    fi
+
+    log "════ Deploy startet: $branch  $oldrev..$newrev ════"
+
+    # 1. Atomarer Checkout
+    log "→ Checkout in $WORK_TREE"
+    git --work-tree="$WORK_TREE" --git-dir="$GIT_DIR" checkout -f "$newrev" 2>&1 | tee -a "$DEPLOY_LOG"
+
+    cd "$WORK_TREE"
+
+    # 2. Geänderte Dateien zwischen alt und neu auflisten
+    if [[ "$oldrev" =~ ^0+$ ]]; then
+        # Erster Push — wir betrachten alle Files als neu
+        CHANGED=$(git --git-dir="$GIT_DIR" ls-tree -r --name-only "$newrev")
+    else
+        CHANGED=$(git --git-dir="$GIT_DIR" diff --name-only "$oldrev" "$newrev" || true)
+    fi
+
+    # 3. requirements.txt? → pip install
+    if echo "$CHANGED" | grep -qE '^requirements\.txt$'; then
+        log "→ requirements.txt geändert → venv pip install"
+        if [[ -x "$WORK_TREE/venv/bin/pip" ]]; then
+            "$WORK_TREE/venv/bin/pip" install --upgrade pip 2>&1 | tee -a "$DEPLOY_LOG"
+            "$WORK_TREE/venv/bin/pip" install -r "$WORK_TREE/requirements.txt" 2>&1 | tee -a "$DEPLOY_LOG"
+        else
+            log "⚠ kein venv unter $WORK_TREE/venv — pip install übersprungen, bitte manuell prüfen"
+        fi
+    fi
+
+    # 4. neue alembic-Migration? → upgrade head
+    if echo "$CHANGED" | grep -qE '^alembic/versions/.*\.py$'; then
+        log "→ neue alembic-Migration erkannt → alembic upgrade head"
+        if [[ -x "$WORK_TREE/venv/bin/python" ]]; then
+            (cd "$WORK_TREE" && "$WORK_TREE/venv/bin/python" -m alembic upgrade head) 2>&1 | tee -a "$DEPLOY_LOG"
+        else
+            log "⚠ kein venv-Python — alembic-Upgrade übersprungen, bitte manuell prüfen"
+        fi
+    fi
+
+    # 5. Systemd Restart
+    log "→ systemctl restart $SERVICE_NAME"
+    if systemctl restart "$SERVICE_NAME" 2>&1 | tee -a "$DEPLOY_LOG"; then
+        log "✓ Service neu gestartet"
+    else
+        log "❌ Restart fehlgeschlagen — bitte 'journalctl -u $SERVICE_NAME -e' prüfen"
+        exit 1
+    fi
+
+    # 6. Smoke-Check: ist der Service nach 2s noch active?
+    sleep 2
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        log "✓ $SERVICE_NAME aktiv. Deploy fertig."
+    else
+        log "❌ $SERVICE_NAME nicht aktiv nach Restart — Rollback empfohlen."
+        log "   Rollback: git --work-tree=$WORK_TREE --git-dir=$GIT_DIR checkout -f $oldrev && systemctl restart $SERVICE_NAME"
+        exit 1
+    fi
+done
