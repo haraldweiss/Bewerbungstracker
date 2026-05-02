@@ -175,6 +175,7 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
 @token_required
 def list_matches(user):
     min_score = request.args.get('min_score', type=float, default=0)
+    min_prefilter_score = request.args.get('min_prefilter_score', type=float, default=0)
     status_filter = request.args.getlist('status') or ['new']
     source_id = request.args.get('source_id', type=int)
     q_text = (request.args.get('q') or '').strip().lower()
@@ -189,6 +190,8 @@ def list_matches(user):
 
     if min_score > 0:
         query = query.filter(JobMatch.match_score >= min_score)
+    if min_prefilter_score > 0:
+        query = query.filter(JobMatch.prefilter_score >= min_prefilter_score)
     if source_id:
         query = query.filter(JobSource.id == source_id)
     if q_text:

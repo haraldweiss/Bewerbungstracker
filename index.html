@@ -432,10 +432,15 @@
     <!-- Filter-Bar -->
     <div class="card" style="margin-bottom:1rem;padding:0.75rem">
         <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
-            <label style="font-size:0.85em;color:var(--text-muted)">
-                Min. Score:
+            <label style="font-size:0.85em;color:var(--text-muted)" title="Min. KI-Score (match_score). Greift nur, wenn Claude die Stelle bereits bewertet hat.">
+                Min. KI-Score:
                 <input type="range" id="jobs-min-score" min="0" max="100" value="0" style="vertical-align:middle">
                 <span id="jobs-min-score-display" style="display:inline-block;min-width:1.5em">0</span>
+            </label>
+            <label style="font-size:0.85em;color:var(--text-muted)" title="Min. Vor-Filter-Score (Keyword-/Heuristik-Match aus dem Crawler). Greift auch ohne KI-Bewertung.">
+                Min. Vor-Filter:
+                <input type="range" id="jobs-min-prefilter-score" min="0" max="100" value="0" style="vertical-align:middle">
+                <span id="jobs-min-prefilter-score-display" style="display:inline-block;min-width:1.5em">0</span>
             </label>
             <label style="font-size:0.85em;color:var(--text-muted)">
                 Status:
@@ -2781,7 +2786,7 @@ const JobsView = (() => {
     const PAGE_SIZE = 25;
     const state = {
         initialized: false,
-        filters: { minScore: 0, status: 'new', sourceId: null, q: '' },
+        filters: { minScore: 0, minPrefilterScore: 0, status: 'new', sourceId: null, q: '' },
         offset: 0,
         total: 0,
         sourcesCache: [],
@@ -2892,6 +2897,7 @@ const JobsView = (() => {
     async function fetchMatches() {
         const params = new URLSearchParams();
         params.set('min_score', state.filters.minScore);
+        if (state.filters.minPrefilterScore > 0) params.set('min_prefilter_score', state.filters.minPrefilterScore);
         params.set('status', state.filters.status);
         if (state.filters.sourceId) params.set('source_id', state.filters.sourceId);
         if (state.filters.q) params.set('q', state.filters.q);
@@ -2907,7 +2913,10 @@ const JobsView = (() => {
             } else {
                 container.innerHTML = matches.map(renderCard).join('');
             }
-            $('jobs-stats').textContent = `${matches.length} von ${state.total} Vorschlägen (Status: ${state.filters.status}, min. Score: ${state.filters.minScore}${state.filters.q ? ', Suche: "' + state.filters.q + '"' : ''})`;
+            const filterParts = [`Status: ${state.filters.status}`, `min. KI: ${state.filters.minScore}`];
+            if (state.filters.minPrefilterScore > 0) filterParts.push(`min. Vor-Filter: ${state.filters.minPrefilterScore}`);
+            if (state.filters.q) filterParts.push(`Suche: "${state.filters.q}"`);
+            $('jobs-stats').textContent = `${matches.length} von ${state.total} Vorschlägen (${filterParts.join(', ')})`;
             renderSourceStats(matches);
             renderSelectAllBar(matches);
             renderPagination();
@@ -2986,11 +2995,12 @@ const JobsView = (() => {
 
     function renderEmptyState() {
         // Wenn Filter aktiv sind: einfacher Hinweis (kein Onboarding nötig).
-        const hasActiveFilter = state.filters.minScore > 0 || state.filters.sourceId
-            || state.filters.q || state.filters.status !== 'new';
+        const hasActiveFilter = state.filters.minScore > 0 || state.filters.minPrefilterScore > 0
+            || state.filters.sourceId || state.filters.q || state.filters.status !== 'new';
         if (hasActiveFilter) {
             const desc = [];
-            if (state.filters.minScore > 0) desc.push(`min. Score ${state.filters.minScore}`);
+            if (state.filters.minScore > 0) desc.push(`min. KI-Score ${state.filters.minScore}`);
+            if (state.filters.minPrefilterScore > 0) desc.push(`min. Vor-Filter ${state.filters.minPrefilterScore}`);
             if (state.filters.sourceId) desc.push('einer bestimmten Quelle');
             if (state.filters.q) desc.push(`Suchbegriff "${state.filters.q}"`);
             return `<p style="color:var(--text-muted);text-align:center;padding:2rem">
@@ -3136,6 +3146,18 @@ const JobsView = (() => {
             state.offset = 0;
             fetchMatches();
         });
+        const pfSlider = $('jobs-min-prefilter-score');
+        const pfDisplay = $('jobs-min-prefilter-score-display');
+        if (pfSlider && pfDisplay) {
+            pfSlider.addEventListener('input', e => { pfDisplay.textContent = e.target.value; });
+            pfSlider.addEventListener('change', e => {
+                state.selectedIds.clear();
+                renderBulkActionBar();
+                state.filters.minPrefilterScore = parseInt(e.target.value, 10);
+                state.offset = 0;
+                fetchMatches();
+            });
+        }
         $('jobs-status-filter').addEventListener('change', e => {
             state.selectedIds.clear();
             renderBulkActionBar();
