@@ -43,38 +43,43 @@ while read -r oldrev newrev refname; do
 
     log "════ Deploy startet: $branch  $oldrev..$newrev ════"
 
+    IS_INITIAL=0
+    if [[ "$oldrev" =~ ^0+$ ]]; then
+        IS_INITIAL=1
+    fi
+
     # 1. Atomarer Checkout
     log "→ Checkout in $WORK_TREE"
     git --work-tree="$WORK_TREE" --git-dir="$GIT_DIR" checkout -f "$newrev" 2>&1 | tee -a "$DEPLOY_LOG"
 
     cd "$WORK_TREE"
 
-    # 2. Geänderte Dateien zwischen alt und neu auflisten
-    if [[ "$oldrev" =~ ^0+$ ]]; then
-        # Erster Push — wir betrachten alle Files als neu
-        CHANGED=$(git --git-dir="$GIT_DIR" ls-tree -r --name-only "$newrev")
+    if [[ "$IS_INITIAL" -eq 1 ]]; then
+        # Beim Initial-Push gehen wir davon aus, dass venv + alembic-Schema bereits
+        # via DEPLOYMENT.md eingerichtet wurden — kein pip/alembic, nur Service-Restart.
+        log "ℹ Initial-Push erkannt — pip/alembic werden übersprungen (Working-Tree gilt als bereits eingerichtet)."
     else
         CHANGED=$(git --git-dir="$GIT_DIR" diff --name-only "$oldrev" "$newrev" || true)
-    fi
 
-    # 3. requirements.txt? → pip install
-    if echo "$CHANGED" | grep -qE '^requirements\.txt$'; then
-        log "→ requirements.txt geändert → venv pip install"
-        if [[ -x "$WORK_TREE/venv/bin/pip" ]]; then
-            "$WORK_TREE/venv/bin/pip" install --upgrade pip 2>&1 | tee -a "$DEPLOY_LOG"
-            "$WORK_TREE/venv/bin/pip" install -r "$WORK_TREE/requirements.txt" 2>&1 | tee -a "$DEPLOY_LOG"
-        else
-            log "⚠ kein venv unter $WORK_TREE/venv — pip install übersprungen, bitte manuell prüfen"
+        # 3. requirements.txt? → pip install
+        if echo "$CHANGED" | grep -qE '^requirements\.txt$'; then
+            log "→ requirements.txt geändert → venv pip install"
+            if [[ -x "$WORK_TREE/venv/bin/pip" ]]; then
+                "$WORK_TREE/venv/bin/pip" install --upgrade pip 2>&1 | tee -a "$DEPLOY_LOG"
+                "$WORK_TREE/venv/bin/pip" install -r "$WORK_TREE/requirements.txt" 2>&1 | tee -a "$DEPLOY_LOG"
+            else
+                log "⚠ kein venv unter $WORK_TREE/venv — pip install übersprungen, bitte manuell prüfen"
+            fi
         fi
-    fi
 
-    # 4. neue alembic-Migration? → upgrade head
-    if echo "$CHANGED" | grep -qE '^alembic/versions/.*\.py$'; then
-        log "→ neue alembic-Migration erkannt → alembic upgrade head"
-        if [[ -x "$WORK_TREE/venv/bin/python" ]]; then
-            (cd "$WORK_TREE" && "$WORK_TREE/venv/bin/python" -m alembic upgrade head) 2>&1 | tee -a "$DEPLOY_LOG"
-        else
-            log "⚠ kein venv-Python — alembic-Upgrade übersprungen, bitte manuell prüfen"
+        # 4. neue alembic-Migration? → upgrade head
+        if echo "$CHANGED" | grep -qE '^alembic/versions/.*\.py$'; then
+            log "→ neue alembic-Migration erkannt → alembic upgrade head"
+            if [[ -x "$WORK_TREE/venv/bin/alembic" ]]; then
+                (cd "$WORK_TREE" && "$WORK_TREE/venv/bin/alembic" upgrade head) 2>&1 | tee -a "$DEPLOY_LOG"
+            else
+                log "⚠ venv/bin/alembic fehlt — Upgrade übersprungen, bitte manuell prüfen"
+            fi
         fi
     fi
 
