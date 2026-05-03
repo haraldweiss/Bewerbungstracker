@@ -167,3 +167,7 @@ export CLAUDE_DEFAULT_MODEL=claude-haiku-4-5-20251001
 ### 📞 Support
 
 For issues or feature requests: See [GETTING_STARTED.md](docs/GETTING_STARTED.md) for troubleshooting
+
+---
+## 🌐 More on wolfinisoftware.de
+[Visit **wolfinisoftware.de**](https://www.wolfinisoftware.de/) for more news, projects, tools & resources.
