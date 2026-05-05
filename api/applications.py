@@ -4,6 +4,7 @@ from models import Application, ApplicationStatus
 from database import db
 from datetime import datetime
 from services.backup_service import BackupService, BackupKeyUnavailable
+import threading
 
 apps_bp = Blueprint('applications', __name__, url_prefix='/api/applications')
 
@@ -17,15 +18,25 @@ WRITABLE_FIELDS = {
 
 
 def _safe_auto_backup(user) -> None:
-    """Best-effort auto-Backup. Bei KeyCache-Miss (z.B. nach Worker-Neustart)
-    wird das Backup übersprungen, statt den CRUD-Request zu blockieren.
+    """Fire-and-forget auto-Backup im Background-Thread.
+
+    Blockiert den Request NICHT. Bei KeyCache-Miss wird Backup übersprungen
+    (DEK wird beim nächsten Login neu geladen).
     """
-    try:
-        BackupService.create_backup(user, backup_type='automatic')
-    except BackupKeyUnavailable:
-        current_app.logger.warning(
-            "Auto-Backup übersprungen für user=%s – DEK nicht gecached", user.id
-        )
+    def _do_backup():
+        try:
+            BackupService.create_backup(user, backup_type='automatic')
+        except BackupKeyUnavailable:
+            current_app.logger.warning(
+                "Auto-Backup übersprungen für user=%s – DEK nicht gecached", user.id
+            )
+        except Exception as e:
+            current_app.logger.error(
+                "Auto-Backup Fehler für user=%s: %s", user.id, str(e)
+            )
+
+    thread = threading.Thread(target=_do_backup, daemon=True)
+    thread.start()
 
 
 def _serialize(app: Application) -> dict:
