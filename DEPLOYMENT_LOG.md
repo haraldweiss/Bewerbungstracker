@@ -1,6 +1,21 @@
 # Deployment & Incident Log
 
-## 2026-05-05: CDN-Fehler + Virtual Host Config
+## 2026-05-05: CDN-Fehler + Virtual Host Config + DEK-Cache Blockierung
+
+### Root Cause für sporadische 503er: DEK-Cache-Miss nach Worker-Restart
+
+**Symptom:** Worker-Timeouts nach Restart (05:53, 06:52, 06:54)
+- Auto-Backup versuchte synchron im Request zu laufen
+- Bei DEK-Cache-Miss (nach Restart) blockierte das 60+ Sekunden
+- Worker-Timeout → SIGKILL → 503
+
+**Fix:** 
+- Auto-Backup zu Fire-and-Forget Threading gemacht
+- Request blockiert nicht mehr
+- Backup läuft im Background
+- Commit: d5d385f
+
+---
 
 ### Incident 1: Reload-Loop bei Jobvorschläge
 
