@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """
 Claude API Integration Blueprint
 Provides endpoints for email analysis, application matching, and usage tracking.

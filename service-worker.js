@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Service Worker for Bewerbungs-Tracker
  * Enables offline support, caching, and background sync

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Task Complexity Analysis Module
  * Analyzes prompts to determine optimal model selection

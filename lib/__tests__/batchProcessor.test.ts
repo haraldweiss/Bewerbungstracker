@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Unit Tests for Batch Processor
  * Tests batch submission, status polling, result retrieval, and recommendations

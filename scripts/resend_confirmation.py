@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """
 Resend Confirmation Email für einen User, der seine Bestätigungs-Mail nicht
 bekommen hat (z.B. weil MAIL_* zum Anlegezeitpunkt nicht konfiguriert war).

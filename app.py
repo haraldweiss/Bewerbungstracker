@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """
 Bewerbungstracker - Modernized Flask App with SQLAlchemy & JWT Auth
 Factory pattern for Flask application creation

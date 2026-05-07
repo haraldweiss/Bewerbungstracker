@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 from unittest.mock import MagicMock, patch
 from services.job_matching.claude_matcher import match_job_with_claude, MatchResult
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Unit Tests for ClaudeModelRouter
  * Tests model selection, cost calculation, and routing decisions

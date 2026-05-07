@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """JSearch (RapidAPI) Client für Multi-Source Job Aggregation.
 
 Free-Tier: 2500 Requests/Monat.

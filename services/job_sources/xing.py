@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Xing Job-Source Adapter (RSS + JSearch Aggregator)."""
 from __future__ import annotations
 import logging

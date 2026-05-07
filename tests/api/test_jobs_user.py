@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 import pytest
 import json
 from unittest.mock import patch, MagicMock

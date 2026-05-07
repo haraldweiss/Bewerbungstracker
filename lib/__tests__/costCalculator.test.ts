@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Unit Tests for CostCalculator
  * Tests cost estimation, logging, and budget tracking

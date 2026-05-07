@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Add envelope encryption columns to users
 
 Revision ID: a1b2c3d4e5f6

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 from flask import Blueprint, request, jsonify
 from api.auth import token_required
 from models import Email, Application

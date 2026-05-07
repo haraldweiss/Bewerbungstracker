@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """
 Direkter Test der IONOS SMTP/IMAP Verbindungen
 (ohne HTTP-Server - für schnelle Diagnose)

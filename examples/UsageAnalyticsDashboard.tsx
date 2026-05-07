@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Usage Analytics Dashboard Component
  * React component for displaying Claude API usage statistics and cost analytics

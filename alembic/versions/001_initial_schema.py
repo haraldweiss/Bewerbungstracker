@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Initial schema: users, applications, emails, api_calls
 
 Revision ID: 001
