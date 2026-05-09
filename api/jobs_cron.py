@@ -360,9 +360,14 @@ def _parse_match_response(text: str, tokens_in: int, tokens_out: int) -> MatchRe
     """
     data = _extract_first_json_object(text or '')
     if data is None:
-        # Snippet ins Log damit man später debuggen kann was der Provider lieferte
-        snippet = (text or '')[:300].replace('\n', ' ⏎ ')
-        logger.warning(f'match-response parse failed; raw snippet: {snippet!r}')
+        # Snippet ins Log damit man später debuggen kann was der Provider lieferte.
+        # 2000 chars: typische CV-Match-Antworten sind 300-800 chars,
+        # Reasoning-Modelle mit <think> kommen auf 2000+ chars
+        snippet = (text or '')[:2000].replace('\n', ' ⏎ ')
+        logger.warning(
+            f'match-response parse failed (text-len={len(text or "")}, '
+            f'first-2000-chars): {snippet!r}'
+        )
         return MatchResult(
             score=0,
             reasoning="Bewertung fehlgeschlagen (ungültiges JSON von Provider).",
@@ -418,8 +423,12 @@ def _is_reasoning_model(model: str) -> bool:
 
 
 def _max_tokens_for(model: str, base: int = 800) -> int:
-    """Reasoning-Modelle bekommen 4x das Token-Budget für ihren Thinking-Block."""
-    return base * 4 if _is_reasoning_model(model) else base
+    """Reasoning-Modelle bekommen 8x Budget für Thinking-Block + längere Begründung.
+
+    Empirisch: Qwen3 / DeepSeek-R1 verbrauchen oft 1500-2500 Tokens für <think>,
+    plus 500-1000 für die eigentliche Antwort. 6400 lässt genug Puffer.
+    """
+    return base * 8 if _is_reasoning_model(model) else base
 
 
 def _strip_thinking_block(text: str) -> str:
