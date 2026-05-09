@@ -21,7 +21,7 @@ class ProviderConfig:
     PROVIDERS = {
         CLAUDE: {
             'name': 'Claude (Anthropic)',
-            'api_key_env': 'CLAUDE_API_KEY',
+            'api_key_env': 'ANTHROPIC_API_KEY',
             'models': ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
             'default_model': 'claude-haiku-4-5-20251001',
         },
@@ -111,9 +111,9 @@ class ProviderFactory:
         if provider == ProviderConfig.CLAUDE:
             try:
                 from anthropic import Anthropic
-                api_key = os.getenv('CLAUDE_API_KEY')
+                api_key = os.getenv('ANTHROPIC_API_KEY')
                 if not api_key:
-                    raise ValueError('CLAUDE_API_KEY nicht gesetzt')
+                    raise ValueError('ANTHROPIC_API_KEY nicht gesetzt')
                 return Anthropic(api_key=api_key)
             except ImportError:
                 raise ImportError('anthropic package nicht installiert')
@@ -133,7 +133,7 @@ class ProviderFactory:
         """Liste aller verfügbaren Provider mit Status"""
         providers = []
 
-        if os.getenv('CLAUDE_API_KEY'):
+        if os.getenv('ANTHROPIC_API_KEY'):
             providers.append({
                 'id': ProviderConfig.CLAUDE,
                 'name': ProviderConfig.PROVIDERS[ProviderConfig.CLAUDE]['name'],
@@ -163,6 +163,6 @@ class ProviderFactory:
     @staticmethod
     def get_default_provider() -> str:
         """Bestimmt Standard-Provider (Claude, sonst Ollama)"""
-        if os.getenv('CLAUDE_API_KEY'):
+        if os.getenv('ANTHROPIC_API_KEY'):
             return ProviderConfig.CLAUDE
         return ProviderConfig.OLLAMA
