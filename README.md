@@ -16,8 +16,9 @@ Ein datenschutzfreundliches Tool zur Verwaltung von Bewerbungen mit automatische
 - 🔔 **Benachrichtigungen** - Desktop & Browser Push-Benachrichtigungen
 - 🎯 **Bewerbungsverfolgung** - Status, Datum, Gehalt, Notizen, Ghosting-Erkennung
 - 🗂️ **Kanban-Board** - Visuelle Übersicht nach Status
-- 📋 **CV Vergleich** - Vergleiche deine CV mit Bewerbungsanforderungen
-- 🔍 **Job-Discovery** - Automatische Stellensuche aus RSS-Feeds + Bundesagentur/Adzuna/Arbeitnow APIs mit Claude-basiertem Match-Score gegen deinen CV. Inkl. Quellen-Verwaltung, Pagination, Volltextsuche, Filter (Remote/PLZ/Anstellungsart), Browser-Push für Top-Matches und Onboarding-Checkliste
+- 📋 **CV Vergleich** - Vergleiche deine CV mit Bewerbungsanforderungen — direkte Analyse via konfiguriertem KI-Provider (mit Fallback) oder Copy-Paste an Web-Plattformen
+- 🤖 **Multi-Provider AI** - Claude (Anthropic), lokales Ollama, ChatGPT/OpenAI, Mammouth, eigener OpenAI-kompatibler Endpoint. Per-User-Konfiguration mit verschlüsselten API-Keys. Optional: Fallback-Provider und Queue-Persistenz bei Nicht-Erreichbarkeit (z.B. lokales Ollama)
+- 🔍 **Job-Discovery** - Automatische Stellensuche aus RSS-Feeds + Bundesagentur/Adzuna/Arbeitnow APIs mit KI-Match-Score gegen deinen CV (Provider frei wählbar). Inkl. Quellen-Verwaltung, Pagination, Volltextsuche, Filter (Remote/PLZ/Anstellungsart), Browser-Push für Top-Matches und Onboarding-Checkliste
 - 👤 **Multi-User mit Admin-Approval** - User registrieren sich selbst, Admin schaltet Konten + Job-Discovery frei
 - 🔐 **Envelope-Encryption** - Pro-User-DEK + KEK aus Passwort, Backups bleiben bei Passwort-Reset entschlüsselbar
 - 🌙 **Dark/Light Mode** - Responsive Design für alle Geräte
@@ -37,14 +38,25 @@ Ein datenschutzfreundliches Tool zur Verwaltung von Bewerbungen mit automatische
 python scripts/migrate_job_discovery.py     # DB-Schema
 python scripts/seed_job_sources.py          # 3 globale Default-Quellen
 
-# ENV-Vars
+# ENV-Vars (Pflicht)
 export JOB_CRON_TOKEN=<random-secret-32+chars>
 export ANTHROPIC_API_KEY=<dein-key>
 export CLAUDE_DEFAULT_MODEL=claude-haiku-4-5-20251001
 
+# Optional: zentralen ai-provider-service nutzen (Multi-Provider + Fallback + Queue)
+# Wenn gesetzt, werden alle KI-Calls dorthin delegiert.
+export AI_PROVIDER_SERVICE_URL=http://127.0.0.1:8767
+export AI_PROVIDER_SERVICE_TOKEN=<service-token>
+
 # Cron einrichten (entweder system-cron oder cron-job.org)
 # 5 Endpoints: /api/jobs/{crawl-source,prefilter,claude-match,notify,cleanup}
 ```
+
+**Optional: ai-provider-service** — separates Repo, läuft als systemd-Unit auf
+Port 8767 und kapselt alle Provider hinter einer einheitlichen REST-API.
+Vorteile: zentrale API-Key-Verwaltung, automatischer Fallback, Queue-Persistenz
+bei lokalen Providern (z.B. Ollama auf Mac via autossh-Reverse-Tunnel).
+Setup-Anleitung im jeweiligen Repo.
 
 ### 📚 Dokumentation
 
@@ -64,10 +76,10 @@ export CLAUDE_DEFAULT_MODEL=claude-haiku-4-5-20251001
 ### 🔧 Technologie
 
 - **Frontend:** Vanilla JavaScript, HTML5, CSS3 (keine Frameworks), PWA mit Service-Worker
-- **Backend:** Python 3 (Flask) + SQLite + JWT-Auth
+- **Backend:** Python 3.12 (Flask) + SQLite + JWT-Auth
 - **Job-Pipeline:** 5 Cron-Stages (crawl → prefilter → claude-match → notify → cleanup), idempotent + Token-geschützt
 - **Source-Adapter:** RSS (`feedparser`), Adzuna-API, Bundesagentur Jobsuche-API (mit parallel Detail-Fetch), Arbeitnow-API
-- **AI:** Anthropic Claude SDK (Haiku-4.5 default) für Job↔CV Match-Scoring mit Cost-Tracking pro User
+- **AI-Routing:** entweder Anthropic Claude SDK direkt (Default), oder Delegation an externen `ai-provider-service` (separates Repo) für Multi-Provider, Fallback und Queue-Persistenz. Beide Modi via gleicher User-Settings-UI bedienbar.
 - **Libraries:** jsPDF, TweetNaCl.js, Mammoth (DOCX), pdf.js, cryptography (Fernet)
 
 ### 💾 Datenschutz
@@ -82,7 +94,8 @@ export CLAUDE_DEFAULT_MODEL=claude-haiku-4-5-20251001
 ### 📋 System-Anforderungen
 
 - **Browser:** Chrome, Firefox, Safari, Edge (ES6+)
-- **Server** (optional): Python 3.8+ (für SMTP/IMAP-Server)
+- **Server:** Python 3.9+ (Production-Setup: 3.12 empfohlen)
+- **Optional:** `ai-provider-service` (separates Repo) für Multi-Provider-Routing
 
 ### 📞 Support
 
@@ -102,8 +115,9 @@ A privacy-friendly job application tracker with automated email monitoring, stat
 - 🔔 **Notifications** - Desktop & browser push notifications
 - 🎯 **Application Tracking** - Status, dates, salary, notes, ghosting detection
 - 🗂️ **Kanban Board** - Visual overview by status
-- 📋 **CV Comparison** - Compare your CV against job requirements
-- 🔍 **Job-Discovery** - Automated job search from RSS feeds + Bundesagentur/Adzuna/Arbeitnow APIs with Claude-based match-scoring against your CV. Includes source management, pagination, full-text search, filters (Remote/postal-code/employment-type), browser push notifications for top matches, and onboarding checklist
+- 📋 **CV Comparison** - Compare your CV against job requirements — direct analysis via your configured AI provider (with fallback) or copy-paste to web platforms
+- 🤖 **Multi-Provider AI** - Claude (Anthropic), local Ollama, ChatGPT/OpenAI, Mammouth, custom OpenAI-compatible endpoints. Per-user configuration with encrypted API keys. Optional: fallback provider and queue persistence for unavailable providers (e.g. local Ollama)
+- 🔍 **Job-Discovery** - Automated job search from RSS feeds + Bundesagentur/Adzuna/Arbeitnow APIs with AI match-scoring against your CV (provider freely selectable). Includes source management, pagination, full-text search, filters (Remote/postal-code/employment-type), browser push notifications for top matches, and onboarding checklist
 - 👤 **Multi-User with Admin Approval** - Users self-register, admin approves accounts + Job-Discovery activation
 - 🔐 **Envelope-Encryption** - Per-user DEK + KEK derived from password, backups remain decryptable on password reset
 - 🌙 **Dark/Light Mode** - Responsive design for all devices
@@ -123,14 +137,25 @@ A privacy-friendly job application tracker with automated email monitoring, stat
 python scripts/migrate_job_discovery.py     # DB schema
 python scripts/seed_job_sources.py          # 3 global default sources
 
-# ENV vars
+# ENV vars (required)
 export JOB_CRON_TOKEN=<random-secret-32+chars>
 export ANTHROPIC_API_KEY=<your-key>
 export CLAUDE_DEFAULT_MODEL=claude-haiku-4-5-20251001
 
+# Optional: use central ai-provider-service (multi-provider + fallback + queue)
+# When set, all AI calls are delegated there.
+export AI_PROVIDER_SERVICE_URL=http://127.0.0.1:8767
+export AI_PROVIDER_SERVICE_TOKEN=<service-token>
+
 # Cron setup (system cron or cron-job.org)
 # 5 endpoints: /api/jobs/{crawl-source,prefilter,claude-match,notify,cleanup}
 ```
+
+**Optional: ai-provider-service** — separate repo, runs as systemd unit on
+port 8767 and wraps all providers behind a unified REST API. Benefits:
+centralized API key management, automatic fallback, queue persistence for
+local providers (e.g. Ollama on Mac via autossh reverse tunnel). Setup
+instructions in the corresponding repo.
 
 ### 📚 Documentation
 
@@ -148,21 +173,24 @@ export CLAUDE_DEFAULT_MODEL=claude-haiku-4-5-20251001
 
 ### 🔧 Technology
 
-- **Frontend:** Vanilla JavaScript, HTML5, CSS3 (no frameworks)
-- **Backend:** Python 3 (Flask) + SQLite
-- **Libraries:** jsPDF, TweetNaCl.js (Encryption), Mammoth (DOCX), pdf.js
+- **Frontend:** Vanilla JavaScript, HTML5, CSS3 (no frameworks), PWA with service worker
+- **Backend:** Python 3.12 (Flask) + SQLite + JWT auth
+- **AI-Routing:** either Anthropic Claude SDK directly (default), or delegation to external `ai-provider-service` (separate repo) for multi-provider, fallback and queue persistence. Both modes operable through the same user settings UI.
+- **Libraries:** jsPDF, TweetNaCl.js (Encryption), Mammoth (DOCX), pdf.js, cryptography (Fernet)
 
 ### 💾 Privacy
 
-- ✅ All data stored locally in browser (localStorage)
-- ✅ No cloud servers, no tracking
-- ✅ Passwords encrypted with AES-128-CBC
+- ✅ Self-hosted — no cloud dependencies, no tracking, no analytics
+- ✅ Envelope encryption (per-user DEK + KEK from password) for sensitive data
+- ✅ Passwords encrypted with bcrypt + Fernet
 - ✅ IMAP proxy runs on localhost (Port 8765)
+- ✅ JWT tokens with configurable TTL, refresh-token flow
 
 ### 📋 System Requirements
 
 - **Browser:** Chrome, Firefox, Safari, Edge (ES6+)
-- **Server** (optional): Python 3.8+ (for SMTP/IMAP server)
+- **Server:** Python 3.9+ (production: 3.12 recommended)
+- **Optional:** `ai-provider-service` (separate repo) for multi-provider routing
 
 ### 📞 Support
 
