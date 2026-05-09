@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Cron-Token Decorator: schützt Cron-Endpoints via X-Cron-Token Header."""
 import os
 import hmac

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Arbeitnow-API (kostenlos, keine Auth)."""
 import requests
 from datetime import datetime

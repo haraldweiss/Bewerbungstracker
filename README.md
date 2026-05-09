@@ -195,3 +195,21 @@ instructions in the corresponding repo.
 ### 📞 Support
 
 For issues or feature requests: See [GETTING_STARTED.md](docs/GETTING_STARTED.md) for troubleshooting
+
+---
+## 🌐 More on wolfinisoftware.de
+[Visit **wolfinisoftware.de**](https://www.wolfinisoftware.de/) for more news, projects, tools & resources.
+
+## Mitwirken
+
+Pull-Requests sind willkommen. Bitte einmal kurz [`CONTRIBUTING.md`](CONTRIBUTING.md)
+lesen — wir nutzen das Developer Certificate of Origin (DCO), Commits müssen
+also mit `git commit -s` signiert werden.
+
+## Lizenz
+
+Veröffentlicht unter der [GNU AGPL v3.0](LICENSE) — © 2026 Harald Weiss.
+
+Die AGPL stellt sicher, dass auch netzbasierte Bereitstellungen den Quellcode
+ihrer Modifikationen weitergeben müssen. Ideen und Konzepte sind durch keine
+Lizenz schützbar.

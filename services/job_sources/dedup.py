@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Shared Dedup-Helper für Job-Sources.
 
 Strikte URL-basierte Deduplication:

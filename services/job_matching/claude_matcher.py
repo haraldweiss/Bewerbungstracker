@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Claude-basierte Job-Bewertung (Phase A: nutzt Server-Key).
 
 Phase B refactored das auf User-spezifische Provider — die Funktion

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """
 Wrapper around Phase 2 Claude Routing System.
 Imports the routing library and provides app-specific integration.

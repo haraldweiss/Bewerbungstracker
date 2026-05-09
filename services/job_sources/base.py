@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Base-Class für Job-Source-Adapter."""
 
 from __future__ import annotations

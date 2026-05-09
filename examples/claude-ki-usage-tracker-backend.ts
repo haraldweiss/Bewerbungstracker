@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Claude-KI-Usage-Tracker Backend Service
  * Express.js integration for tracking Claude API usage across projects

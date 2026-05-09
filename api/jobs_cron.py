@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Cron-Endpoints für Job-Discovery Pipeline (Token-geschützt)."""
 
 from __future__ import annotations

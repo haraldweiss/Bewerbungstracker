@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 from services.job_sources.base import JobSourceAdapter, FetchedJob
 from services.job_sources.rss import RssAdapter
 from services.job_sources.adzuna import AdzunaAdapter

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """In-memory Key Cache für Data Encryption Keys (DEKs).
 
 Beim Login wird der DEK aus dem verschlüsselten User-Record entsperrt und hier

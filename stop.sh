@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 
 # Bewerbungs-Tracker Stop Script for macOS and Linux
 # Cleanly stops all running services (Web Server, IMAP Proxy, Email Service, Data Service)

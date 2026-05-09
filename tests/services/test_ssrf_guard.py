@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 import pytest
 from services.ssrf_guard import is_url_safe_for_rss, SSRFError, validate_rss_url
 

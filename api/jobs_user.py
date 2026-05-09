@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """User-facing Job-Discovery Endpoints (JWT-geschützt)."""
 
 from __future__ import annotations

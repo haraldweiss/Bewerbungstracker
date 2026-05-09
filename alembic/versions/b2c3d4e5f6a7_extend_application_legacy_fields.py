@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Extend applications: legacy fields + soft delete
 
 Revision ID: b2c3d4e5f6a7

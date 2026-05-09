@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """User-Profil API: Settings + CV.
 
 Beides liegt als JSON-String in `User.settings_json` / `User.cv_data_json`.

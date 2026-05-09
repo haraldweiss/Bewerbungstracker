@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Tests für die Envelope-Encryption-Architektur (Salt + DEK + KEK)."""
 
 import pytest

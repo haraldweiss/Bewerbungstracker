@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Unit Tests for Task Analyzer
  * Tests task complexity analysis, capability detection, and token estimation

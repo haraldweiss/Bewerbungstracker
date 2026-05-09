@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """SSRF-Guard für externe URLs.
 
 RSS-Quellen dürfen NUR public-routable HTTP/HTTPS sein. Private IP-Ranges

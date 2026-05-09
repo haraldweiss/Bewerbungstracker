@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """DB-Migration für Job-Discovery (Phase A).
 
 Da das Projekt keine Alembic-Migrations nutzt, läuft dies als idempotentes
