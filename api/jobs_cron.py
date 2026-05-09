@@ -338,24 +338,66 @@ def _parse_match_response(text: str, tokens_in: int, tokens_out: int) -> MatchRe
         )
 
 
-def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary: str,
-                            provider: str, model: str) -> bool:
-    """Match-Pfad via ai-provider-service (Production)."""
-    client = ai_provider_client.get_client()
-    prompt = _build_prompt(cv_summary, {
-        "title": raw.title, "description": raw.description, "location": raw.location,
-    })
+_SUMMARIZE_PROMPT = """Fasse die folgende Stellenausschreibung in maximal 1500 Zeichen zusammen.
+Wichtig: Behalte alle technischen Anforderungen, Skills, Aufgaben und Qualifikationen bei.
+Lass Marketing-Sprache, Boilerplate, Benefits-Listen und allgemeine Firmenbeschreibungen weg.
+Antworte AUSSCHLIESSLICH mit der Zusammenfassung, kein Drumherum, keine Anrede.
 
+STELLENAUSSCHREIBUNG:
+{description}
+"""
+
+
+def _summarize_description(client, user_id: str, provider: str, model: str,
+                            description: str, target_chars: int = 1500) -> str:
+    """Fasst eine zu lange Job-Description via KI zusammen.
+
+    Wird als Fallback aufgerufen wenn der erste Match-Call leer/unparsbar war
+    (typischerweise wenn das Modell mit dem langen Prompt nicht klarkommt).
+    Bei Fehler im Summarize-Call: Hard-Truncate als letzter Fallback.
+    """
+    if not description or len(description) <= target_chars:
+        return description or ''
+
+    summary_prompt = _SUMMARIZE_PROMPT.format(description=description[:8000])
     try:
         response = client.chat(
+            user_id=user_id, provider=provider, model=model,
+            messages=[{"role": "user", "content": summary_prompt}],
+            max_tokens=600,
+        )
+        text = response.content[0].text.strip() if response.content else ''
+        if text and len(text) >= 100:  # plausible summary
+            logger.info(f'summarized description: {len(description)} → {len(text)} chars')
+            return text
+    except Exception as e:
+        logger.warning(f'summarize call failed for user={user_id}: {e}')
+    return description[:target_chars]
+
+
+def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary: str,
+                            provider: str, model: str) -> bool:
+    """Match-Pfad via ai-provider-service (Production).
+
+    Bei leerem/unparsbarem Output → einmaliger Retry mit von der KI
+    vor-zusammengefasster Job-Description.
+    """
+    client = ai_provider_client.get_client()
+
+    def call_match(description: str):
+        prompt = _build_prompt(cv_summary, {
+            "title": raw.title, "description": description, "location": raw.location,
+        })
+        return client.chat(
             user_id=user.id, provider=provider, model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=600,
         )
+
+    try:
+        response = call_match(raw.description)
     except AIProviderQueuedError as e:
         logger.info(f'match queued: queue_id={e.queue_id} user={user.id} provider={provider}')
-        # Nicht als Fehler werten — wird vom Service-Worker später nachgearbeitet.
-        # JobMatch bleibt bei status='new', match_score=None → nächster Cron-Tick versucht's wieder.
         return False
     except Exception as e:
         logger.warning(
@@ -364,8 +406,37 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
         )
         return False
 
-    text = response.content[0].text if response.content else ''
-    result = _parse_match_response(text.strip(), response.usage.input_tokens, response.usage.output_tokens)
+    text = (response.content[0].text if response.content else '').strip()
+    parsed = _extract_first_json_object(text)
+
+    # Retry mit Summary wenn erste Antwort leer oder unparsbar
+    if not parsed:
+        logger.info(
+            f'match={match.id} first try unparseable (text-len={len(text)}), '
+            f'retrying with summarized description'
+        )
+        try:
+            short_desc = _summarize_description(
+                client, user.id, provider, model, raw.description or ''
+            )
+            if short_desc and short_desc != raw.description:
+                response2 = call_match(short_desc)
+                text2 = (response2.content[0].text if response2.content else '').strip()
+                parsed2 = _extract_first_json_object(text2)
+                if parsed2:
+                    # Tokens kumulieren (Summarize-Call + zweiter Match-Call)
+                    response.usage.input_tokens += response2.usage.input_tokens
+                    response.usage.output_tokens += response2.usage.output_tokens
+                    text = text2
+        except AIProviderQueuedError as e:
+            logger.info(f'summarize-retry queued: queue_id={e.queue_id}')
+            return False
+        except Exception as e:
+            logger.warning(f'summarize-retry failed for match={match.id}: {e}')
+
+    result = _parse_match_response(
+        text, response.usage.input_tokens, response.usage.output_tokens,
+    )
 
     match.match_score = result.score
     match.match_reasoning = result.reasoning

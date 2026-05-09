@@ -6893,6 +6893,45 @@ function validatePromptSize(prompt) {
     return { valid: stats.estimatedTokens <= SAFE_LIMIT, warnings, stats };
 }
 
+// Sendet einen Prompt an /api/providers/chat. Returns parsed response data.
+// Wirft Error bei HTTP-Fehler oder Queue (Caller behandelt das).
+async function _sendChatPrompt(prompt, maxTokens) {
+    const response = await fetchAPI('/api/providers/chat', {
+        method: 'POST',
+        body: JSON.stringify({ prompt, max_tokens: maxTokens || 3000 })
+    });
+    const data = await response.json();
+    if (response.status === 202 && data.queued) {
+        const err = new Error('queued');
+        err.queueData = data;
+        throw err;
+    }
+    if (!response.ok) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+    }
+    return data;
+}
+
+// Bittet die KI, die Stellenanzeige zu summarisieren — als Fallback wenn der
+// erste Versuch leer/unbrauchbar war (z.B. weil kleines lokales Modell mit
+// dem langen Original-Prompt nicht klar kommt).
+async function _summarizeJobDescription(jobDesc) {
+    const summarizePrompt = `Fasse die folgende Stellenanzeige in maximal 1500 Zeichen zusammen.
+Wichtig: Behalte alle technischen Anforderungen, Skills, Aufgaben und Qualifikationen bei.
+Lass Marketing-Sprache, Boilerplate und allgemeine Firmenbeschreibungen weg.
+Antworte AUSSCHLIESSLICH mit der Zusammenfassung, kein Drumherum.
+
+STELLENANZEIGE:
+${jobDesc.slice(0, 8000)}`;
+
+    const data = await _sendChatPrompt(summarizePrompt, 600);
+    const text = (data.response || '').trim();
+    if (!text || text.length < 100) {
+        throw new Error('Summary leer oder zu kurz');
+    }
+    return text;
+}
+
 async function analyzeWithConfiguredProvider() {
     const prompt = document.getElementById('generatedPrompt').value.trim();
     if (!prompt) {
@@ -6909,28 +6948,58 @@ async function analyzeWithConfiguredProvider() {
     status.style.color = 'var(--text-muted)';
     status.innerHTML = '🔄 Anfrage an konfigurierten Provider...';
 
+    // Hilfsfunktion: ist eine Antwort "leer/zu kurz" → ggf. Summary-Retry triggern
+    const isUnusableResponse = (text) => !text || text.trim().length < 80;
+
     try {
-        const response = await fetchAPI('/api/providers/chat', {
-            method: 'POST',
-            body: JSON.stringify({ prompt, max_tokens: 3000 })
-        });
-        const data = await response.json();
-
-        // Queue-Fall (202): Provider down, Anfrage wird automatisch nachgeholt
-        if (response.status === 202 && data.queued) {
-            status.style.color = 'var(--warning, #d97706)';
-            status.innerHTML = `⏳ <strong>Anfrage in Queue</strong> (ID: <code>${data.queue_id.slice(0, 8)}…</code>)<br>` +
-                               `Provider <code>${data.provider}</code> nicht erreichbar. ` +
-                               `Wird automatisch nachgeholt sobald wieder online.`;
-            showToast('⏳ Anfrage gequeued — Provider nicht erreichbar', 'warning');
-            return;
+        let data;
+        try {
+            data = await _sendChatPrompt(prompt, 3000);
+        } catch (e) {
+            if (e.message === 'queued') {
+                const q = e.queueData;
+                status.style.color = 'var(--warning, #d97706)';
+                status.innerHTML = `⏳ <strong>Anfrage in Queue</strong> (ID: <code>${q.queue_id.slice(0, 8)}…</code>)<br>` +
+                                   `Provider <code>${q.provider}</code> nicht erreichbar. ` +
+                                   `Wird automatisch nachgeholt sobald wieder online.`;
+                showToast('⏳ Anfrage gequeued — Provider nicht erreichbar', 'warning');
+                return;
+            }
+            throw e;
         }
 
-        if (!response.ok) {
-            throw new Error(data.error || `HTTP ${response.status}`);
+        let usedSummaryFallback = false;
+        let totalIn = data.usage.input_tokens;
+        let totalOut = data.usage.output_tokens;
+
+        // Auto-Summarize-Fallback: bei leerem/zu-kurzem Output mit zusammengefasster Anzeige retryen
+        if (isUnusableResponse(data.response)) {
+            const jobDesc = document.getElementById('jobDescriptionInput').value.trim();
+            if (jobDesc && jobDesc.length > 1500) {
+                status.innerHTML = '🔁 Provider gab leere Antwort — fasse Stellenanzeige zusammen und versuche erneut...';
+                try {
+                    const summary = await _summarizeJobDescription(jobDesc);
+                    // Im Original-Prompt die Anzeige durch die Summary ersetzen
+                    const newPrompt = prompt.replace(jobDesc, summary);
+                    const data2 = await _sendChatPrompt(newPrompt, 3000);
+                    if (!isUnusableResponse(data2.response)) {
+                        data = data2;
+                        usedSummaryFallback = true;
+                        // Tokens kumulieren (Summarize-Call + zweiter Match-Call)
+                        totalIn += data2.usage.input_tokens;
+                        totalOut += data2.usage.output_tokens;
+                    }
+                } catch (sumErr) {
+                    console.warn('Summary-Retry fehlgeschlagen:', sumErr);
+                }
+            }
         }
 
-        // Sync-Antwort: Result anzeigen
+        if (isUnusableResponse(data.response)) {
+            throw new Error('Provider lieferte leere Antwort (auch nach Zusammenfassen-Retry)');
+        }
+
+        // Result anzeigen
         resultText.value = data.response || '';
         if (!document.getElementById('resultTitle').value) {
             const jobDesc = document.getElementById('jobDescriptionInput').value.trim();
@@ -6938,13 +7007,15 @@ async function analyzeWithConfiguredProvider() {
             document.getElementById('resultTitle').value = firstLine || 'CV-Vergleich';
         }
 
-        const fallbackInfo = data.fallback_used
+        const viaInfo = data.fallback_used
             ? `<span style="color:var(--warning, #d97706);">Fallback: ${data.via} statt ${data.provider}</span>`
             : `<span style="color:var(--secondary);">${data.via}</span>`;
+        const summaryInfo = usedSummaryFallback
+            ? ` <span style="color:var(--warning, #d97706);">(via Auto-Summary)</span>`
+            : '';
         status.style.color = 'var(--text)';
-        status.innerHTML = `✅ Antwort erhalten via ${fallbackInfo} — ` +
-                           `${data.usage.input_tokens} in / ${data.usage.output_tokens} out Tokens`;
-        showToast('✅ Analyse fertig', 'success');
+        status.innerHTML = `✅ Antwort via ${viaInfo}${summaryInfo} — ${totalIn} in / ${totalOut} out Tokens`;
+        showToast('✅ Analyse fertig' + (usedSummaryFallback ? ' (Auto-Summary)' : ''), 'success');
     } catch (e) {
         status.style.color = 'var(--danger)';
         status.innerHTML = `❌ Fehler: ${e.message}`;
