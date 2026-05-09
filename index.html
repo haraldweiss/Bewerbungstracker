@@ -2229,6 +2229,14 @@ async function init() {
     await updateAdminButtonVisibility();
 
     await loadFromStorage();
+    // Reject-Filter-Window aus User-Settings holen — fällt auf Defaults zurück
+    // wenn der Endpoint nicht erreichbar ist.
+    try {
+        const status = await Auth.fetch('/profile/job-discovery/status', { method: 'GET' });
+        const f = (status && status.filters) || {};
+        if (typeof f.job_reject_window_days === 'number') state.rejectWindowDays = f.job_reject_window_days;
+        if (typeof f.job_reject_filter_enabled === 'boolean') state.rejectFilterEnabled = f.job_reject_filter_enabled;
+    } catch (e) { /* silent — Defaults bleiben */ }
     renderAll();
     loadSettingsForm();
     renderAppsScriptCode();
@@ -2862,6 +2870,15 @@ async function saveJobDiscoveryFilters() {
         localStorage.setItem('jdFiltersCache', JSON.stringify({
             remote_ok, plz_prefixes, employment_types, notification_threshold,
         }));
+        // Reject-Settings im state aktualisieren — Dashboard re-rendert dann
+        // mit dem neuen Window ohne Reload.
+        state.rejectFilterEnabled = rejectEnabled;
+        state.rejectWindowDays = rejectWindow;
+        try {
+            if (document.getElementById('view-dashboard')?.classList.contains('active')) {
+                renderDashboard();
+            }
+        } catch (e) { /* silent */ }
         if (typeof showToast === 'function') {
             showToast('✅ Filter gespeichert', 'success');
         } else {
@@ -4236,12 +4253,26 @@ function renderAll() {
 
 function renderDashboard() {
     const b = state.bewerbungen;
+    // Reject-Window aus User-Settings (Settings → Job-Vorschläge Filter).
+    // Wird im init() geladen + bei saveJobDiscoveryFilters() aktualisiert.
+    const rejWindow = state.rejectWindowDays || 180;
+    const rejWindowMonths = Math.round(rejWindow / 30);
+    const rejWindowLabel = rejWindowMonths >= 12
+        ? `${Math.round(rejWindowMonths / 12)} Jahr${rejWindowMonths >= 24 ? 'e' : ''}`
+        : `${rejWindowMonths} Mon`;
+    const cutoffMs = Date.now() - (rejWindow * 86400000);
+    const inWindow = (app) => {
+        const d = new Date(app.datum || app.createdAt || 0).getTime();
+        return d > 0 && d >= cutoffMs;
+    };
+
     const counts = {
         total: b.length,
         beworben: b.filter(x => x.status === 'beworben').length,
         interview: b.filter(x => x.status === 'interview').length,
         zusage: b.filter(x => x.status === 'zusage').length,
         absage: b.filter(x => x.status === 'absage').length,
+        absage_window: b.filter(x => x.status === 'absage' && inWindow(x)).length,
         ghosting: b.filter(x => x.status === 'ghosting').length,
     };
     const rate = counts.total > 0 ? Math.round((counts.interview + counts.zusage) / counts.total * 100) : 0;
@@ -4252,24 +4283,31 @@ function renderDashboard() {
         createStatCardHtml('🎤', counts.interview, 'Interviews', 'purple') +
         createStatCardHtml('✅', counts.zusage, 'Zusagen', 'green') +
         createStatCardHtml('❌', counts.absage, 'Absagen', 'red') +
+        createStatCardHtml('🚫', counts.absage_window, `Absagen (${rejWindowLabel})`, 'red') +
         createStatCardHtml('📊', rate + '%', 'Rückmeldung', 'blue');
 
-    // Status Chart
+    // Status Chart — zusätzliche Zeile für Absagen im konfigurierten Window
     const statuses = [
         { key:'beworben', label:'Beworben', color:'#3B82F6' },
         { key:'antwort', label:'Antwort', color:'#F59E0B' },
         { key:'interview', label:'Interview', color:'#8B5CF6' },
         { key:'zusage', label:'Zusage', color:'#10B981' },
         { key:'absage', label:'Absage', color:'#EF4444' },
+        { key:'absage_window', label:`Absage ${rejWindowLabel}`, color:'#DC2626', filter: inWindow },
         { key:'ghosting', label:'Ghosting', color:'#94A3B8' }
     ];
-    const maxCount = Math.max(1, ...statuses.map(s => b.filter(x => x.status === s.key).length));
+    const countFor = (s) => {
+        const target = s.key === 'absage_window' ? 'absage' : s.key;
+        const arr = b.filter(x => x.status === target);
+        return s.filter ? arr.filter(s.filter).length : arr.length;
+    };
+    const maxCount = Math.max(1, ...statuses.map(countFor));
     document.getElementById('statusChart').innerHTML = statuses.map(s => {
-        const cnt = b.filter(x => x.status === s.key).length;
+        const cnt = countFor(s);
         const pct = Math.round(cnt / maxCount * 100);
         return `
             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.6rem;">
-                <div style="width:80px;font-size:0.8rem;color:var(--text-muted);">${s.label}</div>
+                <div style="width:100px;font-size:0.8rem;color:var(--text-muted);">${s.label}</div>
                 <div style="flex:1;background:var(--bg-card2);border-radius:20px;height:8px;">
                     <div style="width:${pct}%;background:${s.color};height:100%;border-radius:20px;transition:width 0.5s;"></div>
                 </div>
