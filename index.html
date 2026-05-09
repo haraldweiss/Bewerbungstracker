@@ -1196,6 +1196,17 @@
         <div id="providerConfigSection" style="display:none;margin-bottom:1rem;padding:0.75rem;background:var(--bg-card2);border-radius:8px;border:1px solid var(--border);">
             <div style="font-weight:600;margin-bottom:0.5rem;font-size:0.9rem;">⚙️ Provider-Konfiguration</div>
 
+            <!-- Claude Config (für User ohne Server-Key-Allowlist) -->
+            <div id="config-claude" style="display:none;">
+                <div class="form-group" style="margin-bottom:0.5rem;">
+                    <label for="claudeApiKey" style="font-size:0.85rem;">Anthropic API Key *</label>
+                    <input type="password" id="claudeApiKey" placeholder="sk-ant-..." style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">
+                        Hol dir einen Key auf <a href="https://console.anthropic.com/" target="_blank" rel="noopener" style="color:var(--primary);">console.anthropic.com</a>. Wird verschlüsselt gespeichert.
+                    </div>
+                </div>
+            </div>
+
             <!-- OpenAI Config -->
             <div id="config-openai" style="display:none;">
                 <div class="form-group" style="margin-bottom:0.5rem;">
@@ -7590,6 +7601,7 @@ async function onProviderChange() {
     const info = document.getElementById('providerInfo');
 
     // Reset alle Config-Forms
+    document.getElementById('config-claude').style.display = 'none';
     document.getElementById('config-openai').style.display = 'none';
     document.getElementById('config-mammouth').style.display = 'none';
     document.getElementById('config-custom').style.display = 'none';
@@ -7606,7 +7618,7 @@ async function onProviderChange() {
 
     // Zeige Provider-Info
     if (provider === 'claude') {
-        info.textContent = '✓ Nutzt zentralen Claude API-Key (Anthropic)';
+        info.textContent = 'ℹ️ Anthropic Claude — Server-Key wird genutzt wenn dein Account freigeschaltet ist, sonst eigenen Key hinterlegen';
     } else if (provider === 'ollama') {
         info.textContent = '✓ Nutzt lokales Ollama (keine API-Kosten)';
     } else if (provider === 'openai') {
@@ -7617,8 +7629,33 @@ async function onProviderChange() {
         info.textContent = 'ℹ️ Eigener OpenAI-kompatibler Endpoint';
     }
 
-    // Zeige Config-Form für User-Provider
-    if (['openai', 'mammouth', 'custom'].includes(provider)) {
+    // Zeige Config-Form für User-Provider. Bei claude: nur wenn der User
+    // den Server-Key NICHT nutzen darf (d.h. der Provider liefert configured=false).
+    let showConfig = ['openai', 'mammouth', 'custom'].includes(provider);
+    if (provider === 'claude') {
+        try {
+            const cfg = await fetchAPI('/api/providers/claude/config', { method: 'GET' });
+            const data = await cfg.json();
+            // Wenn der User keinen eigenen Key hat UND Server-Key nicht erlaubt ist,
+            // erscheint der Provider in der providers-Liste als configured=false.
+            // Wir prüfen dafür einfach das Provider-Listing oder zeigen das Form
+            // immer als optional an: User kann eigenen Key setzen wenn er will.
+            const provListResp = await fetchAPI('/api/providers', { method: 'GET' });
+            if (provListResp.ok) {
+                const provData = await provListResp.json();
+                const claudeP = (provData.providers || []).find(p => p.id === 'claude');
+                if (claudeP && !claudeP.configured) {
+                    showConfig = true;
+                    info.textContent = '⚠️ Claude ist für deinen Account nicht freigegeben — bitte eigenen Anthropic API-Key hinterlegen.';
+                } else if (data && data.configured) {
+                    // User hat eigenen Key gespeichert — Form zeigen damit er ihn aktualisieren kann
+                    showConfig = true;
+                    info.textContent = '✓ Eigener Anthropic API-Key hinterlegt';
+                }
+            }
+        } catch (e) { /* silent — fall through to default behavior */ }
+    }
+    if (showConfig) {
         configSection.style.display = 'block';
         document.getElementById(`config-${provider}`).style.display = 'block';
         await loadProviderConfig(provider);
@@ -7676,7 +7713,11 @@ async function loadProviderConfig(provider) {
         const config = await response.json();
         if (!config.configured) return;
 
-        if (provider === 'openai') {
+        if (provider === 'claude') {
+            const apiKeyField = document.getElementById('claudeApiKey');
+            apiKeyField.value = '';
+            apiKeyField.placeholder = '••••••• (gespeichert, leer lassen zum Beibehalten)';
+        } else if (provider === 'openai') {
             const apiKeyField = document.getElementById('openaiApiKey');
             apiKeyField.value = '';
             apiKeyField.placeholder = '••••••• (gespeichert, leer lassen zum Beibehalten)';
@@ -7696,13 +7737,20 @@ async function loadProviderConfig(provider) {
 
 async function saveProviderConfig() {
     const provider = document.getElementById('aiProviderSelect').value;
-    if (!['openai', 'mammouth', 'custom'].includes(provider)) {
+    if (!['claude', 'openai', 'mammouth', 'custom'].includes(provider)) {
         showToast('⚠️ Dieser Provider braucht keine Konfiguration', 'warning');
         return;
     }
 
     const config = {};
-    if (provider === 'openai') {
+    if (provider === 'claude') {
+        const apiKey = document.getElementById('claudeApiKey').value.trim();
+        if (!apiKey) {
+            showToast('⚠️ Anthropic API Key erforderlich', 'warning');
+            return;
+        }
+        config.api_key = apiKey;
+    } else if (provider === 'openai') {
         const apiKey = document.getElementById('openaiApiKey').value.trim();
         if (!apiKey) {
             showToast('⚠️ API Key erforderlich', 'warning');
@@ -7758,7 +7806,7 @@ async function saveProviderConfig() {
 
 async function testProviderConfig() {
     const provider = document.getElementById('aiProviderSelect').value;
-    if (!['openai', 'mammouth', 'custom'].includes(provider)) {
+    if (!['claude', 'openai', 'mammouth', 'custom'].includes(provider)) {
         showToast('⚠️ Dieser Provider hat keinen Test-Endpunkt', 'warning');
         return;
     }
