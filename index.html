@@ -2900,6 +2900,8 @@ const JobsView = (() => {
         total: 0,
         sourcesCache: [],
         selectedIds: new Set(),
+        bulkScoreRunning: false,
+        bulkScoreCancelled: false,
     };
 
     function $(id) { return document.getElementById(id); }
@@ -3383,33 +3385,116 @@ const JobsView = (() => {
             else state.selectedIds.delete(id);
             renderBulkActionBar();
         },
+        // Sequenzielle Bulk-Bewertung mit Live-Progress.
+        // Vorher: ein einziger /score-bulk-Call → bei vielen Stellen Apache-Timeout
+        // und das UI wurde keine Live-Updates zeigen. Jetzt: pro ID einzeln, sodass
+        // der User den Fortschritt sieht und die Backend-Queue (Provider-Service)
+        // ihre Aufgaben gleichmäßig bekommt.
         async bulkScore() {
+            // Re-Entry verhindern: solange eine Queue läuft, kein zweites Submit zulassen.
+            if (state.bulkScoreRunning) {
+                if (typeof showToast === 'function') {
+                    showToast('Bewertung läuft bereits — bitte warten.', 'warning');
+                }
+                return;
+            }
             const ids = Array.from(state.selectedIds);
             if (ids.length === 0) return;
+
+            state.bulkScoreRunning = true;
+            state.bulkScoreCancelled = false;
+
+            // UI in Queue-Mode versetzen
+            const setBtnDisabled = (id, disabled, label) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.disabled = disabled;
+                if (label !== undefined) el.textContent = label;
+            };
+            setBtnDisabled('jobs-bulk-score-btn', true, '⏳ Bewertet...');
+            setBtnDisabled('jobs-bulk-seen-btn', true);
+            setBtnDisabled('jobs-bulk-dismiss-btn', true);
+            setBtnDisabled('jobs-bulk-clear-btn', true);
+            const progressEl = document.getElementById('jobs-bulk-progress');
+            const cancelBtn = document.getElementById('jobs-bulk-cancel-btn');
+            if (progressEl) progressEl.style.display = 'inline-flex';
+            if (cancelBtn) cancelBtn.style.display = 'inline-block';
+
+            const updateProgress = (done, total, ok, fail, skipped) => {
+                if (!progressEl) return;
+                const parts = [`${done}/${total}`];
+                if (ok > 0) parts.push(`✓ ${ok}`);
+                if (fail > 0) parts.push(`✗ ${fail}`);
+                if (skipped > 0) parts.push(`⊘ ${skipped} Budget`);
+                progressEl.textContent = parts.join(' · ');
+            };
+
+            const total = ids.length;
+            let done = 0, ok = 0, fail = 0, skipped = 0, budgetExhausted = false;
+            updateProgress(0, total, 0, 0, 0);
+
             try {
-                const r = await Auth.fetch('/jobs/matches/score-bulk', {
-                    method: 'POST',
-                    body: JSON.stringify({ match_ids: ids }),
-                });
-                if (r) {
-                    const scoredCount = (r.scored || []).length;
-                    const skippedCount = (r.skipped_budget || []).length;
-                    const errCount = (r.errors || []).length;
-                    let msg = `${scoredCount} bewertet`;
-                    if (skippedCount > 0) msg += `, ${skippedCount} wegen Budget übersprungen`;
-                    if (errCount > 0) msg += `, ${errCount} mit Fehler`;
-                    if (typeof showToast === 'function') {
-                        showToast(msg, skippedCount + errCount > 0 ? 'warning' : 'success');
-                    } else {
-                        alert(msg);
+                for (const id of ids) {
+                    if (state.bulkScoreCancelled) break;
+                    if (budgetExhausted) {
+                        // Restliche Items als skipped zählen
+                        skipped++;
+                        done++;
+                        updateProgress(done, total, ok, fail, skipped);
+                        continue;
                     }
-                    JobsView.clearSelection();
-                    await fetchMatches();
+
+                    try {
+                        const r = await Auth.fetch(`/jobs/matches/${id}/score`, { method: 'POST' });
+                        if (r && r.match_score != null) {
+                            ok++;
+                        } else if (r && r.error) {
+                            // 402 = Budget erschöpft — restliche Aufrufe sparen
+                            if (/budget/i.test(r.error)) {
+                                skipped++;
+                                budgetExhausted = true;
+                            } else {
+                                fail++;
+                            }
+                        } else {
+                            fail++;
+                        }
+                    } catch (e) {
+                        fail++;
+                    }
+                    done++;
+                    updateProgress(done, total, ok, fail, skipped);
                 }
-            } catch (e) {
+
+                // Zusammenfassung
+                let msg = `${ok} bewertet`;
+                if (skipped > 0) msg += `, ${skipped} wegen Budget übersprungen`;
+                if (fail > 0) msg += `, ${fail} fehlgeschlagen`;
+                if (state.bulkScoreCancelled) msg += ' (abgebrochen)';
                 if (typeof showToast === 'function') {
-                    showToast('Bulk-Bewertung fehlgeschlagen', 'error');
+                    const tone = (fail + skipped) > 0 ? 'warning' : 'success';
+                    showToast(msg, tone);
                 }
+            } finally {
+                state.bulkScoreRunning = false;
+                state.bulkScoreCancelled = false;
+                // UI zurücksetzen
+                setBtnDisabled('jobs-bulk-score-btn', false, '🤖 Bewerten');
+                setBtnDisabled('jobs-bulk-seen-btn', false);
+                setBtnDisabled('jobs-bulk-dismiss-btn', false);
+                setBtnDisabled('jobs-bulk-clear-btn', false);
+                if (progressEl) { progressEl.style.display = 'none'; progressEl.textContent = ''; }
+                if (cancelBtn) cancelBtn.style.display = 'none';
+
+                JobsView.clearSelection();
+                await fetchMatches();
+            }
+        },
+        cancelBulkScore() {
+            if (!state.bulkScoreRunning) return;
+            state.bulkScoreCancelled = true;
+            if (typeof showToast === 'function') {
+                showToast('Bewertung wird nach aktuellem Job gestoppt...', 'info');
             }
         },
         async bulkSeen() {
@@ -7651,12 +7736,15 @@ document.addEventListener('DOMContentLoaded', () => {
 <div id="jobs-bulk-bar" style="position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);
     display:none;background:var(--bg-card);border:1px solid var(--border);border-radius:999px;
     padding:0.75rem 1.25rem;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:100;
-    align-items:center;gap:0.75rem">
+    align-items:center;gap:0.75rem;max-width:90vw;flex-wrap:wrap">
     <span id="jobs-bulk-count" style="font-weight:600">0 ausgewählt</span>
-    <button class="btn btn-primary btn-sm" onclick="JobsView.bulkScore()">🤖 Bewerten</button>
-    <button class="btn btn-secondary btn-sm" onclick="JobsView.bulkSeen()">👁 Verbergen</button>
-    <button class="btn btn-danger btn-sm" onclick="JobsView.bulkDismiss()">🗑️ Verwerfen</button>
-    <button class="btn btn-secondary btn-sm" onclick="JobsView.clearSelection()" title="Auswahl aufheben">✕</button>
+    <button id="jobs-bulk-score-btn" class="btn btn-primary btn-sm" onclick="JobsView.bulkScore()">🤖 Bewerten</button>
+    <button id="jobs-bulk-seen-btn" class="btn btn-secondary btn-sm" onclick="JobsView.bulkSeen()">👁 Verbergen</button>
+    <button id="jobs-bulk-dismiss-btn" class="btn btn-danger btn-sm" onclick="JobsView.bulkDismiss()">🗑️ Verwerfen</button>
+    <button id="jobs-bulk-clear-btn" class="btn btn-secondary btn-sm" onclick="JobsView.clearSelection()" title="Auswahl aufheben">✕</button>
+    <!-- Progress-Anzeige während laufender Bulk-Bewertung -->
+    <span id="jobs-bulk-progress" style="display:none;align-items:center;gap:0.5rem;font-size:0.9rem;color:var(--text-muted)"></span>
+    <button id="jobs-bulk-cancel-btn" class="btn btn-warning btn-sm" style="display:none" onclick="JobsView.cancelBulkScore()" title="Restliche Bewertungen abbrechen">⏹ Abbrechen</button>
 </div>
 
 </body>
