@@ -325,6 +325,9 @@ class JobMatch(db.Model):
     status = db.Column(db.String(16), default='new', nullable=False)
     notified_at = db.Column(db.DateTime, nullable=True)
     imported_application_id = db.Column(db.String(36), db.ForeignKey('applications.id'), nullable=True)
+    # Heuristisches Flag für verdächtige Matches: comma-separierte Tags wie
+    # "input_injection,score_jump". NULL = unauffällig.
+    suspicious_reasons = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

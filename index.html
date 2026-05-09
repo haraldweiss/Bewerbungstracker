@@ -2920,6 +2920,36 @@ const JobsView = (() => {
         return '⚪';
     }
 
+    // Liest die suspicious_reasons (Liste von Tags) und liefert ein
+    // Warning-Badge mit Tooltip — oder leeren String wenn unauffällig.
+    function renderSuspiciousBadge(reasons) {
+        if (!Array.isArray(reasons) || reasons.length === 0) return '';
+        const labels = {
+            'score_jump': 'Auffälliger Score-Sprung gegenüber Vor-Filter — Modell könnte vom Inhalt überredet worden sein',
+            'input:ignore_previous': 'Anzeigentext enthält "ignore previous instructions"-Muster',
+            'input:ignore_previous_de': 'Anzeigentext enthält deutsches "vergiss vorige Anweisungen"-Muster',
+            'input:disregard': 'Anzeigentext enthält "disregard"-Muster',
+            'input:new_instructions': 'Anzeigentext gibt "neue Anweisungen" vor',
+            'input:system_role_takeover': 'Anzeigentext versucht System-Rolle zu übernehmen',
+            'input:system_role_takeover_de': 'Anzeigentext versucht System-Rolle zu übernehmen (DE)',
+            'input:system_tag': 'Anzeigentext enthält System-Tag',
+            'input:inst_tag': 'Anzeigentext enthält [INST]-Token (Llama/Mistral Chat-Format)',
+            'input:force_max_score': 'Anzeigentext fordert score=100',
+            'input:force_perfect_match': 'Anzeigentext fordert "perfect match"',
+            'input:embedded_high_score': 'Anzeigentext enthält eingebettetes Score-JSON',
+            'input:data_exfil': 'Anzeigentext versucht CV/Prompt auszulesen',
+            'input:html_injection': 'Anzeigentext enthält HTML-Code',
+            'input:template_injection': 'Anzeigentext enthält Template-Syntax (Mustache/Jinja)',
+            'input:token_flood': 'Anzeigentext enthält stark wiederholte Tokens',
+        };
+        const detailLines = reasons.map(r => labels[r] || r);
+        const tooltip = 'Diese Stelle wurde als verdächtig markiert:\n• ' + detailLines.join('\n• ');
+        return `<span title="${escapeHtml(tooltip)}"
+            style="display:inline-flex;align-items:center;gap:4px;background:var(--warning, #d97706);color:#fff;padding:4px 8px;border-radius:999px;font-size:0.78em;font-weight:600;cursor:help">
+            ⚠️ Verdächtig
+        </span>`;
+    }
+
     function renderCard(m) {
         const r = m.raw_job || {};
         const date = r.posted_at ? new Date(r.posted_at).toLocaleDateString('de-DE') : '';
@@ -2933,6 +2963,7 @@ const JobsView = (() => {
         const scoreEmoji = hasClaudeScore ? badge(m.match_score) : '⚪';
 
         const missing = (m.missing_skills || []).slice(0, 5).map(s => escapeHtml(s));
+        const suspiciousBadge = renderSuspiciousBadge(m.suspicious_reasons);
 
         const evaluateBtn = hasClaudeScore ? '' : `
             <button class="btn btn-primary btn-sm" onclick="JobsView.requestSingleScore(${m.id})">
@@ -2950,6 +2981,7 @@ const JobsView = (() => {
                     <span style="background:${scoreBadgeBg};padding:6px 12px;border-radius:999px;font-weight:600;font-size:1.05em">
                         ${scoreEmoji} ${scoreLabel}${score}
                     </span>
+                    ${suspiciousBadge}
                     <h3 style="margin:0;flex:1;min-width:240px;font-size:1.1em">${escapeHtml(r.title)}</h3>
                 </div>
                 <div style="color:var(--text-muted);font-size:0.85em;margin-top:0.5rem">

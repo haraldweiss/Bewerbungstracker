@@ -16,7 +16,13 @@ from services.cron_auth import require_cron_token
 from services.job_sources import get_adapter
 from services.job_matching.cv_tokenizer import tokenize_cv
 from services.job_matching.prefilter import score_job, PrefilterContext
-from services.job_matching.claude_matcher import match_job_with_claude, _build_prompt, MatchResult
+from services.job_matching.claude_matcher import (
+    match_job_with_claude, _build_prompt, MatchResult,
+    SYSTEM_MESSAGE_MATCH, _build_user_message,
+)
+from services.job_matching.injection_detector import (
+    detect_injection_patterns, has_suspicious_score_jump,
+)
 from services.provider_service import ProviderFactory, ProviderConfig
 from services.job_matching.notifier import send_match_notification
 from services.encryption_service import EncryptionService
@@ -302,10 +308,55 @@ def _extract_first_json_object(text: str) -> dict | None:
     return None
 
 
+def _validate_match_schema(data: dict) -> tuple[float, str, list, list]:
+    """Strikte Schema-Validierung. Schützt gegen kompromittierte Provider-Antworten
+    (z.B. score=999, reasoning=10000-Zeichen, missing_skills=[100 Einträge mit XSS]).
+
+    Returns: (score, reasoning, missing_skills, validation_warnings)
+    """
+    warnings: list[str] = []
+
+    # Score: muss 0..100 sein
+    raw_score = data.get("score", 0)
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        score = 0.0
+        warnings.append('score_not_number')
+    if score < 0 or score > 100:
+        warnings.append(f'score_out_of_range:{score}')
+        score = max(0.0, min(100.0, score))
+
+    # Reasoning: max 500 Zeichen
+    reasoning = str(data.get("reasoning", "") or "")
+    if len(reasoning) > 500:
+        reasoning = reasoning[:500].rstrip() + "…"
+        warnings.append('reasoning_truncated')
+
+    # missing_skills: Liste, max 10 Einträge à max 80 Zeichen, kein Code/HTML
+    skills_raw = data.get("missing_skills")
+    if not isinstance(skills_raw, list):
+        skills_raw = []
+        if data.get("missing_skills") is not None:
+            warnings.append('missing_skills_not_list')
+    skills: list[str] = []
+    for s in skills_raw[:10]:
+        s_str = str(s)[:80].strip()
+        # Tags und Backticks rausschneiden
+        s_str = s_str.replace('<', '').replace('>', '').replace('`', '')
+        if s_str:
+            skills.append(s_str)
+    if len(skills_raw) > 10:
+        warnings.append('missing_skills_truncated')
+
+    return score, reasoning, skills, warnings
+
+
 def _parse_match_response(text: str, tokens_in: int, tokens_out: int) -> MatchResult:
     """Parst die JSON-Antwort vom Provider in ein MatchResult.
 
     Toleriert Freitext um das JSON, Code-Fences und mehrzeilige Antworten.
+    Validiert das Schema strikt (Defense-in-Depth gegen Output-Manipulation).
     """
     data = _extract_first_json_object(text or '')
     if data is None:
@@ -320,15 +371,18 @@ def _parse_match_response(text: str, tokens_in: int, tokens_out: int) -> MatchRe
             tokens_out=tokens_out,
         )
     try:
+        score, reasoning, skills, schema_warnings = _validate_match_schema(data)
+        if schema_warnings:
+            logger.info(f'match-response schema warnings: {schema_warnings}')
         return MatchResult(
-            score=float(data.get("score", 0)),
-            reasoning=str(data.get("reasoning", "")),
-            missing_skills=list(data.get("missing_skills") or []),
+            score=score,
+            reasoning=reasoning,
+            missing_skills=skills,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
         )
-    except (TypeError, ValueError) as e:
-        logger.warning(f'match-response parsed but field-extraction failed: {e}; data={data!r}')
+    except Exception as e:
+        logger.warning(f'match-response field-extraction failed: {e}; data={data!r}')
         return MatchResult(
             score=0,
             reasoning="Bewertung fehlgeschlagen (Felder im JSON unerwartet).",
@@ -379,18 +433,28 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
                             provider: str, model: str) -> bool:
     """Match-Pfad via ai-provider-service (Production).
 
+    Sicherheit:
+    - Prompt-Härtung: System-Message + untrusted_data Tags (vs. Prompt-Injection)
+    - Schema-Validation: strikte Output-Sanitization (vs. injektierte XSS/score=999)
+    - Suspicious-Flag: bei Pattern-Match in Description ODER Score-Sprung
+
     Bei leerem/unparsbarem Output → einmaliger Retry mit von der KI
     vor-zusammengefasster Job-Description.
     """
     client = ai_provider_client.get_client()
 
     def call_match(description: str):
-        prompt = _build_prompt(cv_summary, {
+        # System+User-Message: Anweisungen separiert von unvertrauten Daten.
+        # Der ai-provider-service / Anthropic-SDK extrahiert role='system' korrekt.
+        user_msg = _build_user_message(cv_summary, {
             "title": raw.title, "description": description, "location": raw.location,
         })
         return client.chat(
             user_id=user.id, provider=provider, model=model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": SYSTEM_MESSAGE_MATCH},
+                {"role": "user", "content": user_msg},
+            ],
             max_tokens=600,
         )
 
@@ -442,6 +506,25 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
     match.match_reasoning = result.reasoning
     match.missing_skills = result.missing_skills
     raw.crawl_status = 'matched'
+
+    # Heuristische Sicherheits-Flags (Defense-in-Depth)
+    suspicious_reasons: list[str] = []
+    # 1) Injection-Patterns in Title/Description?
+    desc_for_check = (raw.description or '') + ' ' + (raw.title or '')
+    injection_hits = detect_injection_patterns(desc_for_check)
+    if injection_hits:
+        # Prefix damit man im UI lesen kann was getriggert hat
+        suspicious_reasons.extend(f'input:{h}' for h in injection_hits)
+    # 2) Auffälliger Score-Sprung relativ zum PreFilter?
+    if has_suspicious_score_jump(match.prefilter_score, result.score):
+        suspicious_reasons.append('score_jump')
+    match.suspicious_reasons = ','.join(suspicious_reasons) if suspicious_reasons else None
+
+    if suspicious_reasons:
+        logger.info(
+            f'match={match.id} flagged suspicious: {suspicious_reasons} '
+            f'(score={result.score}, prefilter={match.prefilter_score})'
+        )
 
     cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
     key_owner = 'server' if response.via == 'claude' else (

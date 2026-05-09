@@ -156,6 +156,10 @@ def test_crawl_source(user, source_id: int):
 # ---------------------------------------------------------------------------
 
 def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
+    # suspicious_reasons ist comma-separated im DB-Feld; Frontend bekommt Liste.
+    suspicious_list = []
+    if getattr(m, 'suspicious_reasons', None):
+        suspicious_list = [r.strip() for r in m.suspicious_reasons.split(',') if r.strip()]
     return {
         "id": m.id,
         "match_score": m.match_score,
@@ -165,6 +169,7 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
         "status": m.status,
         "notified_at": m.notified_at.isoformat() if m.notified_at else None,
         "imported_application_id": m.imported_application_id,
+        "suspicious_reasons": suspicious_list,
         "raw_job": {
             "id": raw.id, "title": raw.title, "company": raw.company,
             "location": raw.location, "url": raw.url, "description": raw.description,
