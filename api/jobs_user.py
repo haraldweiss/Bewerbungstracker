@@ -3,6 +3,7 @@
 """User-facing Job-Discovery Endpoints (JWT-geschützt)."""
 
 from __future__ import annotations
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify
 
 from database import db
@@ -192,6 +193,10 @@ def list_matches(user):
     # Default: bereits beworbene Stellen (Treffer in Applications-Tabelle)
     # ausblenden. ?include_applied=true zeigt sie wieder an.
     include_applied = (request.args.get('include_applied', '').lower() in ('1', 'true', 'yes'))
+    # Default: Firmen die in den letzten 6 Monaten abgelehnt haben werden auch
+    # ausgeblendet — keine Mehrfach-Bewerbung kurz nach Absage.
+    include_rejected = (request.args.get('include_rejected', '').lower() in ('1', 'true', 'yes'))
+    rejection_window_days = int(request.args.get('rejection_window_days', '180'))
 
     query = (db.session.query(JobMatch, RawJob, JobSource)
              .join(RawJob, RawJob.id == JobMatch.raw_job_id)
@@ -238,6 +243,33 @@ def list_matches(user):
                 for (c, p) in applied_pairs
             ]
             query = query.filter(not_(or_(*pair_conds)))
+
+    # Firmen, die in den letzten N Tagen abgelehnt haben, ausblenden.
+    # Verwendet status='absage' (deutsche UI) und 'rejected' (englische Aliase).
+    # Cutoff bevorzugt applied_date; bei NULL fällt es auf created_at zurück.
+    if not include_rejected:
+        cutoff_dt = datetime.utcnow() - timedelta(days=rejection_window_days)
+        cutoff_date = cutoff_dt.date()
+        rejected_companies_q = (
+            db.session.query(db.func.lower(Application.company))
+            .filter(
+                Application.user_id == user.id,
+                Application.deleted == False,  # noqa: E712
+                Application.status.in_(['absage', 'rejected']),
+                Application.company.isnot(None),
+                db.or_(
+                    Application.applied_date >= cutoff_date,
+                    db.and_(Application.applied_date.is_(None),
+                            Application.created_at >= cutoff_dt),
+                ),
+            )
+            .distinct()
+        )
+        rejected_companies = {row[0] for row in rejected_companies_q.all() if row[0]}
+        if rejected_companies:
+            query = query.filter(
+                ~db.func.lower(db.func.coalesce(RawJob.company, '')).in_(rejected_companies)
+            )
 
     total = query.count()
     rows = (query.order_by(JobMatch.match_score.desc().nullslast(),
