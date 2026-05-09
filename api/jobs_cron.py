@@ -402,6 +402,39 @@ STELLENAUSSCHREIBUNG:
 """
 
 
+# Modelle mit eingebautem Reasoning-Block (<think>…</think>) brauchen viel mehr
+# Output-Tokens, sonst wird der Antwortteil abgeschnitten — done_reason=length.
+_REASONING_MODEL_PATTERNS = (
+    'qwen3', 'qwen-3', 'deepseek-r1', 'deepseek-reasoner',
+    'o1-', 'o3-', 'reasoner', 'reasoning',
+)
+
+
+def _is_reasoning_model(model: str) -> bool:
+    if not model:
+        return False
+    m = model.lower()
+    return any(p in m for p in _REASONING_MODEL_PATTERNS)
+
+
+def _max_tokens_for(model: str, base: int = 800) -> int:
+    """Reasoning-Modelle bekommen 4x das Token-Budget für ihren Thinking-Block."""
+    return base * 4 if _is_reasoning_model(model) else base
+
+
+def _strip_thinking_block(text: str) -> str:
+    """Entfernt <think>...</think>-Blöcke (Qwen3, DeepSeek-R1, etc.).
+
+    Auch tolerant gegen verwaiste öffnende Tags: alles vor dem letzten
+    </think> wird verworfen, dahinter liegt das eigentliche Antwort-JSON.
+    """
+    if not text:
+        return text
+    if '</think>' in text:
+        text = text.rsplit('</think>', 1)[1].lstrip()
+    return text
+
+
 def _summarize_description(client, user_id: str, provider: str, model: str,
                             description: str, target_chars: int = 1500) -> str:
     """Fasst eine zu lange Job-Description via KI zusammen.
@@ -418,9 +451,13 @@ def _summarize_description(client, user_id: str, provider: str, model: str,
         response = client.chat(
             user_id=user_id, provider=provider, model=model,
             messages=[{"role": "user", "content": summary_prompt}],
-            max_tokens=600,
+            # Großzügig: Reasoning-Modelle (qwen3, deepseek-r1) brauchen Output-Budget
+            # für ihren <think>-Block + die eigentliche Summary.
+            max_tokens=_max_tokens_for(model),
         )
         text = response.content[0].text.strip() if response.content else ''
+        # <think>...</think>-Blöcke entfernen (Qwen3, DeepSeek-R1)
+        text = _strip_thinking_block(text)
         if text and len(text) >= 100:  # plausible summary
             logger.info(f'summarized description: {len(description)} → {len(text)} chars')
             return text
@@ -455,7 +492,9 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
                 {"role": "system", "content": SYSTEM_MESSAGE_MATCH},
                 {"role": "user", "content": user_msg},
             ],
-            max_tokens=600,
+            # Reasoning-Modelle (qwen3, deepseek-r1, o1, …) brauchen mehr Budget
+            # für ihren <think>-Block, sonst wird der JSON-Output abgeschnitten.
+            max_tokens=_max_tokens_for(model),
         )
 
     try:
@@ -470,7 +509,9 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
         )
         return False
 
-    text = (response.content[0].text if response.content else '').strip()
+    text = _strip_thinking_block(
+        (response.content[0].text if response.content else '').strip()
+    )
     parsed = _extract_first_json_object(text)
 
     # Retry mit Summary wenn erste Antwort leer oder unparsbar
@@ -485,7 +526,9 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
             )
             if short_desc and short_desc != raw.description:
                 response2 = call_match(short_desc)
-                text2 = (response2.content[0].text if response2.content else '').strip()
+                text2 = _strip_thinking_block(
+                    (response2.content[0].text if response2.content else '').strip()
+                )
                 parsed2 = _extract_first_json_object(text2)
                 if parsed2:
                     # Tokens kumulieren (Summarize-Call + zweiter Match-Call)
