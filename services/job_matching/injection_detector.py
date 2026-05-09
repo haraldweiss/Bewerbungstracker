@@ -49,8 +49,11 @@ _INJECTION_PATTERNS = [
     # Template-Injection
     (re.compile(r'\{\{.{0,30}\}\}'), 'template_injection'),
 
-    # Excessive Repetition (Token-flooding)
-    (re.compile(r'(.{3,40})\1{8,}'), 'token_flood'),
+    # Excessive Repetition (Token-flooding) — die repeat-unit muss mindestens
+    # ein alphanumerisches Zeichen enthalten. Sonst triggert das Pattern bei
+    # harmlosen Formatierungs-Artefakten (Trenner-Linien wie '-----', NBSP-
+    # Padding, Unterstriche).
+    (re.compile(r'((?=[^\s])(?=.*[A-Za-z0-9]).{3,40})\1{8,}'), 'token_flood'),
 ]
 
 
@@ -70,13 +73,21 @@ def detect_injection_patterns(text: str) -> List[str]:
 
 
 def has_suspicious_score_jump(prefilter_score: float | None, match_score: float | None,
-                                jump_threshold: float = 30.0) -> bool:
+                                jump_threshold: float = 40.0,
+                                min_prefilter: float = 10.0) -> bool:
     """True wenn match_score deutlich höher als prefilter_score ist.
 
     Heuristik: wenn das Modell aus einem mittel-passenden Job (PreFilter sagt z.B. 40)
-    plötzlich 95 macht, könnte es vom Inhalt überredet worden sein. False bei
-    fehlenden Werten.
+    plötzlich 95 macht, könnte es vom Inhalt überredet worden sein.
+
+    Wichtig: bei Pre-Filter < 10 ist KEIN Verdacht-Indiz mehr — niedriger
+    Pre-Filter heißt nur 'keine Token-Überschneidung mit dem CV', nicht 'das
+    Modell wurde überredet'. Beispiel: Security-Engineer-CV trifft auf
+    DevOps-Stelle → Pre-Filter 0, Modell sagt 50 (verwandtes Feld). Das ist
+    legitim, nicht verdächtig.
     """
     if prefilter_score is None or match_score is None:
+        return False
+    if prefilter_score < min_prefilter:
         return False
     return (match_score - prefilter_score) > jump_threshold
