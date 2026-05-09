@@ -422,13 +422,19 @@ def _is_reasoning_model(model: str) -> bool:
     return any(p in m for p in _REASONING_MODEL_PATTERNS)
 
 
-def _max_tokens_for(model: str, base: int = 800) -> int:
-    """Reasoning-Modelle bekommen 8x Budget für Thinking-Block + längere Begründung.
+def _max_tokens_for(model: str, base: int = 2000) -> int:
+    """Token-Budget pro Match-Call.
 
-    Empirisch: Qwen3 / DeepSeek-R1 verbrauchen oft 1500-2500 Tokens für <think>,
-    plus 500-1000 für die eigentliche Antwort. 6400 lässt genug Puffer.
+    base=2000 reicht für ein vollständiges JSON mit langem Reasoning (Default).
+    Empirisch zeigte sich: 800 ist zu wenig — viele Modelle (Gemma4, Llama3.x)
+    schreiben gern 'Hier ist meine Bewertung: …' davor + längere Erklärungen,
+    JSON wird mid-output abgeschnitten.
+
+    Reasoning-Modelle (Qwen3, DeepSeek-R1, o1, …) bekommen 4× Budget für ihren
+    <think>-Block. Das ist `max_tokens` als Obergrenze — bei normalen Calls
+    läuft das Modell nicht aus, also keine Mehrkosten.
     """
-    return base * 8 if _is_reasoning_model(model) else base
+    return base * 4 if _is_reasoning_model(model) else base
 
 
 def _strip_thinking_block(text: str) -> str:
