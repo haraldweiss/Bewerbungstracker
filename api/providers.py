@@ -12,6 +12,7 @@ from api.auth import token_required
 from models import User
 from database import db
 from services import ai_provider_client
+from services.ai_provider_client import AIProviderQueuedError
 import json
 import logging
 
@@ -233,3 +234,70 @@ def test_provider_connection(user, provider_id):
     except Exception as e:
         logger.error(f'Test Provider Error ({provider_id}): {e}')
         return {'status': 'error', 'provider_id': provider_id, 'error': str(e)}, 400
+
+
+# Sinnvolle Default-Models, falls User keinen gesetzt hat.
+_DEFAULT_MODELS = {
+    'claude': 'claude-haiku-4-5-20251001',
+    'ollama': 'mistral-nemo:12b-instruct-2407-q5_K_M',
+}
+
+
+@providers_bp.route('/chat', methods=['POST'])
+@token_required
+def chat_with_user_provider(user):
+    """Direkter Chat mit dem User-konfigurierten Provider (mit Fallback + Queue).
+
+    Body:
+      { "prompt": "...", "max_tokens": 3000, "model": "..." (optional) }
+
+    Antworten:
+      200: { "response": "<text>", "via": "<provider>", "fallback_used": bool, "usage": {...} }
+      202: { "queued": true, "queue_id": "...", "expires_at": "..." }   ← Provider down + Queue an
+      4xx/5xx: { "error": "..." }
+    """
+    if not ai_provider_client.is_enabled():
+        return {'error': 'AI Provider Service nicht konfiguriert (AI_PROVIDER_SERVICE_URL fehlt)'}, 503
+
+    data = request.get_json() or {}
+    prompt = (data.get('prompt') or '').strip()
+    if not prompt:
+        return {'error': 'prompt fehlt'}, 400
+
+    max_tokens = int(data.get('max_tokens', 2000))
+    provider = user.ai_provider or 'claude'
+    model = data.get('model') or user.ai_provider_model or _DEFAULT_MODELS.get(provider, '')
+
+    if not model:
+        return {'error': f'Kein Model für Provider {provider} konfiguriert'}, 400
+
+    try:
+        client = ai_provider_client.get_client()
+        response = client.chat(
+            user_id=user.id, provider=provider, model=model,
+            messages=[{'role': 'user', 'content': prompt}],
+            max_tokens=max_tokens,
+        )
+        return {
+            'response': response.content[0].text if response.content else '',
+            'via': response.via,
+            'fallback_used': response.fallback_used,
+            'provider': provider,
+            'model': model,
+            'usage': {
+                'input_tokens': response.usage.input_tokens,
+                'output_tokens': response.usage.output_tokens,
+            },
+        }, 200
+    except AIProviderQueuedError as e:
+        logger.info(f'Chat queued for user={user.id} provider={provider}: {e.queue_id}')
+        return {
+            'queued': True,
+            'queue_id': e.queue_id,
+            'expires_at': e.expires_at,
+            'provider': provider,
+            'message': f'Provider {provider} nicht erreichbar — Anfrage wird automatisch nachgeholt',
+        }, 202
+    except Exception as e:
+        logger.error(f'Chat Error: {e}')
+        return {'error': str(e), 'provider': provider}, 502

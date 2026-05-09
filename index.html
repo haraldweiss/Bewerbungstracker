@@ -857,9 +857,11 @@
                 <label style="display:block;margin-bottom:0.5rem;font-weight:600;">Generierter Prompt:</label>
                 <textarea id="generatedPrompt" readonly style="width:100%;min-height:200px;padding:1rem;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);font-family:monospace;font-size:0.85rem;"></textarea>
                 <div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+                    <button class="btn btn-success" id="analyzeBtn" onclick="analyzeWithConfiguredProvider()" title="Schickt den Prompt an deinen aktuell konfigurierten KI-Provider (Settings → AI Provider). Bei Nicht-Erreichbarkeit wird Fallback genutzt oder die Anfrage gequeued.">🚀 Direkt mit konfiguriertem Provider analysieren</button>
                     <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('generatedPrompt')">📋 Kopieren</button>
                     <button class="btn btn-secondary btn-sm" onclick="exportPromptAsJSON()">💾 Exportieren</button>
                 </div>
+                <div id="analyzeStatus" style="margin-top:0.75rem;font-size:0.85rem;"></div>
             </div>
         </div>
 
@@ -6754,6 +6756,68 @@ function validatePromptSize(prompt) {
         warnings.push(`⚠️ Prompt groß (${stats.estimatedTokens} Tokens)`);
     }
     return { valid: stats.estimatedTokens <= SAFE_LIMIT, warnings, stats };
+}
+
+async function analyzeWithConfiguredProvider() {
+    const prompt = document.getElementById('generatedPrompt').value.trim();
+    if (!prompt) {
+        showToast('⚠️ Bitte erst Prompt generieren', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('analyzeBtn');
+    const status = document.getElementById('analyzeStatus');
+    const resultText = document.getElementById('resultText');
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Provider antwortet...';
+    status.style.color = 'var(--text-muted)';
+    status.innerHTML = '🔄 Anfrage an konfigurierten Provider...';
+
+    try {
+        const response = await fetchAPI('/api/providers/chat', {
+            method: 'POST',
+            body: JSON.stringify({ prompt, max_tokens: 3000 })
+        });
+        const data = await response.json();
+
+        // Queue-Fall (202): Provider down, Anfrage wird automatisch nachgeholt
+        if (response.status === 202 && data.queued) {
+            status.style.color = 'var(--warning, #d97706)';
+            status.innerHTML = `⏳ <strong>Anfrage in Queue</strong> (ID: <code>${data.queue_id.slice(0, 8)}…</code>)<br>` +
+                               `Provider <code>${data.provider}</code> nicht erreichbar. ` +
+                               `Wird automatisch nachgeholt sobald wieder online.`;
+            showToast('⏳ Anfrage gequeued — Provider nicht erreichbar', 'warning');
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error(data.error || `HTTP ${response.status}`);
+        }
+
+        // Sync-Antwort: Result anzeigen
+        resultText.value = data.response || '';
+        if (!document.getElementById('resultTitle').value) {
+            const jobDesc = document.getElementById('jobDescriptionInput').value.trim();
+            const firstLine = jobDesc.split('\n')[0].slice(0, 60);
+            document.getElementById('resultTitle').value = firstLine || 'CV-Vergleich';
+        }
+
+        const fallbackInfo = data.fallback_used
+            ? `<span style="color:var(--warning, #d97706);">Fallback: ${data.via} statt ${data.provider}</span>`
+            : `<span style="color:var(--secondary);">${data.via}</span>`;
+        status.style.color = 'var(--text)';
+        status.innerHTML = `✅ Antwort erhalten via ${fallbackInfo} — ` +
+                           `${data.usage.input_tokens} in / ${data.usage.output_tokens} out Tokens`;
+        showToast('✅ Analyse fertig', 'success');
+    } catch (e) {
+        status.style.color = 'var(--danger)';
+        status.innerHTML = `❌ Fehler: ${e.message}`;
+        showToast('❌ ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+    }
 }
 
 function generateComparisonPrompt() {
