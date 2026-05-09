@@ -17,6 +17,8 @@ from services.job_matching.prefilter import score_job, PrefilterContext
 from services.job_matching.claude_matcher import match_job_with_claude
 from services.provider_service import ProviderFactory, ProviderConfig
 from services.job_matching.notifier import send_match_notification
+from services.encryption_service import EncryptionService
+from services.key_cache import get_key_cache
 
 logger = logging.getLogger(__name__)
 
@@ -251,10 +253,9 @@ def prefilter():
 
 
 def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
-    """Führt AI-Match (Claude oder Ollama) für einen einzelnen JobMatch aus.
+    """Führt AI-Match (Claude, Ollama, OpenAI, etc.) für einen einzelnen JobMatch aus.
 
-    Nutzt User-Preference für Provider/Model. Phase A: Claude (Server-Key),
-    Phase B: User wählt Provider + Model per Settings.
+    Nutzt User-Preference für Provider/Model. Dekryptiert API Keys für User-Provider.
 
     Returns:
         True wenn erfolgreich bewertet (DB-Update gemacht).
@@ -272,13 +273,29 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
 
     cv_summary = _build_cv_summary(user.cv_data_json)
 
-    # Phase B: Nutze User-Provider-Preference
+    # Nutze User-Provider-Preference
     provider = user.ai_provider or ProviderConfig.CLAUDE
     model = user.ai_provider_model or DEFAULT_MODEL
 
     try:
-        # Erstelle Client für User-Provider
-        user_client = ProviderFactory.get_client(provider)
+        # Hole user_config für User-Provider
+        user_config = {}
+        if provider in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
+            config_json = user.ai_provider_config or '{}'
+            config_dict = json.loads(config_json)
+            user_config = config_dict.get(provider, {})
+
+            # Dekryptiere API Key falls vorhanden
+            if 'api_key_encrypted' in user_config:
+                dek = get_key_cache().get(user.id)
+                if not dek:
+                    logger.warning(f'match failed: DEK cache miss for user={user.id}, provider={provider}')
+                    return False
+                api_key = EncryptionService.decrypt_data(user_config['api_key_encrypted'], dek)
+                user_config = {**user_config, 'api_key': api_key}
+
+        # Erstelle Client für User-Provider mit ggf. dekryptiertem Config
+        user_client = ProviderFactory.get_client(provider, user_config)
         result = match_job_with_claude(
             client=user_client, model=model, cv_summary=cv_summary,
             job={"title": raw.title, "description": raw.description, "location": raw.location},
@@ -296,11 +313,19 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
     raw.crawl_status = 'matched'
 
     cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
+
+    # Bestimme key_owner basierend auf Provider
+    key_owner = 'server'  # Standard: Server-Key (Claude)
+    if provider == ProviderConfig.OLLAMA:
+        key_owner = 'user'  # Lokal, kein Cost
+    elif provider in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
+        key_owner = 'custom_endpoint'  # User-bereitgestellter Provider/Endpoint
+
     db.session.add(ApiCall(
         user_id=user.id, endpoint='/api/jobs/match',
         model=model, tokens_in=result.tokens_in,
         tokens_out=result.tokens_out, cost=cost_cents / 100.0,
-        key_owner='user' if provider == ProviderConfig.OLLAMA else 'server',
+        key_owner=key_owner,
     ))
     db.session.flush()
     return True
