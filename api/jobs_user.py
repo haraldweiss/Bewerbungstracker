@@ -10,7 +10,7 @@ from models import JobSource, RawJob, JobMatch, Application
 from api.auth import token_required
 from services.ssrf_guard import is_url_safe_for_rss
 from services import ai_provider_client
-from api.jobs_cron import _run_claude_match_for, _user_today_cost_cents
+from api.jobs_cron import _run_claude_match_for, _user_today_cost_cents, _is_failed_evaluation
 
 
 jobs_user_bp = Blueprint('jobs_user', __name__, url_prefix='/api/jobs')
@@ -309,8 +309,9 @@ def score_match(user, match_id: int):
     if m.user_id != user.id:
         return jsonify({"error": "Forbidden"}), 403
 
-    # Bereits bewertet → existing data zurückgeben (kein Claude-Call)
-    if m.match_score is not None:
+    # Bereits bewertet → existing data zurückgeben (kein Claude-Call).
+    # Ausnahme: Failed-Evals aus früheren Runs werden re-evaluiert.
+    if m.match_score is not None and not _is_failed_evaluation(m):
         return jsonify({
             "match_score": m.match_score,
             "match_reasoning": m.match_reasoning,

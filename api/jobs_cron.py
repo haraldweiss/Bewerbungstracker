@@ -592,6 +592,21 @@ def _run_match_via_local_factory(user: User, match: JobMatch, raw: RawJob, cv_su
     return True
 
 
+def _is_failed_evaluation(match: JobMatch) -> bool:
+    """True wenn der bestehende Match-Score von einem vorherigen Fehlschlag stammt.
+
+    Solche Matches haben score=0 und ein 'Bewertung fehlgeschlagen'-Reasoning —
+    sie sollen bei einem manuellen oder Bulk-Re-Run neu bewertet werden statt als
+    'schon bewertet' geskippt zu werden.
+    """
+    if match.match_score is None:
+        return False
+    if match.match_score > 0:
+        return False
+    reasoning = (match.match_reasoning or '').strip().lower()
+    return reasoning.startswith('bewertung fehlgeschlagen')
+
+
 def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
     """Führt AI-Match aus. Bevorzugt ai-provider-service, fallback auf lokale ProviderFactory.
 
@@ -601,8 +616,17 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
         True wenn erfolgreich bewertet (DB-Update gemacht).
         False wenn geskippt (schon bewertet, Budget erschöpft, AI-Error oder gequeued).
     """
-    if match.match_score is not None:
+    # Bereits erfolgreich bewertet → nicht nochmal. Aber: Failed-Evals ('Bewertung
+    # fehlgeschlagen' aus früheren Runs) explizit re-tryen.
+    if match.match_score is not None and not _is_failed_evaluation(match):
         return False
+    # Failed-Eval → setze Felder zurück, damit eine neue saubere Bewertung möglich ist
+    if _is_failed_evaluation(match):
+        match.match_score = None
+        match.match_reasoning = None
+        match.missing_skills = []
+        match.suspicious_reasons = None
+
     if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
         return False
 
