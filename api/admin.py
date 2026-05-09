@@ -7,8 +7,9 @@ from flask import Blueprint, request, jsonify, current_app
 from functools import wraps
 
 from api.auth import token_required, admin_required
-from models import User, Application, EmailConfirmationToken
+from models import User, Application, EmailConfirmationToken, ApiCall
 from database import db
+from sqlalchemy import func
 from services.email_service import send_approval_notification, send_confirmation_email
 from services.encryption_service import EncryptionService
 from auth_service import AuthService
@@ -314,4 +315,93 @@ def promote_user(user, user_id):
         'message': f'User {target_user.email} {action}',
         'email': target_user.email,
         'is_admin': target_user.is_admin
+    }, 200
+
+
+@admin_bp.route('/usage-stats', methods=['GET'])
+@token_required
+@admin_required
+def usage_stats(user):
+    """Aggregierte AI-Nutzungs-Statistik pro User × Model.
+
+    Query-Param `days`: Zeitraum in Tagen (default 30, max 365). 0 = all-time.
+
+    Response:
+      {
+        "days": 30,
+        "since": "...iso...",
+        "rows": [
+          {
+            "user_id": "...", "email": "...",
+            "model": "claude-haiku-4-5", "key_owner": "server",
+            "calls": 42, "tokens_in": 12345, "tokens_out": 6789,
+            "cost_eur": 0.05, "last_used": "..."
+          }, ...
+        ],
+        "totals_per_user": [
+          {"user_id":"...", "email":"...", "calls": 100, "cost_eur": 0.12}
+        ]
+      }
+    """
+    try:
+        days = int(request.args.get('days', '30'))
+    except ValueError:
+        days = 30
+    days = max(0, min(365, days))
+
+    q = (db.session.query(
+            ApiCall.user_id,
+            ApiCall.model,
+            ApiCall.key_owner,
+            func.count(ApiCall.id).label('calls'),
+            func.coalesce(func.sum(ApiCall.tokens_in), 0).label('t_in'),
+            func.coalesce(func.sum(ApiCall.tokens_out), 0).label('t_out'),
+            func.coalesce(func.sum(ApiCall.cost), 0).label('cost'),
+            func.max(ApiCall.timestamp).label('last_used'),
+        )
+        .group_by(ApiCall.user_id, ApiCall.model, ApiCall.key_owner)
+    )
+
+    since = None
+    if days > 0:
+        since = datetime.utcnow() - timedelta(days=days)
+        q = q.filter(ApiCall.timestamp >= since)
+
+    rows = q.order_by(func.sum(ApiCall.cost).desc(), func.count(ApiCall.id).desc()).all()
+
+    # Email-Lookup, damit Frontend nicht pro Zeile noch User abfragen muss
+    user_ids = list({r.user_id for r in rows})
+    emails = {}
+    if user_ids:
+        for u in User.query.filter(User.id.in_(user_ids)).all():
+            emails[u.id] = u.email
+
+    detailed = [{
+        'user_id': r.user_id,
+        'email': emails.get(r.user_id, '?'),
+        'model': r.model or '(unbekannt)',
+        'key_owner': r.key_owner,
+        'calls': int(r.calls),
+        'tokens_in': int(r.t_in),
+        'tokens_out': int(r.t_out),
+        'cost_eur': round(float(r.cost), 4),
+        'last_used': r.last_used.isoformat() if r.last_used else None,
+    } for r in rows]
+
+    # Summen pro User (für Dashboard-Header)
+    per_user = {}
+    for d in detailed:
+        u = per_user.setdefault(d['user_id'], {
+            'user_id': d['user_id'], 'email': d['email'],
+            'calls': 0, 'cost_eur': 0.0,
+        })
+        u['calls'] += d['calls']
+        u['cost_eur'] = round(u['cost_eur'] + d['cost_eur'], 4)
+    totals = sorted(per_user.values(), key=lambda x: x['cost_eur'], reverse=True)
+
+    return {
+        'days': days,
+        'since': since.isoformat() if since else None,
+        'rows': detailed,
+        'totals_per_user': totals,
     }, 200

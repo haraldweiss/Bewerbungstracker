@@ -1357,6 +1357,47 @@
         </div>
     </div>
 
+    <!-- Admin-only: KI-Nutzung pro User -->
+    <div class="card" style="max-width:900px;margin-bottom:1rem;display:none;" id="adminUsageStatsCard">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;">
+            <div class="card-title" style="margin:0;">📊 KI-Nutzung pro User</div>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                <label style="font-size:0.85rem;color:var(--text-muted);">Zeitraum:</label>
+                <select id="usageStatsRange" onchange="loadUsageStats()" style="padding:0.3rem 0.5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                    <option value="1">Heute</option>
+                    <option value="7" selected>7 Tage</option>
+                    <option value="30">30 Tage</option>
+                    <option value="90">90 Tage</option>
+                    <option value="0">All-time</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="loadUsageStats()" title="Aktualisieren">🔄</button>
+            </div>
+        </div>
+
+        <!-- Summen-Übersicht pro User -->
+        <div id="usageStatsTotals" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem;"></div>
+
+        <!-- Detail-Tabelle -->
+        <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+                <thead>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <th style="text-align:left;padding:0.5rem;font-weight:600;">User</th>
+                        <th style="text-align:left;padding:0.5rem;font-weight:600;">Modell</th>
+                        <th style="text-align:left;padding:0.5rem;font-weight:600;" title="server = Admin-Key, user = lokal/Ollama, custom_endpoint = User-Endpoint">Key</th>
+                        <th style="text-align:right;padding:0.5rem;font-weight:600;">Calls</th>
+                        <th style="text-align:right;padding:0.5rem;font-weight:600;">Tokens (in/out)</th>
+                        <th style="text-align:right;padding:0.5rem;font-weight:600;">Kosten</th>
+                        <th style="text-align:left;padding:0.5rem;font-weight:600;">Zuletzt</th>
+                    </tr>
+                </thead>
+                <tbody id="usageStatsRows">
+                    <tr><td colspan="7" style="padding:1rem;text-align:center;color:var(--text-muted);">Lädt…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <div class="card" style="max-width:600px;">
         <div class="card-title" style="margin-bottom:0.5rem;">ℹ️ Info</div>
         <p style="color:var(--text-muted);font-size:0.85rem;line-height:1.8;">
@@ -1686,6 +1727,71 @@ async function loadUsersPage() {
                 Fehler beim Laden der Nutzer
             </td></tr>
         `;
+    }
+}
+
+// Admin: KI-Nutzung pro User laden + rendern
+async function loadUsageStats() {
+    const rangeSel = document.getElementById('usageStatsRange');
+    const rowsEl = document.getElementById('usageStatsRows');
+    const totalsEl = document.getElementById('usageStatsTotals');
+    if (!rowsEl || !totalsEl) return;
+    const days = rangeSel ? rangeSel.value : '30';
+
+    rowsEl.innerHTML = '<tr><td colspan="7" style="padding:1rem;text-align:center;color:var(--text-muted);">Lädt…</td></tr>';
+    totalsEl.innerHTML = '';
+
+    try {
+        const r = await fetchAPI(`/api/admin/usage-stats?days=${encodeURIComponent(days)}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+
+        // Summen-Karten pro User
+        const totals = data.totals_per_user || [];
+        if (totals.length === 0) {
+            totalsEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.9rem;">Keine Aktivität im gewählten Zeitraum</div>';
+        } else {
+            totalsEl.innerHTML = totals.map(u => `
+                <div style="background:var(--bg-card2);padding:0.5rem 0.75rem;border-radius:8px;border:1px solid var(--border);font-size:0.85rem;">
+                    <div style="font-weight:600;">${escapeHtml(u.email)}</div>
+                    <div style="color:var(--text-muted);">${u.calls} Calls · ${u.cost_eur > 0 ? u.cost_eur.toFixed(2) + ' €' : 'kostenlos'}</div>
+                </div>
+            `).join('');
+        }
+
+        // Detail-Tabelle
+        const rows = data.rows || [];
+        if (rows.length === 0) {
+            rowsEl.innerHTML = '<tr><td colspan="7" style="padding:1rem;text-align:center;color:var(--text-muted);">Keine Calls im gewählten Zeitraum</td></tr>';
+            return;
+        }
+        const fmtDate = iso => {
+            if (!iso) return '–';
+            const d = new Date(iso);
+            return d.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+        };
+        const keyOwnerBadge = ko => {
+            const meta = {
+                'server':          { label: 'Server', color: '#3b82f6' },
+                'user':            { label: 'Lokal',  color: '#10b981' },
+                'custom_endpoint': { label: 'Eigen',  color: '#a855f7' },
+            }[ko] || { label: ko || '?', color: '#6b7280' };
+            return `<span style="display:inline-block;background:${meta.color};color:#fff;padding:1px 7px;border-radius:999px;font-size:0.72em;font-weight:600;">${meta.label}</span>`;
+        };
+        rowsEl.innerHTML = rows.map(r => `
+            <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:0.5rem;">${escapeHtml(r.email)}</td>
+                <td style="padding:0.5rem;font-family:monospace;font-size:0.85em;">${escapeHtml(r.model)}</td>
+                <td style="padding:0.5rem;">${keyOwnerBadge(r.key_owner)}</td>
+                <td style="padding:0.5rem;text-align:right;">${r.calls}</td>
+                <td style="padding:0.5rem;text-align:right;font-family:monospace;font-size:0.85em;color:var(--text-muted);">${r.tokens_in}/${r.tokens_out}</td>
+                <td style="padding:0.5rem;text-align:right;">${r.cost_eur > 0 ? r.cost_eur.toFixed(4) + ' €' : '–'}</td>
+                <td style="padding:0.5rem;color:var(--text-muted);font-size:0.85em;">${fmtDate(r.last_used)}</td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        console.error('Usage-Stats laden fehlgeschlagen:', e);
+        rowsEl.innerHTML = `<tr><td colspan="7" style="padding:1rem;text-align:center;color:var(--danger);">Fehler: ${escapeHtml(e.message)}</td></tr>`;
     }
 }
 
@@ -2055,6 +2161,16 @@ async function updateAdminButtonVisibility() {
                 AdminSettings.init();
             } else {
                 adminCard.style.display = 'none';
+            }
+        }
+        // Usage-Stats-Card: nur für Admins, asynchron laden
+        const usageCard = document.getElementById('adminUsageStatsCard');
+        if (usageCard) {
+            if (isUserAdmin) {
+                usageCard.style.display = 'block';
+                loadUsageStats();
+            } else {
+                usageCard.style.display = 'none';
             }
         }
     } catch (error) {
