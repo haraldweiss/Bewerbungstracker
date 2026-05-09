@@ -189,6 +189,9 @@ def list_matches(user):
     q_text = (request.args.get('q') or '').strip().lower()
     limit = min(request.args.get('limit', type=int, default=50), 200)
     offset = request.args.get('offset', type=int, default=0)
+    # Default: bereits beworbene Stellen (Treffer in Applications-Tabelle)
+    # ausblenden. ?include_applied=true zeigt sie wieder an.
+    include_applied = (request.args.get('include_applied', '').lower() in ('1', 'true', 'yes'))
 
     query = (db.session.query(JobMatch, RawJob, JobSource)
              .join(RawJob, RawJob.id == JobMatch.raw_job_id)
@@ -207,6 +210,34 @@ def list_matches(user):
             db.func.lower(RawJob.title).contains(q_text),
             db.func.lower(RawJob.company).contains(q_text),
         ))
+
+    # Cross-Check gegen Applications: schon beworben?
+    # Match-Heuristik (in dieser Reihenfolge):
+    #   (a) RawJob.url == Application.link
+    #   (b) lower(company) == lower(Application.company) AND lower(title) == lower(Application.position)
+    # Gelöschte Applications zählen nicht — wenn der User eine Bewerbung
+    # zurückzieht, taucht der Vorschlag wieder auf.
+    if not include_applied:
+        applied = (db.session.query(Application.link, Application.company, Application.position)
+                   .filter(Application.user_id == user.id, Application.deleted == False)  # noqa: E712
+                   .all())
+        applied_urls = {a.link for a in applied if a.link}
+        applied_pairs = {
+            ((a.company or '').strip().lower(), (a.position or '').strip().lower())
+            for a in applied if a.company and a.position
+        }
+        if applied_urls:
+            query = query.filter(~RawJob.url.in_(applied_urls))
+        if applied_pairs:
+            from sqlalchemy import and_, or_, not_
+            pair_conds = [
+                and_(
+                    db.func.lower(db.func.coalesce(RawJob.company, '')) == c,
+                    db.func.lower(RawJob.title) == p,
+                )
+                for (c, p) in applied_pairs
+            ]
+            query = query.filter(not_(or_(*pair_conds)))
 
     total = query.count()
     rows = (query.order_by(JobMatch.match_score.desc().nullslast(),
