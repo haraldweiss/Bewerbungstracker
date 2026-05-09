@@ -7135,17 +7135,20 @@ function sendToAPI(aiId) {
 async function loadProviders() {
     try {
         const response = await fetchAPI('/api/providers', { method: 'GET' });
-        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
-        const data = await response.json();
+        if (!response.ok) {
+            console.warn(`Provider API error: ${response.status} ${response.statusText}`);
+            // Fallback: ensure Claude is always available
+            loadDefaultProviders();
+            return;
+        }
 
+        const data = await response.json();
         const select = document.getElementById('aiProviderSelect');
         select.replaceChildren();
 
         if (!data.providers || data.providers.length === 0) {
-            const opt = document.createElement('option');
-            opt.value = '';
-            opt.textContent = 'Keine Provider verfügbar';
-            select.appendChild(opt);
+            console.warn('No providers returned from API, loading defaults');
+            loadDefaultProviders();
             return;
         }
 
@@ -7160,16 +7163,46 @@ async function loadProviders() {
         const settingsResponse = await fetchAPI('/api/providers/user/settings', { method: 'GET' });
         if (settingsResponse.ok) {
             const settings = await settingsResponse.json();
-            select.value = settings.provider || '';
+            select.value = settings.provider || 'claude';
             if (settings.provider) {
                 await onProviderChange();
                 document.getElementById('aiModelSelect').value = settings.model || '';
+            } else {
+                // Default to Claude if no provider selected
+                select.value = 'claude';
+                await onProviderChange();
             }
+        } else {
+            // Default to Claude if can't fetch settings
+            select.value = 'claude';
+            await onProviderChange();
         }
     } catch (e) {
         console.error('Provider-Load Error:', e);
-        showToast('❌ Provider laden fehlgeschlagen', 'error');
+        console.warn('Falling back to default providers');
+        loadDefaultProviders();
     }
+}
+
+// Fallback function to ensure Claude is always available
+function loadDefaultProviders() {
+    const select = document.getElementById('aiProviderSelect');
+    select.replaceChildren();
+
+    // Always include Claude as fallback
+    const claudeOption = document.createElement('option');
+    claudeOption.value = 'claude';
+    claudeOption.textContent = 'Claude (Anthropic)';
+    select.appendChild(claudeOption);
+
+    // Try to add Ollama if available
+    const ollamaOption = document.createElement('option');
+    ollamaOption.value = 'ollama';
+    ollamaOption.textContent = 'Ollama (lokal)';
+    select.appendChild(ollamaOption);
+
+    select.value = 'claude';
+    onProviderChange();
 }
 
 async function onProviderChange() {
