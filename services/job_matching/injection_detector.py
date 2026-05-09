@@ -49,12 +49,24 @@ _INJECTION_PATTERNS = [
     # Template-Injection
     (re.compile(r'\{\{.{0,30}\}\}'), 'template_injection'),
 
-    # Excessive Repetition (Token-flooding) — die repeat-unit muss mindestens
-    # ein alphanumerisches Zeichen enthalten. Sonst triggert das Pattern bei
-    # harmlosen Formatierungs-Artefakten (Trenner-Linien wie '-----', NBSP-
-    # Padding, Unterstriche).
-    (re.compile(r'((?=[^\s])(?=.*[A-Za-z0-9]).{3,40})\1{8,}'), 'token_flood'),
 ]
+
+# Excessive Repetition (Token-flooding) wird separat behandelt, weil die
+# repeat-unit zusätzlich alphanumerischen Inhalt haben muss — Lookaheads
+# in Python-Regex matchen sonst zu großzügig auf umgebenden Text.
+_TOKEN_FLOOD_RE = re.compile(r'(.{3,40})\1{8,}', re.DOTALL)
+_HAS_ALNUM_RE = re.compile(r'[A-Za-z0-9]')
+
+
+def _has_token_flood(text: str) -> bool:
+    """Token-Flooding: gleicher Mini-String 8× hintereinander, mit alphanumerischem
+    Inhalt. Reine Trenner (---, ___, NBSP-Padding) sind harmlos und werden
+    ignoriert."""
+    for m in _TOKEN_FLOOD_RE.finditer(text):
+        unit = m.group(1)
+        if _HAS_ALNUM_RE.search(unit):
+            return True
+    return False
 
 
 def detect_injection_patterns(text: str) -> List[str]:
@@ -69,6 +81,8 @@ def detect_injection_patterns(text: str) -> List[str]:
     for pattern, label in _INJECTION_PATTERNS:
         if pattern.search(text):
             found.append(label)
+    if _has_token_flood(text):
+        found.append('token_flood')
     return found
 
 
