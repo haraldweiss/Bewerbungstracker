@@ -14,11 +14,13 @@ from services.cron_auth import require_cron_token
 from services.job_sources import get_adapter
 from services.job_matching.cv_tokenizer import tokenize_cv
 from services.job_matching.prefilter import score_job, PrefilterContext
-from services.job_matching.claude_matcher import match_job_with_claude
+from services.job_matching.claude_matcher import match_job_with_claude, _build_prompt, MatchResult
 from services.provider_service import ProviderFactory, ProviderConfig
 from services.job_matching.notifier import send_match_notification
 from services.encryption_service import EncryptionService
 from services.key_cache import get_key_cache
+from services import ai_provider_client
+from services.ai_provider_client import AIProviderQueuedError
 
 logger = logging.getLogger(__name__)
 
@@ -252,60 +254,57 @@ def prefilter():
                     "duration_sec": round(time.time() - started, 2)}), 200
 
 
-def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
-    """Führt AI-Match (Claude, Ollama, OpenAI, etc.) für einen einzelnen JobMatch aus.
+def _parse_match_response(text: str, tokens_in: int, tokens_out: int) -> MatchResult:
+    """Parst die JSON-Antwort vom Provider in ein MatchResult."""
+    if text.startswith("```"):
+        text = text.split("```", 2)[1].lstrip("json\n").strip()
+    try:
+        data = json.loads(text)
+        return MatchResult(
+            score=float(data.get("score", 0)),
+            reasoning=str(data.get("reasoning", "")),
+            missing_skills=list(data.get("missing_skills") or []),
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+        )
+    except Exception:
+        return MatchResult(
+            score=0,
+            reasoning="Bewertung fehlgeschlagen (ungültiges JSON von Provider).",
+            missing_skills=[],
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+        )
 
-    Nutzt User-Preference für Provider/Model. Dekryptiert API Keys für User-Provider.
 
-    Returns:
-        True wenn erfolgreich bewertet (DB-Update gemacht).
-        False wenn geskippt (schon bewertet, Budget erschöpft, oder AI-Error).
-    """
-    if match.match_score is not None:
-        return False
-
-    if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
-        return False
-
-    raw = RawJob.query.get(match.raw_job_id)
-    if raw is None:
-        return False
-
-    cv_summary = _build_cv_summary(user.cv_data_json)
-
-    # Nutze User-Provider-Preference
-    provider = user.ai_provider or ProviderConfig.CLAUDE
-    model = user.ai_provider_model or DEFAULT_MODEL
+def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary: str,
+                            provider: str, model: str) -> bool:
+    """Match-Pfad via ai-provider-service (Production)."""
+    client = ai_provider_client.get_client()
+    prompt = _build_prompt(cv_summary, {
+        "title": raw.title, "description": raw.description, "location": raw.location,
+    })
 
     try:
-        # Hole user_config für User-Provider
-        user_config = {}
-        if provider in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
-            config_json = user.ai_provider_config or '{}'
-            config_dict = json.loads(config_json)
-            user_config = config_dict.get(provider, {})
-
-            # Dekryptiere API Key falls vorhanden
-            if 'api_key_encrypted' in user_config:
-                dek = get_key_cache().get(user.id)
-                if not dek:
-                    logger.warning(f'match failed: DEK cache miss for user={user.id}, provider={provider}')
-                    return False
-                api_key = EncryptionService.decrypt_data(user_config['api_key_encrypted'], dek)
-                user_config = {**user_config, 'api_key': api_key}
-
-        # Erstelle Client für User-Provider mit ggf. dekryptiertem Config
-        user_client = ProviderFactory.get_client(provider, user_config)
-        result = match_job_with_claude(
-            client=user_client, model=model, cv_summary=cv_summary,
-            job={"title": raw.title, "description": raw.description, "location": raw.location},
+        response = client.chat(
+            user_id=user.id, provider=provider, model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=600,
         )
+    except AIProviderQueuedError as e:
+        logger.info(f'match queued: queue_id={e.queue_id} user={user.id} provider={provider}')
+        # Nicht als Fehler werten — wird vom Service-Worker später nachgearbeitet.
+        # JobMatch bleibt bei status='new', match_score=None → nächster Cron-Tick versucht's wieder.
+        return False
     except Exception as e:
         logger.warning(
-            "match failed for match=%s user=%s provider=%s: %s: %s",
+            "service-match failed for match=%s user=%s provider=%s: %s: %s",
             match.id, user.id, provider, type(e).__name__, e,
         )
         return False
+
+    text = response.content[0].text if response.content else ''
+    result = _parse_match_response(text.strip(), response.usage.input_tokens, response.usage.output_tokens)
 
     match.match_score = result.score
     match.match_reasoning = result.reasoning
@@ -313,13 +312,9 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
     raw.crawl_status = 'matched'
 
     cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
-
-    # Bestimme key_owner basierend auf Provider
-    key_owner = 'server'  # Standard: Server-Key (Claude)
-    if provider == ProviderConfig.OLLAMA:
-        key_owner = 'user'  # Lokal, kein Cost
-    elif provider in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
-        key_owner = 'custom_endpoint'  # User-bereitgestellter Provider/Endpoint
+    key_owner = 'server' if response.via == 'claude' else (
+        'user' if response.via == 'ollama' else 'custom_endpoint'
+    )
 
     db.session.add(ApiCall(
         user_id=user.id, endpoint='/api/jobs/match',
@@ -331,13 +326,96 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
     return True
 
 
+def _run_match_via_local_factory(user: User, match: JobMatch, raw: RawJob, cv_summary: str,
+                                  provider: str, model: str) -> bool:
+    """Legacy-Pfad: lokale ProviderFactory (nur Local-Dev ohne Service)."""
+    try:
+        user_config = {}
+        if provider in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
+            config_json = user.ai_provider_config or '{}'
+            config_dict = json.loads(config_json)
+            user_config = config_dict.get(provider, {})
+            if 'api_key_encrypted' in user_config:
+                dek = get_key_cache().get(user.id)
+                if not dek:
+                    logger.warning(f'match failed: DEK cache miss for user={user.id}, provider={provider}')
+                    return False
+                api_key = EncryptionService.decrypt_data(user_config['api_key_encrypted'], dek)
+                user_config = {**user_config, 'api_key': api_key}
+
+        user_client = ProviderFactory.get_client(provider, user_config)
+        result = match_job_with_claude(
+            client=user_client, model=model, cv_summary=cv_summary,
+            job={"title": raw.title, "description": raw.description, "location": raw.location},
+        )
+    except Exception as e:
+        logger.warning(
+            "local-match failed for match=%s user=%s provider=%s: %s: %s",
+            match.id, user.id, provider, type(e).__name__, e,
+        )
+        return False
+
+    match.match_score = result.score
+    match.match_reasoning = result.reasoning
+    match.missing_skills = result.missing_skills
+    raw.crawl_status = 'matched'
+
+    cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
+    key_owner = 'server'
+    if provider == ProviderConfig.OLLAMA:
+        key_owner = 'user'
+    elif provider in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
+        key_owner = 'custom_endpoint'
+
+    db.session.add(ApiCall(
+        user_id=user.id, endpoint='/api/jobs/match',
+        model=model, tokens_in=result.tokens_in,
+        tokens_out=result.tokens_out, cost=cost_cents / 100.0,
+        key_owner=key_owner,
+    ))
+    db.session.flush()
+    return True
+
+
+def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
+    """Führt AI-Match aus. Bevorzugt ai-provider-service, fallback auf lokale ProviderFactory.
+
+    Der `client`-Parameter ist Legacy (bleibt aus Backward-Compat) — wird nicht mehr genutzt.
+
+    Returns:
+        True wenn erfolgreich bewertet (DB-Update gemacht).
+        False wenn geskippt (schon bewertet, Budget erschöpft, AI-Error oder gequeued).
+    """
+    if match.match_score is not None:
+        return False
+    if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+        return False
+
+    raw = RawJob.query.get(match.raw_job_id)
+    if raw is None:
+        return False
+
+    cv_summary = _build_cv_summary(user.cv_data_json)
+    provider = user.ai_provider or ProviderConfig.CLAUDE
+    model = user.ai_provider_model or DEFAULT_MODEL
+
+    if ai_provider_client.is_enabled():
+        return _run_match_via_service(user, match, raw, cv_summary, provider, model)
+    return _run_match_via_local_factory(user, match, raw, cv_summary, provider, model)
+
+
 @jobs_cron_bp.post('/claude-match')
 @require_cron_token
 def claude_match():
     started = time.time()
-    client = _get_anthropic_client()
-    if client is None:
-        return jsonify({"error": "ANTHROPIC_API_KEY nicht gesetzt"}), 503
+    # Im Service-Modus brauchen wir keinen lokalen Anthropic-Key — der Service
+    # hat seinen eigenen. Im Local-Dev-Modus weiterhin Pflicht.
+    if not ai_provider_client.is_enabled():
+        client = _get_anthropic_client()
+        if client is None:
+            return jsonify({"error": "Weder AI_PROVIDER_SERVICE_URL noch ANTHROPIC_API_KEY gesetzt"}), 503
+    else:
+        client = None
 
     matched = 0
     skipped_budget = 0

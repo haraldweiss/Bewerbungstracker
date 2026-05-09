@@ -44,8 +44,9 @@ class User(db.Model):
     _job_region_filter = db.Column('job_region_filter', db.Text, nullable=True)
 
     # AI Provider Settings (Phase B)
-    ai_provider = db.Column(db.String(50), default='claude', nullable=False)  # 'claude' oder 'ollama'
+    ai_provider = db.Column(db.String(50), default='claude', nullable=False)  # 'claude', 'ollama', 'openai', etc.
     ai_provider_model = db.Column(db.String(255))  # Spezifisches Model für Job-Matching
+    ai_provider_config = db.Column(db.Text)  # JSON: per-user provider config (API keys, endpoints, encrypted)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

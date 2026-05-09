@@ -1,16 +1,17 @@
-"""
-AI Provider Management Endpoints
-Unterstützt Claude, Ollama, OpenAI, Mammouth, Custom Endpoints
-mit dynamischem Model-Fetching und per-User-Konfiguration
+"""AI Provider Management Endpoints.
+
+Wenn `AI_PROVIDER_SERVICE_URL` gesetzt ist (Production), delegieren die Endpoints
+an den zentralen ai-provider-service. Sonst Fallback auf die lokale
+ProviderFactory (Local-Dev ohne Service).
+
+Frontend bleibt unverändert — die API-Surface ist identisch zum Vor-Migrations-Stand.
 """
 
 from flask import Blueprint, request, jsonify
 from api.auth import token_required
 from models import User
 from database import db
-from services.provider_service import ProviderFactory, ProviderConfig
-from services.encryption_service import EncryptionService
-from services.key_cache import get_key_cache
+from services import ai_provider_client
 import json
 import logging
 
@@ -18,86 +19,69 @@ logger = logging.getLogger(__name__)
 
 providers_bp = Blueprint('providers', __name__, url_prefix='/api/providers')
 
+VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom'}
+USER_PROVIDERS = {'openai', 'mammouth', 'custom'}
+
+
+def _service_or_400():
+    """Holt den AIProviderClient; gibt JSON-Fehler zurück wenn nicht konfiguriert."""
+    if not ai_provider_client.is_enabled():
+        return None, ({'error': 'AI Provider Service nicht konfiguriert (AI_PROVIDER_SERVICE_URL fehlt)'}, 503)
+    return ai_provider_client.get_client(), None
+
 
 @providers_bp.route('', methods=['GET'])
 @token_required
 def list_providers(user):
-    """Liste alle verfügbaren AI Provider und deren Models"""
-    try:
-        providers = ProviderFactory.get_available_providers(user)
+    """Liste verfügbarer Provider via ai-provider-service."""
+    client, err = _service_or_400()
+    if err:
+        return err
 
-        return {
-            'providers': providers,
-            'default': ProviderFactory.get_default_provider()
-        }, 200
+    try:
+        providers = client.list_providers(user_id=user.id)
+        # Frontend-Kompatibilität: unsere alten Frontend-Felder mappen
+        out = []
+        for p in providers:
+            out.append({
+                'id': p.get('id'),
+                'name': p.get('name'),
+                'scope': 'system' if p.get('system') else 'user',
+                'configured': p.get('configured', False),
+                'healthy': p.get('healthy'),
+                'models': [],  # wird per /<id>/models nachgeladen
+            })
+        return {'providers': out, 'default': 'claude'}, 200
     except Exception as e:
         logger.error(f'Provider-List Error: {e}')
-        return {'error': str(e)}, 500
+        return {'error': str(e)}, 502
 
 
 @providers_bp.route('/<provider_id>/models', methods=['GET'])
 @token_required
 def get_provider_models(user, provider_id):
-    """Hole verfügbare Models für einen spezifischen Provider"""
+    """Hole verfügbare Models für einen Provider."""
+    if provider_id not in VALID_PROVIDERS:
+        return {'error': f'Unbekannter Provider: {provider_id}'}, 400
+
+    client, err = _service_or_400()
+    if err:
+        return err
+
     try:
-        if provider_id == ProviderConfig.CLAUDE:
-            models = ProviderConfig.PROVIDERS[ProviderConfig.CLAUDE]['models']
-            return {'models': models, 'default': ProviderConfig.PROVIDERS[ProviderConfig.CLAUDE]['default_model']}, 200
-
-        elif provider_id == ProviderConfig.OLLAMA:
-            from services.provider_service import OllamaClient
-            import os
-            ollama_url = os.getenv('OLLAMA_URL', ProviderConfig.PROVIDERS[ProviderConfig.OLLAMA]['default_url'])
-            ollama = OllamaClient(ollama_url)
-            models = ollama.get_models()
-
-            if not models:
-                return {'error': 'Keine Models auf lokalem Ollama gefunden'}, 404
-
-            model_names = [m['name'] for m in models]
-            return {
-                'models': model_names,
-                'default': ProviderConfig.PROVIDERS[ProviderConfig.OLLAMA]['default_model'],
-                'details': models
-            }, 200
-
-        elif provider_id in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
-            # User-Provider: Hole Config + dekryptiere API Key
-            config_json = user.ai_provider_config or '{}'
-            config_dict = json.loads(config_json)
-            provider_config = config_dict.get(provider_id)
-
-            if not provider_config:
-                return {'error': f'Provider {provider_id} ist nicht konfiguriert', 'configured': False}, 400
-
-            # Dekryptiere API Key falls vorhanden
-            if 'api_key_encrypted' in provider_config:
-                dek = get_key_cache().get(user.id)
-                if not dek:
-                    return {'error': 'Sicherheits-Session abgelaufen, bitte neu anmelden'}, 401
-                api_key = EncryptionService.decrypt_data(provider_config['api_key_encrypted'], dek)
-                provider_config = {**provider_config, 'api_key': api_key}
-
-            client = ProviderFactory.get_client(provider_id, provider_config)
-            models = client.get_models()
-
-            if not models:
-                return {'error': f'Keine Models von {provider_id} erhalten'}, 404
-
-            return {'models': models, 'default': models[0] if models else None}, 200
-
-        else:
-            return {'error': f'Unbekannter Provider: {provider_id}'}, 400
-
+        models = client.get_models(provider_id, user_id=user.id)
+        if not models:
+            return {'error': f'Keine Models von {provider_id}', 'configured': False}, 404
+        return {'models': models, 'default': models[0] if models else None}, 200
     except Exception as e:
-        logger.error(f'Models-Fetch Error ({provider_id}): {e}')
-        return {'error': str(e)}, 500
+        logger.warning(f'Models-Fetch Error ({provider_id}): {e}')
+        return {'error': str(e)}, 502
 
 
 @providers_bp.route('/user/settings', methods=['GET'])
 @token_required
 def get_user_provider_settings(user):
-    """Hole aktuelle Provider-Einstellung des Users"""
+    """User-Preference (welcher Provider/Model). Bleibt lokal in der Bewerbungstracker-DB."""
     return {
         'provider': user.ai_provider or 'claude',
         'model': user.ai_provider_model
@@ -107,40 +91,34 @@ def get_user_provider_settings(user):
 @providers_bp.route('/user/settings', methods=['PATCH'])
 @token_required
 def update_user_provider_settings(user):
-    """Speichere Provider-Wahl und Model-Auswahl des Users"""
+    """Speichere User-Preference."""
     data = request.get_json() or {}
-
     provider = data.get('provider', user.ai_provider or 'claude')
     model = data.get('model')
 
-    valid_providers = [
-        ProviderConfig.CLAUDE, ProviderConfig.OLLAMA,
-        ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM
-    ]
-    if provider not in valid_providers:
+    if provider not in VALID_PROVIDERS:
         return {'error': f'Unbekannter Provider: {provider}'}, 400
 
-    # Bei User-Providern (OpenAI, Mammouth, Custom) muss der Provider konfiguriert sein
-    if provider in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
-        config_json = user.ai_provider_config or '{}'
-        config = json.loads(config_json)
-        if provider not in config:
-            return {'error': f'Provider {provider} ist nicht konfiguriert'}, 400
+    # Bei User-Providern: prüfe ob im Service konfiguriert
+    if provider in USER_PROVIDERS and ai_provider_client.is_enabled():
+        try:
+            client = ai_provider_client.get_client()
+            cfg = client.get_config(user.id, provider)
+            if not cfg.get('configured'):
+                return {'error': f'Provider {provider} ist nicht konfiguriert'}, 400
+        except Exception as e:
+            logger.warning(f'Config-Check für {provider} fehlgeschlagen: {e}')
 
     try:
         user.ai_provider = provider
         user.ai_provider_model = model
-
         db.session.commit()
-
-        logger.info(f'✅ User {user.email} set provider={provider}, model={model}')
-
+        logger.info(f'User {user.email} set provider={provider}, model={model}')
         return {
             'provider': user.ai_provider,
             'model': user.ai_provider_model,
             'message': 'Einstellungen gespeichert ✓'
         }, 200
-
     except Exception as e:
         db.session.rollback()
         logger.error(f'Provider-Settings Error: {e}')
@@ -150,129 +128,108 @@ def update_user_provider_settings(user):
 @providers_bp.route('/<provider_id>/config', methods=['GET'])
 @token_required
 def get_provider_config(user, provider_id):
-    """Hole aktuelle Konfiguration für einen User-Provider"""
-    if provider_id not in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
-        return {'error': f'Provider {provider_id} unterstützt keine benutzerdefinierte Konfiguration'}, 400
+    """Aktuelle Provider-Config (ohne sensible Daten)."""
+    if provider_id not in USER_PROVIDERS:
+        return {'error': f'Provider {provider_id} unterstützt keine User-Konfiguration'}, 400
+
+    client, err = _service_or_400()
+    if err:
+        return err
 
     try:
-        config_json = user.ai_provider_config or '{}'
-        config = json.loads(config_json)
-        provider_config = config.get(provider_id, {})
-
-        if not provider_config:
-            return {
-                'provider_id': provider_id,
-                'configured': False,
-                'message': 'Provider nicht konfiguriert'
-            }, 200
-
-        # Rückgabe ohne sensitive Daten (API Key wird nicht zurückgegeben)
-        return {
-            'provider_id': provider_id,
-            'configured': True,
-            'endpoint': provider_config.get('api_endpoint'),
-            'name': provider_config.get('name'),
-            'model': provider_config.get('model'),
-        }, 200
-    except json.JSONDecodeError:
-        return {'error': 'Ungültige Provider-Konfiguration'}, 500
+        cfg = client.get_config(user.id, provider_id)
+        return cfg, 200
     except Exception as e:
         logger.error(f'Get Provider Config Error: {e}')
-        return {'error': str(e)}, 500
+        return {'error': str(e)}, 502
 
 
 @providers_bp.route('/<provider_id>/config', methods=['POST'])
 @token_required
 def save_provider_config(user, provider_id):
-    """Speichere Provider-Konfiguration mit Encryption"""
-    if provider_id not in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
+    """Provider-Config im ai-provider-service ablegen.
+
+    API-Key fließt im Klartext zum lokalen Service (127.0.0.1) und wird
+    dort serverseitig mit MASTER_KEY verschlüsselt.
+    """
+    if provider_id not in USER_PROVIDERS:
         return {'error': f'Provider {provider_id} wird nicht unterstützt'}, 400
+
+    client, err = _service_or_400()
+    if err:
+        return err
 
     data = request.get_json() or {}
 
-    # Validiere erforderliche Felder pro Provider
-    required_fields = ProviderConfig.PROVIDERS[provider_id].get('requires', [])
-    missing = [f for f in required_fields if not data.get(f)]
+    # Pflichtfelder pro Provider
+    required = {
+        'openai': ['api_key'],
+        'mammouth': ['api_endpoint'],
+        'custom': ['api_endpoint'],
+    }.get(provider_id, [])
+    missing = [f for f in required if not data.get(f)]
     if missing:
-        return {'error': f'Erforderliche Felder: {", ".join(missing)}'}, 400
+        return {'error': f'Pflichtfelder: {", ".join(missing)}'}, 400
+
+    # Provider-Config bauen (Service erwartet inneres "config"-Objekt + Top-Level fallback/queue)
+    config = {k: v for k, v in data.items() if k in (
+        'api_key', 'api_endpoint', 'organization_id', 'name'
+    ) and v}
+
+    fallback = data.get('fallback_provider')
+    queue_when_unavailable = data.get('queue_when_unavailable', True)
+    queue_ttl_hours = int(data.get('queue_ttl_hours', 24))
 
     try:
-        # Hole DEK aus Cache (User ist nach Login authentifiziert)
-        dek = get_key_cache().get(user.id)
-        if not dek:
-            return {'error': 'Sicherheits-Session abgelaufen, bitte neu anmelden'}, 401
-
-        # Lade aktuelle Config
-        config_json = user.ai_provider_config or '{}'
-        config = json.loads(config_json)
-
-        # Verschlüssele API Key falls vorhanden
-        provider_config = {}
-        for key, value in data.items():
-            if key == 'api_key' and value:
-                encrypted = EncryptionService.encrypt_data(value, dek)
-                provider_config['api_key_encrypted'] = encrypted
-            else:
-                provider_config[key] = value
-
-        # Speichere in Config
-        config[provider_id] = provider_config
-        user.ai_provider_config = json.dumps(config)
-        db.session.commit()
-
-        logger.info(f'✅ User {user.email} configured provider={provider_id}')
-
+        result = client.save_config(
+            user_id=user.id, provider_id=provider_id,
+            config=config, fallback_provider=fallback,
+            queue_when_unavailable=queue_when_unavailable,
+            queue_ttl_hours=queue_ttl_hours,
+        )
+        logger.info(f'User {user.email} saved provider {provider_id} via service')
         return {
             'message': f'Provider {provider_id} konfiguriert ✓',
             'provider_id': provider_id,
-            'configured': True
+            'configured': True,
+            **result,
         }, 200
-
     except Exception as e:
-        db.session.rollback()
         logger.error(f'Save Provider Config Error: {e}')
-        return {'error': str(e)}, 500
+        return {'error': str(e)}, 502
+
+
+@providers_bp.route('/<provider_id>/config', methods=['DELETE'])
+@token_required
+def delete_provider_config(user, provider_id):
+    """Provider-Config aus dem Service löschen."""
+    if provider_id not in USER_PROVIDERS:
+        return {'error': f'Provider {provider_id} hat keine löschbare User-Config'}, 400
+
+    client, err = _service_or_400()
+    if err:
+        return err
+
+    try:
+        return client.delete_config(user.id, provider_id), 200
+    except Exception as e:
+        logger.error(f'Delete Provider Config Error: {e}')
+        return {'error': str(e)}, 502
 
 
 @providers_bp.route('/<provider_id>/test', methods=['POST'])
 @token_required
 def test_provider_connection(user, provider_id):
-    """Teste Verbindung zu einem Provider (Models-Abfrage)"""
-    if provider_id not in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
-        return {'error': f'Provider {provider_id} wird nicht unterstützt'}, 400
+    """Teste Verbindung zu einem User-Provider."""
+    if provider_id not in USER_PROVIDERS:
+        return {'error': f'Provider {provider_id} hat keinen User-Test'}, 400
+
+    client, err = _service_or_400()
+    if err:
+        return err
 
     try:
-        # Hole Config
-        config_json = user.ai_provider_config or '{}'
-        config_dict = json.loads(config_json)
-        provider_config = config_dict.get(provider_id)
-
-        if not provider_config:
-            return {'error': f'Provider {provider_id} ist nicht konfiguriert'}, 400
-
-        # Dekryptiere API Key falls vorhanden
-        if 'api_key_encrypted' in provider_config:
-            dek = get_key_cache().get(user.id)
-            if not dek:
-                return {'error': 'Sicherheits-Session abgelaufen, bitte neu anmelden'}, 401
-            api_key = EncryptionService.decrypt_data(provider_config['api_key_encrypted'], dek)
-            provider_config = {**provider_config, 'api_key': api_key}
-
-        # Erstelle Client und hole Models
-        client = ProviderFactory.get_client(provider_id, provider_config)
-        models = client.get_models()
-
-        return {
-            'status': 'connected',
-            'provider_id': provider_id,
-            'models_available': len(models),
-            'sample_models': models[:5] if models else []
-        }, 200
-
+        return client.test_provider(provider_id, user_id=user.id), 200
     except Exception as e:
-        logger.error(f'Test Provider Connection Error ({provider_id}): {e}')
-        return {
-            'status': 'error',
-            'provider_id': provider_id,
-            'error': str(e)
-        }, 400
+        logger.error(f'Test Provider Error ({provider_id}): {e}')
+        return {'status': 'error', 'provider_id': provider_id, 'error': str(e)}, 400

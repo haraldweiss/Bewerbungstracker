@@ -1,0 +1,199 @@
+"""HTTP-Client für ai-provider-service.
+
+Dünner Wrapper um die REST-API des zentralen Provider-Service. Wird vom
+Bewerbungstracker statt der alten lokalen ProviderFactory genutzt, sobald
+AI_PROVIDER_SERVICE_URL in den Env-Vars gesetzt ist.
+
+Antwort-Format ist Claude-kompatibel (Drop-in für match_job_with_claude):
+  ChatResponse mit .content[0].text und .usage.input_tokens / .output_tokens
+"""
+
+from __future__ import annotations
+import logging
+from dataclasses import dataclass
+from typing import Optional, List, Dict
+import requests
+from config import Config
+
+logger = logging.getLogger(__name__)
+
+
+class AIProviderServiceError(Exception):
+    """Base-Exception für Service-Fehler."""
+
+
+class AIProviderQueuedError(AIProviderServiceError):
+    """Request wurde gequeued (Provider down + queue=on, kein Fallback)."""
+
+    def __init__(self, queue_id: str, expires_at: str = ''):
+        super().__init__(f"Request queued: {queue_id}")
+        self.queue_id = queue_id
+        self.expires_at = expires_at
+
+
+@dataclass
+class ChatContent:
+    text: str
+
+
+@dataclass
+class ChatUsage:
+    input_tokens: int
+    output_tokens: int
+
+
+@dataclass
+class ChatResponse:
+    """Anthropic-kompatible Response (für match_job_with_claude)."""
+    content: List[ChatContent]
+    usage: ChatUsage
+    via: str
+    fallback_used: bool = False
+
+
+class AIProviderClient:
+    """HTTP-Client für ai-provider-service."""
+
+    def __init__(self, base_url: Optional[str] = None, token: Optional[str] = None, timeout: int = 180):
+        self.base_url = (base_url or Config.AI_PROVIDER_SERVICE_URL).rstrip('/')
+        self.token = token or Config.AI_PROVIDER_SERVICE_TOKEN
+        self.timeout = timeout
+        if not self.base_url:
+            raise ValueError("AI_PROVIDER_SERVICE_URL nicht gesetzt")
+        if not self.token:
+            raise ValueError("AI_PROVIDER_SERVICE_TOKEN nicht gesetzt")
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.base_url and self.token)
+
+    def _headers(self) -> dict:
+        return {
+            'Authorization': f'Bearer {self.token}',
+            'Content-Type': 'application/json',
+        }
+
+    def _get(self, path: str, params: Optional[dict] = None) -> dict:
+        r = requests.get(f'{self.base_url}{path}', headers=self._headers(), params=params, timeout=self.timeout)
+        r.raise_for_status()
+        return r.json()
+
+    def _post(self, path: str, body: Optional[dict] = None) -> dict:
+        r = requests.post(f'{self.base_url}{path}', json=body or {}, headers=self._headers(), timeout=self.timeout)
+        if not r.ok:
+            try:
+                err = r.json().get('error', r.text)
+            except Exception:
+                err = r.text
+            raise AIProviderServiceError(f'{r.status_code}: {err}')
+        return r.json()
+
+    def _delete(self, path: str) -> dict:
+        r = requests.delete(f'{self.base_url}{path}', headers=self._headers(), timeout=self.timeout)
+        r.raise_for_status()
+        return r.json()
+
+    # ── Provider-Listen ──────────────────────────────────────────────────────
+
+    def list_providers(self, user_id: Optional[str] = None) -> List[Dict]:
+        params = {'user_id': user_id} if user_id else None
+        return self._get('/providers', params=params).get('providers', [])
+
+    def get_models(self, provider_id: str, user_id: Optional[str] = None) -> List[str]:
+        params = {'user_id': user_id} if user_id else None
+        return self._get(f'/providers/{provider_id}/models', params=params).get('models', [])
+
+    def get_provider_health(self, provider_id: str) -> dict:
+        return self._get(f'/providers/{provider_id}/health')
+
+    def test_provider(self, provider_id: str, user_id: str) -> dict:
+        return self._post(f'/providers/{provider_id}/test', {'user_id': user_id})
+
+    # ── Configs ──────────────────────────────────────────────────────────────
+
+    def list_configs(self, user_id: str) -> List[Dict]:
+        return self._get(f'/configs/{user_id}').get('configs', [])
+
+    def get_config(self, user_id: str, provider_id: str) -> dict:
+        return self._get(f'/configs/{user_id}/{provider_id}')
+
+    def save_config(
+        self,
+        user_id: str,
+        provider_id: str,
+        config: dict,
+        fallback_provider: Optional[str] = None,
+        queue_when_unavailable: bool = True,
+        queue_ttl_hours: int = 24,
+    ) -> dict:
+        body = {
+            'config': config,
+            'queue_when_unavailable': queue_when_unavailable,
+            'queue_ttl_hours': queue_ttl_hours,
+        }
+        if fallback_provider is not None:
+            body['fallback_provider'] = fallback_provider
+        return self._post(f'/configs/{user_id}/{provider_id}', body)
+
+    def delete_config(self, user_id: str, provider_id: str) -> dict:
+        return self._delete(f'/configs/{user_id}/{provider_id}')
+
+    # ── Chat ─────────────────────────────────────────────────────────────────
+
+    def chat(
+        self,
+        user_id: str,
+        provider: str,
+        model: str,
+        messages: List[Dict],
+        max_tokens: int = 600,
+    ) -> ChatResponse:
+        """Sendet Chat-Request. Bei Queueing wirft AIProviderQueuedError."""
+        result = self._post('/chat', {
+            'user_id': user_id, 'provider': provider, 'model': model,
+            'messages': messages, 'max_tokens': max_tokens,
+        })
+        if result.get('queued'):
+            raise AIProviderQueuedError(
+                queue_id=result.get('queue_id', ''),
+                expires_at=result.get('expires_at', ''),
+            )
+        # Sync-Response
+        r = result.get('result') or {}
+        contents = r.get('content') or []
+        usage = r.get('usage') or {}
+        return ChatResponse(
+            content=[ChatContent(text=c.get('text', '')) for c in contents],
+            usage=ChatUsage(
+                input_tokens=int(usage.get('input_tokens', 0)),
+                output_tokens=int(usage.get('output_tokens', 0)),
+            ),
+            via=result.get('via', provider),
+            fallback_used=bool(result.get('fallback_used')),
+        )
+
+    # ── Queue ────────────────────────────────────────────────────────────────
+
+    def get_queue_item(self, queue_id: str) -> dict:
+        return self._get(f'/queue/{queue_id}')
+
+    def list_queue(self, user_id: Optional[str] = None, status: Optional[str] = None) -> List[Dict]:
+        params = {}
+        if user_id:
+            params['user_id'] = user_id
+        if status:
+            params['status'] = status
+        return self._get('/queue', params=params or None).get('items', [])
+
+
+def get_client() -> Optional[AIProviderClient]:
+    """Singleton-Helper. Returns None wenn der Service nicht konfiguriert ist
+    (für Local-Dev ohne Service)."""
+    if not Config.AI_PROVIDER_SERVICE_URL or not Config.AI_PROVIDER_SERVICE_TOKEN:
+        return None
+    return AIProviderClient()
+
+
+def is_enabled() -> bool:
+    """True wenn der Service-Modus aktiv ist (Env-Vars gesetzt)."""
+    return bool(Config.AI_PROVIDER_SERVICE_URL and Config.AI_PROVIDER_SERVICE_TOKEN)

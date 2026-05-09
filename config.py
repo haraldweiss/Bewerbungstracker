@@ -33,6 +33,12 @@ class Config:
     # Claude API (Phase 2)
     CLAUDE_API_KEY = os.getenv('CLAUDE_API_KEY', '')
 
+    # AI Provider Service (zentrales Multi-Provider-Gateway)
+    # Wenn AI_PROVIDER_SERVICE_URL gesetzt, werden AI-Calls an den Service delegiert
+    # statt lokal über ProviderFactory zu laufen.
+    AI_PROVIDER_SERVICE_URL = os.getenv('AI_PROVIDER_SERVICE_URL', '')
+    AI_PROVIDER_SERVICE_TOKEN = os.getenv('AI_PROVIDER_SERVICE_TOKEN', '')
+
     # Email Configuration
     MAIL_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
     MAIL_PORT = int(os.getenv('MAIL_PORT', '587'))
