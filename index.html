@@ -1159,6 +1159,38 @@
             </div>
         </div>
     </div>
+
+    <div class="card" style="max-width:600px;margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:1rem;">🤖 AI Provider für Job-Bewertung</div>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">
+            Wähle, welche KI für die Bewertung deiner Job-Vorschläge genutzt werden soll.
+        </p>
+
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label for="aiProviderSelect">KI Provider</label>
+            <select id="aiProviderSelect" onchange="onProviderChange()" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                <option value="">Lade Provider...</option>
+            </select>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem;" id="providerInfo"></div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1rem;">
+            <label for="aiModelSelect">Model</label>
+            <select id="aiModelSelect" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                <option value="">Wähle zuerst einen Provider</option>
+            </select>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem;">
+                Spezifisches Model für Job-Matching-Bewertungen
+            </div>
+        </div>
+
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="saveProviderSettings()">💾 Provider speichern</button>
+            <button class="btn btn-info btn-sm" onclick="testProviderConnection()">🔌 Verbindung testen</button>
+        </div>
+        <div id="providerStatus" style="margin-top:1rem;font-size:0.85rem;color:var(--text-muted);"></div>
+    </div>
+
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">🔐 Sicherheit & Master-Passwort</div>
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">✅ Email-Passwörter sind sicher verschlüsselt über dein Benutzerkonto.</p>
@@ -2433,6 +2465,9 @@ function loadSettingsForm() {
 
     // Update encryption status display
     updateEncryptionStatus();
+
+    // Load AI Provider settings
+    loadProviders();
 }
 
 function updateConnectionStatus() {
@@ -6074,7 +6109,7 @@ function renderImapResults(debugInfo) {
     }).join('');
 }
 
-function importImapEmail(index) {
+async function importImapEmail(index) {
     const e      = state.imapEmails[index];
     if (!isEmailWithinDateRange(e.date)) { showToast('Email ist vor dem eingestellten Start-Datum', 'warning'); return; }
     const parsed = parseEmailToApplication(e);
@@ -6082,26 +6117,44 @@ function importImapEmail(index) {
         b.firma.toLowerCase() === parsed.firma.toLowerCase() && b.datum === parsed.datum
     );
     if (exists) { showToast('Bereits vorhanden: ' + parsed.firma, 'warning'); return; }
-    state.bewerbungen.unshift({
-        ...parsed,
-        id:        'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-        quelle:    'imap',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        notizen:   `Importiert via IMAP/POP3\nBetreff: ${e.subject}`
-    });
-    saveToStorage();
-    renderAll();
-    showToast('Importiert: ' + parsed.firma, 'success');
-    renderImapResults();
+
+    const apiData = {
+        company: parsed.firma,
+        position: parsed.position,
+        status: parsed.status,
+        applied_date: parsed.datum,
+        salary: parsed.gehalt || '',
+        location: parsed.ort || '',
+        contact_email: parsed.email || '',
+        source: parsed.quelle,
+        link: parsed.link || '',
+        notes: `Importiert via IMAP/POP3\nBetreff: ${e.subject}`
+    };
+
+    try {
+        const response = await fetchAPI('/api/applications', {
+            method: 'POST',
+            body: JSON.stringify(apiData)
+        });
+        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+        const created = await response.json();
+        state.bewerbungen.unshift(_mapBackendToDB(created));
+        saveToStorage();
+        renderAll();
+        showToast('Importiert: ' + parsed.firma, 'success');
+        renderImapResults();
+    } catch (error) {
+        console.error('Import error:', error);
+        showToast('❌ Fehler beim Importieren: ' + (error.message || 'unbekannt'), 'error');
+    }
 }
 
-function importAllImapEmails() {
+async function importAllImapEmails() {
     let imported = 0, skipped = 0;
+    const toImport = [];
+
     state.imapEmails.forEach((e, i) => {
-        // Check date range filter
         if (!isEmailWithinDateRange(e.date)) { skipped++; return; }
-        // Check keyword relevance filter
         if (!isRelevantApplicationEmail(e)) { skipped++; return; }
 
         const parsed = parseEmailToApplication(e);
@@ -6109,16 +6162,46 @@ function importAllImapEmails() {
             b.firma.toLowerCase() === parsed.firma.toLowerCase() && b.datum === parsed.datum
         );
         if (exists) { skipped++; return; }
-        state.bewerbungen.unshift({
-            ...parsed,
-            id:        'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-            quelle:    'imap',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            notizen:   `Importiert via IMAP/POP3\nBetreff: ${e.subject}`
+
+        toImport.push({
+            parsed,
+            email: e
         });
-        imported++;
     });
+
+    for (const item of toImport) {
+        const { parsed, email } = item;
+        const apiData = {
+            company: parsed.firma,
+            position: parsed.position,
+            status: parsed.status,
+            applied_date: parsed.datum,
+            salary: parsed.gehalt || '',
+            location: parsed.ort || '',
+            contact_email: parsed.email || '',
+            source: parsed.quelle,
+            link: parsed.link || '',
+            notes: `Importiert via IMAP/POP3\nBetreff: ${email.subject}`
+        };
+
+        try {
+            const response = await fetchAPI('/api/applications', {
+                method: 'POST',
+                body: JSON.stringify(apiData)
+            });
+            if (response.ok) {
+                const created = await response.json();
+                state.bewerbungen.unshift(_mapBackendToDB(created));
+                imported++;
+            } else {
+                skipped++;
+            }
+        } catch (error) {
+            console.error('Import error for ' + parsed.firma + ':', error);
+            skipped++;
+        }
+    }
+
     saveToStorage();
     renderAll();
     showToast(`${imported} importiert, ${skipped} übersprungen`, 'success');
@@ -7046,6 +7129,142 @@ function sendToAPI(aiId) {
         }
         console.error('API Error:', e);
     });
+}
+
+/* ═══ AI PROVIDER MANAGEMENT ═══ */
+async function loadProviders() {
+    try {
+        const response = await fetchAPI('/api/providers', { method: 'GET' });
+        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+        const data = await response.json();
+
+        const select = document.getElementById('aiProviderSelect');
+        select.replaceChildren();
+
+        if (!data.providers || data.providers.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Keine Provider verfügbar';
+            select.appendChild(opt);
+            return;
+        }
+
+        data.providers.forEach(provider => {
+            const option = document.createElement('option');
+            option.value = provider.id;
+            option.textContent = provider.name + (provider.url ? ' (' + provider.url + ')' : '');
+            select.appendChild(option);
+        });
+
+        // Load current user settings
+        const settingsResponse = await fetchAPI('/api/providers/user/settings', { method: 'GET' });
+        if (settingsResponse.ok) {
+            const settings = await settingsResponse.json();
+            select.value = settings.provider || '';
+            if (settings.provider) {
+                await onProviderChange();
+                document.getElementById('aiModelSelect').value = settings.model || '';
+            }
+        }
+    } catch (e) {
+        console.error('Provider-Load Error:', e);
+        showToast('❌ Provider laden fehlgeschlagen', 'error');
+    }
+}
+
+async function onProviderChange() {
+    const provider = document.getElementById('aiProviderSelect').value;
+    const modelSelect = document.getElementById('aiModelSelect');
+
+    if (!provider) {
+        modelSelect.replaceChildren(document.createElement('option').appendChild(
+            document.createTextNode('Wähle zuerst einen Provider')
+        ).parentElement);
+        return;
+    }
+
+    try {
+        const response = await fetchAPI(`/api/providers/${provider}/models`, { method: 'GET' });
+        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+        const data = await response.json();
+
+        modelSelect.replaceChildren();
+
+        if (!data.models || data.models.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Keine Models verfügbar';
+            modelSelect.appendChild(opt);
+            return;
+        }
+
+        data.models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model;
+            option.textContent = model + (model === data.default ? ' (Standard)' : '');
+            modelSelect.appendChild(option);
+        });
+
+        modelSelect.value = data.default || (data.models[0] || '');
+
+        // Info für User
+        const info = document.getElementById('providerInfo');
+        if (provider === 'claude') {
+            info.textContent = '✓ Nutzt deinen Claude API-Key von Anthropic';
+        } else if (provider === 'ollama') {
+            info.textContent = '✓ Nutzt lokales Ollama (keine Kosten)';
+        }
+    } catch (e) {
+        console.error('Models-Load Error:', e);
+        showToast('❌ Models laden fehlgeschlagen', 'error');
+    }
+}
+
+async function saveProviderSettings() {
+    const provider = document.getElementById('aiProviderSelect').value;
+    const model = document.getElementById('aiModelSelect').value;
+
+    if (!provider) {
+        showToast('⚠️ Wähle einen Provider', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetchAPI('/api/providers/user/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({ provider, model })
+        });
+
+        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+        const result = await response.json();
+
+        showToast(`✓ ${result.message}`, 'success');
+    } catch (e) {
+        console.error('Save Error:', e);
+        showToast('❌ Fehler beim Speichern: ' + (e.message || 'unbekannt'), 'error');
+    }
+}
+
+async function testProviderConnection() {
+    const provider = document.getElementById('aiProviderSelect').value;
+    if (!provider) {
+        showToast('⚠️ Wähle einen Provider', 'warning');
+        return;
+    }
+
+    const status = document.getElementById('providerStatus');
+    status.textContent = '🔄 Teste Verbindung...';
+
+    try {
+        const response = await fetchAPI(`/api/providers/${provider}/models`, { method: 'GET' });
+        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+
+        status.textContent = '✅ Verbindung erfolgreich!';
+        status.style.color = 'var(--secondary)';
+    } catch (e) {
+        status.textContent = '❌ Verbindung fehlgeschlagen: ' + e.message;
+        status.style.color = 'var(--danger)';
+    }
 }
 
 /* ═══ START ═══ */

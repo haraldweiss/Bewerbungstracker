@@ -43,6 +43,10 @@ class User(db.Model):
     _job_language_filter = db.Column('job_language_filter', db.Text, default='["de","en"]')
     _job_region_filter = db.Column('job_region_filter', db.Text, nullable=True)
 
+    # AI Provider Settings (Phase B)
+    ai_provider = db.Column(db.String(50), default='claude', nullable=False)  # 'claude' oder 'ollama'
+    ai_provider_model = db.Column(db.String(255))  # Spezifisches Model für Job-Matching
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

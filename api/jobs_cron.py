@@ -15,6 +15,7 @@ from services.job_sources import get_adapter
 from services.job_matching.cv_tokenizer import tokenize_cv
 from services.job_matching.prefilter import score_job, PrefilterContext
 from services.job_matching.claude_matcher import match_job_with_claude
+from services.provider_service import ProviderFactory, ProviderConfig
 from services.job_matching.notifier import send_match_notification
 
 logger = logging.getLogger(__name__)
@@ -250,16 +251,14 @@ def prefilter():
 
 
 def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
-    """Führt Claude-Match für einen einzelnen JobMatch aus.
+    """Führt AI-Match (Claude oder Ollama) für einen einzelnen JobMatch aus.
+
+    Nutzt User-Preference für Provider/Model. Phase A: Claude (Server-Key),
+    Phase B: User wählt Provider + Model per Settings.
 
     Returns:
         True wenn erfolgreich bewertet (DB-Update gemacht).
-        False wenn geskippt (schon bewertet, Budget erschöpft, oder Claude-Error).
-
-    Idempotent: Wenn match.match_score schon gesetzt ist, returnt sofort False.
-    Budget-Check: Wenn _user_today_cost_cents(user.id) >= user.job_daily_budget_cents,
-    returnt False.
-    Caller ist für commit zuständig.
+        False wenn geskippt (schon bewertet, Budget erschöpft, oder AI-Error).
     """
     if match.match_score is not None:
         return False
@@ -272,19 +271,25 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
         return False
 
     cv_summary = _build_cv_summary(user.cv_data_json)
+
+    # Phase B: Nutze User-Provider-Preference
+    provider = user.ai_provider or ProviderConfig.CLAUDE
+    model = user.ai_provider_model or DEFAULT_MODEL
+
     try:
+        # Erstelle Client für User-Provider
+        user_client = ProviderFactory.get_client(provider)
         result = match_job_with_claude(
-            client=client, model=DEFAULT_MODEL, cv_summary=cv_summary,
+            client=user_client, model=model, cv_summary=cv_summary,
             job={"title": raw.title, "description": raw.description, "location": raw.location},
         )
     except Exception as e:
         logger.warning(
-            "claude_match failed for match=%s user=%s: %s: %s",
-            match.id, user.id, type(e).__name__, e,
+            "match failed for match=%s user=%s provider=%s: %s: %s",
+            match.id, user.id, provider, type(e).__name__, e,
         )
         return False
 
-    # Ab hier: alles oder nichts — keine Mutation vor erfolgreichem Claude-Call.
     match.match_score = result.score
     match.match_reasoning = result.reasoning
     match.missing_skills = result.missing_skills
@@ -292,12 +297,12 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
 
     cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
     db.session.add(ApiCall(
-        user_id=user.id, endpoint='/api/jobs/claude-match',
-        model=DEFAULT_MODEL, tokens_in=result.tokens_in,
+        user_id=user.id, endpoint='/api/jobs/match',
+        model=model, tokens_in=result.tokens_in,
         tokens_out=result.tokens_out, cost=cost_cents / 100.0,
-        key_owner='server',
+        key_owner='user' if provider == ProviderConfig.OLLAMA else 'server',
     ))
-    db.session.flush()  # damit nachfolgende _user_today_cost_cents() den frischen Cost sieht
+    db.session.flush()
     return True
 
 
