@@ -3050,6 +3050,8 @@ const JobsView = (() => {
             const r = await Auth.fetch('/jobs/matches?' + params.toString(), { method: 'GET' });
             const matches = (r && r.matches) || [];
             state.total = (r && r.total) || 0;
+            // Cache für bulkScore — damit bereits bewertete Matches geskippt werden können
+            state.lastMatches = matches;
             const container = $('jobs-list');
             if (matches.length === 0) {
                 container.innerHTML = renderEmptyState();
@@ -3430,8 +3432,41 @@ const JobsView = (() => {
                 }
                 return;
             }
-            const ids = Array.from(state.selectedIds);
-            if (ids.length === 0) return;
+            const allIds = Array.from(state.selectedIds);
+            if (allIds.length === 0) return;
+
+            // Lookup-Map: aus state.lastMatches eine ID→match Map bauen
+            const matchById = {};
+            (state.lastMatches || []).forEach(m => { matchById[m.id] = m; });
+
+            // Hilfsfunktion: erkennt frühere Failed-Evals (analog Backend _is_failed_evaluation)
+            const isFailedEval = (m) => {
+                if (!m || m.match_score == null) return false;
+                if (m.match_score > 0) return false;
+                const reason = (m.match_reasoning || '').trim().toLowerCase();
+                return reason.startsWith('bewertung fehlgeschlagen');
+            };
+
+            // Vor-Filter: Matches die schon eine valide Bewertung haben (score gesetzt UND
+            // nicht 'Bewertung fehlgeschlagen') werden ohne Backend-Call übersprungen.
+            const ids = [];
+            let skippedAlreadyScored = 0;
+            allIds.forEach(id => {
+                const m = matchById[id];
+                if (m && m.match_score != null && !isFailedEval(m)) {
+                    skippedAlreadyScored++;
+                } else {
+                    ids.push(id);
+                }
+            });
+
+            if (ids.length === 0) {
+                if (typeof showToast === 'function') {
+                    showToast(`Alle ${skippedAlreadyScored} ausgewählten sind bereits bewertet — nichts zu tun.`, 'info');
+                }
+                JobsView.clearSelection();
+                return;
+            }
 
             state.bulkScoreRunning = true;
             state.bulkScoreCancelled = false;
@@ -3464,6 +3499,9 @@ const JobsView = (() => {
             const total = ids.length;
             let done = 0, ok = 0, fail = 0, skipped = 0, budgetExhausted = false;
             updateProgress(0, total, 0, 0, 0);
+            if (skippedAlreadyScored > 0 && typeof showToast === 'function') {
+                showToast(`${skippedAlreadyScored} bereits bewertet — werden übersprungen`, 'info');
+            }
 
             try {
                 for (const id of ids) {
@@ -3501,6 +3539,7 @@ const JobsView = (() => {
                 // Zusammenfassung
                 let msg = `${ok} bewertet`;
                 if (skipped > 0) msg += `, ${skipped} wegen Budget übersprungen`;
+                if (skippedAlreadyScored > 0) msg += `, ${skippedAlreadyScored} bereits bewertet`;
                 if (fail > 0) msg += `, ${fail} fehlgeschlagen`;
                 if (state.bulkScoreCancelled) msg += ' (abgebrochen)';
                 if (typeof showToast === 'function') {
