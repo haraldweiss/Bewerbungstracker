@@ -1174,6 +1174,53 @@
             <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem;" id="providerInfo"></div>
         </div>
 
+        <!-- Provider-spezifische Konfiguration (für OpenAI, Mammouth, Custom) -->
+        <div id="providerConfigSection" style="display:none;margin-bottom:1rem;padding:0.75rem;background:var(--bg-card2);border-radius:8px;border:1px solid var(--border);">
+            <div style="font-weight:600;margin-bottom:0.5rem;font-size:0.9rem;">⚙️ Provider-Konfiguration</div>
+
+            <!-- OpenAI Config -->
+            <div id="config-openai" style="display:none;">
+                <div class="form-group" style="margin-bottom:0.5rem;">
+                    <label for="openaiApiKey" style="font-size:0.85rem;">OpenAI API Key *</label>
+                    <input type="password" id="openaiApiKey" placeholder="sk-..." style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                </div>
+                <div class="form-group" style="margin-bottom:0.5rem;">
+                    <label for="openaiOrgId" style="font-size:0.85rem;">Organization ID (optional)</label>
+                    <input type="text" id="openaiOrgId" placeholder="org-..." style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                </div>
+            </div>
+
+            <!-- Mammouth Config -->
+            <div id="config-mammouth" style="display:none;">
+                <div class="form-group" style="margin-bottom:0.5rem;">
+                    <label for="mammouthEndpoint" style="font-size:0.85rem;">API Endpoint *</label>
+                    <input type="text" id="mammouthEndpoint" placeholder="http://localhost:8080" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                </div>
+            </div>
+
+            <!-- Custom Endpoint Config -->
+            <div id="config-custom" style="display:none;">
+                <div class="form-group" style="margin-bottom:0.5rem;">
+                    <label for="customName" style="font-size:0.85rem;">Name (optional)</label>
+                    <input type="text" id="customName" placeholder="z.B. LM Studio Local" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                </div>
+                <div class="form-group" style="margin-bottom:0.5rem;">
+                    <label for="customEndpoint" style="font-size:0.85rem;">API Endpoint (OpenAI-kompatibel) *</label>
+                    <input type="text" id="customEndpoint" placeholder="http://localhost:1234" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                </div>
+                <div class="form-group" style="margin-bottom:0.5rem;">
+                    <label for="customApiKey" style="font-size:0.85rem;">API Key (optional)</label>
+                    <input type="password" id="customApiKey" placeholder="optional" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                </div>
+            </div>
+
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
+                <button class="btn btn-primary btn-sm" onclick="saveProviderConfig()">💾 Konfiguration speichern</button>
+                <button class="btn btn-info btn-sm" onclick="testProviderConfig()">🔌 Konfiguration testen</button>
+            </div>
+            <div id="providerConfigStatus" style="margin-top:0.5rem;font-size:0.8rem;"></div>
+        </div>
+
         <div class="form-group" style="margin-bottom:1rem;">
             <label for="aiModelSelect">Model</label>
             <select id="aiModelSelect" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
@@ -7132,97 +7179,129 @@ function sendToAPI(aiId) {
 }
 
 /* ═══ AI PROVIDER MANAGEMENT ═══ */
+// Liste aller bekannten Provider-Typen mit Anzeige-Namen
+const ALL_PROVIDERS = [
+    { id: 'claude', name: 'Claude (Anthropic)', system: true },
+    { id: 'ollama', name: 'Ollama (lokal)', system: true },
+    { id: 'openai', name: 'ChatGPT / OpenAI', system: false },
+    { id: 'mammouth', name: 'Mammouth', system: false },
+    { id: 'custom', name: 'Custom Endpoint (OpenAI-kompatibel)', system: false }
+];
+
 async function loadProviders() {
+    let availableFromApi = [];
+    let userSettings = null;
+
     try {
         const response = await fetchAPI('/api/providers', { method: 'GET' });
-        if (!response.ok) {
-            console.warn(`Provider API error: ${response.status} ${response.statusText}`);
-            // Fallback: ensure Claude is always available
-            loadDefaultProviders();
-            return;
+        if (response.ok) {
+            const data = await response.json();
+            availableFromApi = data.providers || [];
         }
 
-        const data = await response.json();
-        const select = document.getElementById('aiProviderSelect');
-        select.replaceChildren();
-
-        if (!data.providers || data.providers.length === 0) {
-            console.warn('No providers returned from API, loading defaults');
-            loadDefaultProviders();
-            return;
-        }
-
-        data.providers.forEach(provider => {
-            const option = document.createElement('option');
-            option.value = provider.id;
-            option.textContent = provider.name + (provider.url ? ' (' + provider.url + ')' : '');
-            select.appendChild(option);
-        });
-
-        // Load current user settings
         const settingsResponse = await fetchAPI('/api/providers/user/settings', { method: 'GET' });
         if (settingsResponse.ok) {
-            const settings = await settingsResponse.json();
-            select.value = settings.provider || 'claude';
-            if (settings.provider) {
-                await onProviderChange();
-                document.getElementById('aiModelSelect').value = settings.model || '';
-            } else {
-                // Default to Claude if no provider selected
-                select.value = 'claude';
-                await onProviderChange();
-            }
-        } else {
-            // Default to Claude if can't fetch settings
-            select.value = 'claude';
-            await onProviderChange();
+            userSettings = await settingsResponse.json();
         }
     } catch (e) {
-        console.error('Provider-Load Error:', e);
-        console.warn('Falling back to default providers');
-        loadDefaultProviders();
+        console.warn('Provider-API nicht erreichbar:', e);
     }
-}
 
-// Fallback function to ensure Claude is always available
-function loadDefaultProviders() {
     const select = document.getElementById('aiProviderSelect');
     select.replaceChildren();
 
-    // Always include Claude as fallback
-    const claudeOption = document.createElement('option');
-    claudeOption.value = 'claude';
-    claudeOption.textContent = 'Claude (Anthropic)';
-    select.appendChild(claudeOption);
+    // Zeige ALLE Provider-Typen, mit Status-Hinweis (konfiguriert/verfügbar/nicht konfiguriert)
+    ALL_PROVIDERS.forEach(p => {
+        const apiEntry = availableFromApi.find(x => x.id === p.id);
+        const option = document.createElement('option');
+        option.value = p.id;
 
-    // Try to add Ollama if available
-    const ollamaOption = document.createElement('option');
-    ollamaOption.value = 'ollama';
-    ollamaOption.textContent = 'Ollama (lokal)';
-    select.appendChild(ollamaOption);
+        let suffix = '';
+        if (p.system) {
+            // System-Provider: zeigt "verfügbar" wenn API-Key/Service erkannt
+            suffix = apiEntry ? ' ✓' : ' (nicht verfügbar)';
+        } else {
+            // User-Provider: zeigt "konfiguriert" wenn Settings vorhanden
+            suffix = apiEntry ? ' ✓ (konfiguriert)' : ' (nicht konfiguriert)';
+        }
+        option.textContent = p.name + suffix;
+        select.appendChild(option);
+    });
 
-    select.value = 'claude';
-    onProviderChange();
+    // Setze gespeicherten Provider oder default Claude
+    const targetProvider = userSettings?.provider || 'claude';
+    select.value = targetProvider;
+
+    // Trigger change handler
+    await onProviderChange();
+
+    // Setze Model nach onProviderChange (das die Models lädt)
+    if (userSettings?.model) {
+        const modelSelect = document.getElementById('aiModelSelect');
+        modelSelect.value = userSettings.model;
+    }
 }
 
 async function onProviderChange() {
     const provider = document.getElementById('aiProviderSelect').value;
     const modelSelect = document.getElementById('aiModelSelect');
+    const configSection = document.getElementById('providerConfigSection');
+    const info = document.getElementById('providerInfo');
+
+    // Reset alle Config-Forms
+    document.getElementById('config-openai').style.display = 'none';
+    document.getElementById('config-mammouth').style.display = 'none';
+    document.getElementById('config-custom').style.display = 'none';
+    configSection.style.display = 'none';
+    document.getElementById('providerConfigStatus').textContent = '';
 
     if (!provider) {
-        modelSelect.replaceChildren(document.createElement('option').appendChild(
-            document.createTextNode('Wähle zuerst einen Provider')
-        ).parentElement);
+        modelSelect.replaceChildren();
+        const opt = document.createElement('option');
+        opt.textContent = 'Wähle zuerst einen Provider';
+        modelSelect.appendChild(opt);
         return;
     }
 
+    // Zeige Provider-Info
+    if (provider === 'claude') {
+        info.textContent = '✓ Nutzt zentralen Claude API-Key (Anthropic)';
+    } else if (provider === 'ollama') {
+        info.textContent = '✓ Nutzt lokales Ollama (keine API-Kosten)';
+    } else if (provider === 'openai') {
+        info.textContent = 'ℹ️ Eigener OpenAI-API-Key erforderlich (kostenpflichtig)';
+    } else if (provider === 'mammouth') {
+        info.textContent = 'ℹ️ Mammouth-Endpoint erforderlich';
+    } else if (provider === 'custom') {
+        info.textContent = 'ℹ️ Eigener OpenAI-kompatibler Endpoint';
+    }
+
+    // Zeige Config-Form für User-Provider
+    if (['openai', 'mammouth', 'custom'].includes(provider)) {
+        configSection.style.display = 'block';
+        document.getElementById(`config-${provider}`).style.display = 'block';
+        await loadProviderConfig(provider);
+    }
+
+    // Lade Models
     try {
         const response = await fetchAPI(`/api/providers/${provider}/models`, { method: 'GET' });
-        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
-        const data = await response.json();
-
         modelSelect.replaceChildren();
 
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            const opt = document.createElement('option');
+            opt.value = '';
+            if (errData.configured === false) {
+                opt.textContent = '⚠️ Provider noch nicht konfiguriert';
+            } else {
+                opt.textContent = `⚠️ ${errData.error || 'Models nicht verfügbar'}`;
+            }
+            modelSelect.appendChild(opt);
+            return;
+        }
+
+        const data = await response.json();
         if (!data.models || data.models.length === 0) {
             const opt = document.createElement('option');
             opt.value = '';
@@ -7239,17 +7318,125 @@ async function onProviderChange() {
         });
 
         modelSelect.value = data.default || (data.models[0] || '');
-
-        // Info für User
-        const info = document.getElementById('providerInfo');
-        if (provider === 'claude') {
-            info.textContent = '✓ Nutzt deinen Claude API-Key von Anthropic';
-        } else if (provider === 'ollama') {
-            info.textContent = '✓ Nutzt lokales Ollama (keine Kosten)';
-        }
     } catch (e) {
         console.error('Models-Load Error:', e);
-        showToast('❌ Models laden fehlgeschlagen', 'error');
+        modelSelect.replaceChildren();
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '⚠️ Fehler beim Laden';
+        modelSelect.appendChild(opt);
+    }
+}
+
+async function loadProviderConfig(provider) {
+    try {
+        const response = await fetchAPI(`/api/providers/${provider}/config`, { method: 'GET' });
+        if (!response.ok) return;
+        const config = await response.json();
+        if (!config.configured) return;
+
+        if (provider === 'openai') {
+            const apiKeyField = document.getElementById('openaiApiKey');
+            apiKeyField.value = '';
+            apiKeyField.placeholder = '••••••• (gespeichert, leer lassen zum Beibehalten)';
+        } else if (provider === 'mammouth') {
+            document.getElementById('mammouthEndpoint').value = config.endpoint || '';
+        } else if (provider === 'custom') {
+            document.getElementById('customName').value = config.name || '';
+            document.getElementById('customEndpoint').value = config.endpoint || '';
+            const apiKeyField = document.getElementById('customApiKey');
+            apiKeyField.value = '';
+            apiKeyField.placeholder = '••••••• (gespeichert)';
+        }
+    } catch (e) {
+        console.warn('Provider-Config nicht ladbar:', e);
+    }
+}
+
+async function saveProviderConfig() {
+    const provider = document.getElementById('aiProviderSelect').value;
+    if (!['openai', 'mammouth', 'custom'].includes(provider)) {
+        showToast('⚠️ Dieser Provider braucht keine Konfiguration', 'warning');
+        return;
+    }
+
+    const config = {};
+    if (provider === 'openai') {
+        const apiKey = document.getElementById('openaiApiKey').value.trim();
+        if (!apiKey) {
+            showToast('⚠️ API Key erforderlich', 'warning');
+            return;
+        }
+        config.api_key = apiKey;
+        const orgId = document.getElementById('openaiOrgId').value.trim();
+        if (orgId) config.organization_id = orgId;
+    } else if (provider === 'mammouth') {
+        const endpoint = document.getElementById('mammouthEndpoint').value.trim();
+        if (!endpoint) {
+            showToast('⚠️ API Endpoint erforderlich', 'warning');
+            return;
+        }
+        config.api_endpoint = endpoint;
+    } else if (provider === 'custom') {
+        const endpoint = document.getElementById('customEndpoint').value.trim();
+        if (!endpoint) {
+            showToast('⚠️ API Endpoint erforderlich', 'warning');
+            return;
+        }
+        config.api_endpoint = endpoint;
+        const name = document.getElementById('customName').value.trim();
+        if (name) config.name = name;
+        const apiKey = document.getElementById('customApiKey').value.trim();
+        if (apiKey) config.api_key = apiKey;
+    }
+
+    const status = document.getElementById('providerConfigStatus');
+    status.textContent = '🔄 Speichere...';
+    status.style.color = 'var(--text-muted)';
+
+    try {
+        const response = await fetchAPI(`/api/providers/${provider}/config`, {
+            method: 'POST',
+            body: JSON.stringify(config)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Speicher-Fehler');
+
+        status.textContent = `✓ ${result.message}`;
+        status.style.color = 'var(--secondary)';
+        showToast(`✓ ${result.message}`, 'success');
+
+        // Reload provider list und Models
+        await loadProviders();
+    } catch (e) {
+        status.textContent = `❌ Fehler: ${e.message}`;
+        status.style.color = 'var(--danger)';
+        showToast('❌ ' + e.message, 'error');
+    }
+}
+
+async function testProviderConfig() {
+    const provider = document.getElementById('aiProviderSelect').value;
+    if (!['openai', 'mammouth', 'custom'].includes(provider)) {
+        showToast('⚠️ Dieser Provider hat keinen Test-Endpunkt', 'warning');
+        return;
+    }
+
+    const status = document.getElementById('providerConfigStatus');
+    status.textContent = '🔄 Teste Verbindung...';
+    status.style.color = 'var(--text-muted)';
+
+    try {
+        const response = await fetchAPI(`/api/providers/${provider}/test`, { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Verbindung fehlgeschlagen');
+
+        const sample = (result.sample_models || []).join(', ');
+        status.textContent = `✅ Verbunden! ${result.models_available} Models${sample ? ' (z.B. ' + sample + ')' : ''}`;
+        status.style.color = 'var(--secondary)';
+    } catch (e) {
+        status.textContent = `❌ ${e.message}`;
+        status.style.color = 'var(--danger)';
     }
 }
 
@@ -7268,8 +7455,16 @@ async function saveProviderSettings() {
             body: JSON.stringify({ provider, model })
         });
 
-        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
         const result = await response.json();
+        if (!response.ok) {
+            // User-Provider nicht konfiguriert? → Hinweis geben
+            if (result.error && result.error.includes('nicht konfiguriert')) {
+                showToast('⚠️ Provider zuerst konfigurieren (siehe Konfigurationsbereich)', 'warning');
+            } else {
+                showToast('❌ ' + (result.error || 'Speicher-Fehler'), 'error');
+            }
+            return;
+        }
 
         showToast(`✓ ${result.message}`, 'success');
     } catch (e) {
@@ -7287,12 +7482,15 @@ async function testProviderConnection() {
 
     const status = document.getElementById('providerStatus');
     status.textContent = '🔄 Teste Verbindung...';
+    status.style.color = 'var(--text-muted)';
 
     try {
         const response = await fetchAPI(`/api/providers/${provider}/models`, { method: 'GET' });
-        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `API error: ${response.statusText}`);
 
-        status.textContent = '✅ Verbindung erfolgreich!';
+        const count = (data.models || []).length;
+        status.textContent = `✅ Verbindung erfolgreich! ${count} Models verfügbar`;
         status.style.color = 'var(--secondary)';
     } catch (e) {
         status.textContent = '❌ Verbindung fehlgeschlagen: ' + e.message;

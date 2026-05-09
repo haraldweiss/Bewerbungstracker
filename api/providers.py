@@ -61,6 +61,31 @@ def get_provider_models(user, provider_id):
                 'details': models
             }, 200
 
+        elif provider_id in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
+            # User-Provider: Hole Config + dekryptiere API Key
+            config_json = user.ai_provider_config or '{}'
+            config_dict = json.loads(config_json)
+            provider_config = config_dict.get(provider_id)
+
+            if not provider_config:
+                return {'error': f'Provider {provider_id} ist nicht konfiguriert', 'configured': False}, 400
+
+            # Dekryptiere API Key falls vorhanden
+            if 'api_key_encrypted' in provider_config:
+                dek = get_key_cache().get(user.id)
+                if not dek:
+                    return {'error': 'Sicherheits-Session abgelaufen, bitte neu anmelden'}, 401
+                api_key = EncryptionService.decrypt_data(provider_config['api_key_encrypted'], dek)
+                provider_config = {**provider_config, 'api_key': api_key}
+
+            client = ProviderFactory.get_client(provider_id, provider_config)
+            models = client.get_models()
+
+            if not models:
+                return {'error': f'Keine Models von {provider_id} erhalten'}, 404
+
+            return {'models': models, 'default': models[0] if models else None}, 200
+
         else:
             return {'error': f'Unbekannter Provider: {provider_id}'}, 400
 
