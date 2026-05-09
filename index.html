@@ -3525,7 +3525,8 @@ const JobsView = (() => {
                 const r = await Auth.fetch(`/jobs/matches/${id}/score`, { method: 'POST' });
                 if (r && r.match_score != null) {
                     if (typeof showToast === 'function') {
-                        showToast(`Bewertung erstellt: ${r.match_score.toFixed(0)}/100`, 'success');
+                        const via = r.provider_used ? ` (via ${r.provider_used}${r.fallback_used ? ' Fallback' : ''})` : '';
+                        showToast(`Bewertung erstellt: ${r.match_score.toFixed(0)}/100${via}`, 'success');
                     }
                     await fetchMatches();
                 } else if (r && r.error) {
@@ -3614,18 +3615,33 @@ const JobsView = (() => {
             if (progressEl) progressEl.style.display = 'inline-flex';
             if (cancelBtn) cancelBtn.style.display = 'inline-block';
 
-            const updateProgress = (done, total, ok, fail, skipped) => {
+            // Provider+Model vorab holen für Anzeige in der Progress-Bar
+            let providerLabel = '';
+            try {
+                const settingsResp = await fetchAPI('/api/providers/user/settings', { method: 'GET' });
+                if (settingsResp.ok) {
+                    const settings = await settingsResp.json();
+                    const p = settings.provider || 'claude';
+                    const m = settings.model ? settings.model.split(':')[0].slice(0, 20) : '';
+                    providerLabel = m ? `${p} · ${m}` : p;
+                }
+            } catch (e) { /* silent */ }
+
+            const updateProgress = (done, total, ok, fail, skipped, fallbackUsed) => {
                 if (!progressEl) return;
-                const parts = [`${done}/${total}`];
+                const parts = [];
+                if (providerLabel) parts.push(`🤖 ${providerLabel}`);
+                parts.push(`${done}/${total}`);
                 if (ok > 0) parts.push(`✓ ${ok}`);
+                if (fallbackUsed > 0) parts.push(`↪ ${fallbackUsed} Fallback`);
                 if (fail > 0) parts.push(`✗ ${fail}`);
                 if (skipped > 0) parts.push(`⊘ ${skipped} Budget`);
                 progressEl.textContent = parts.join(' · ');
             };
 
             const total = ids.length;
-            let done = 0, ok = 0, fail = 0, skipped = 0, budgetExhausted = false;
-            updateProgress(0, total, 0, 0, 0);
+            let done = 0, ok = 0, fail = 0, skipped = 0, fallbackUsed = 0, budgetExhausted = false;
+            updateProgress(0, total, 0, 0, 0, 0);
             if (skippedAlreadyScored > 0 && typeof showToast === 'function') {
                 showToast(`${skippedAlreadyScored} bereits bewertet — werden übersprungen`, 'info');
             }
@@ -3645,6 +3661,12 @@ const JobsView = (() => {
                         const r = await Auth.fetch(`/jobs/matches/${id}/score`, { method: 'POST' });
                         if (r && r.match_score != null) {
                             ok++;
+                            if (r.fallback_used) fallbackUsed++;
+                            // Wenn der Service einen Fallback genutzt hat, im Provider-Label
+                            // klar machen welcher Provider tatsächlich antwortet.
+                            if (r.provider_used && r.provider_used !== (providerLabel.split(' · ')[0])) {
+                                providerLabel = `${r.provider_used} (Fallback)`;
+                            }
                         } else if (r && r.error) {
                             // 402 = Budget erschöpft — restliche Aufrufe sparen
                             if (/budget/i.test(r.error)) {
@@ -3660,11 +3682,12 @@ const JobsView = (() => {
                         fail++;
                     }
                     done++;
-                    updateProgress(done, total, ok, fail, skipped);
+                    updateProgress(done, total, ok, fail, skipped, fallbackUsed);
                 }
 
                 // Zusammenfassung
                 let msg = `${ok} bewertet`;
+                if (fallbackUsed > 0) msg += ` (${fallbackUsed}× via Fallback)`;
                 if (skipped > 0) msg += `, ${skipped} wegen Budget übersprungen`;
                 if (skippedAlreadyScored > 0) msg += `, ${skippedAlreadyScored} bereits bewertet`;
                 if (fail > 0) msg += `, ${fail} fehlgeschlagen`;

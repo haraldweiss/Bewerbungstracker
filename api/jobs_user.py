@@ -344,6 +344,12 @@ def score_match(user, match_id: int):
         "match_score": m.match_score,
         "match_reasoning": m.match_reasoning,
         "missing_skills": m.missing_skills,
+        # Transient-Info aus _run_match_via_service: tatsächlich genutzter
+        # Provider (kann durch Service-Fallback vom Default abweichen) und
+        # Model. Frontend zeigt das in der Bulk-Progress-Anzeige.
+        "provider_used": getattr(m, '_last_via', None) or user.ai_provider,
+        "model_used": user.ai_provider_model,
+        "fallback_used": getattr(m, '_last_fallback_used', False),
     }), 200
 
 

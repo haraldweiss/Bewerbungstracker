@@ -536,6 +536,11 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
     )
     parsed = _extract_first_json_object(text)
 
+    # Transient-Attribute für die Aufrufer-API (score_match liest sie aus
+    # und liefert sie ans Frontend für die Bulk-Progress-Anzeige).
+    match._last_via = response.via
+    match._last_fallback_used = response.fallback_used
+
     # Retry mit Summary wenn erste Antwort leer oder unparsbar
     if not parsed:
         logger.info(
