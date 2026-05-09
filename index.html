@@ -944,7 +944,18 @@
 
 <!-- ═══ SETTINGS ═══ -->
 <div class="view" id="view-settings">
-    <h1 style="font-size:1.5rem;font-weight:700;margin-bottom:1.5rem;">⚙️ Einstellungen</h1>
+    <h1 style="font-size:1.5rem;font-weight:700;margin-bottom:1rem;">⚙️ Einstellungen</h1>
+
+    <!-- Tab-Navigation -->
+    <div class="settings-tabs" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0.75rem;">
+        <button class="settings-tab btn btn-secondary btn-sm" data-section="jobs" onclick="showSettingsSection('jobs')">🎯 Bewerbungen &amp; Jobs</button>
+        <button class="settings-tab btn btn-secondary btn-sm" data-section="ai" onclick="showSettingsSection('ai')">🤖 AI Provider</button>
+        <button class="settings-tab btn btn-secondary btn-sm" data-section="data" onclick="showSettingsSection('data')">💾 Daten &amp; Sicherheit</button>
+        <button class="settings-tab btn btn-secondary btn-sm" data-section="admin" onclick="showSettingsSection('admin')">👥 Admin &amp; Info</button>
+    </div>
+
+    <!-- Section: Bewerbungen & Jobs -->
+    <div class="settings-section" data-section="jobs">
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">🔍 Bewerbungs-Erkennung</div>
         <div class="form-group" style="margin-bottom:0.75rem;">
@@ -1163,6 +1174,10 @@
         </div>
     </div>
 
+    </div><!-- /settings-section jobs -->
+
+    <!-- Section: AI Provider -->
+    <div class="settings-section" data-section="ai" hidden>
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">🤖 AI Provider für Job-Bewertung</div>
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">
@@ -1241,6 +1256,10 @@
         <div id="providerStatus" style="margin-top:1rem;font-size:0.85rem;color:var(--text-muted);"></div>
     </div>
 
+    </div><!-- /settings-section ai -->
+
+    <!-- Section: Daten & Sicherheit -->
+    <div class="settings-section" data-section="data" hidden>
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">🔐 Sicherheit & Master-Passwort</div>
         <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">✅ Email-Passwörter sind sicher verschlüsselt über dein Benutzerkonto.</p>
@@ -1302,7 +1321,10 @@
             <button class="btn btn-primary" onclick="BackupManager.importBackup()">Import</button>
         </div>
     </div>
+    </div><!-- /settings-section data -->
 
+    <!-- Section: Admin & Info -->
+    <div class="settings-section" data-section="admin" hidden>
     <div class="card" style="max-width:600px;margin-bottom:1rem;display:none;" id="adminSettingsCard">
         <div class="card-title" style="margin-bottom:1rem;">👥 Benutzerverwaltung</div>
 
@@ -1332,6 +1354,7 @@
             Kein OAuth, kein externer Server nötig.
         </p>
     </div>
+    </div><!-- /settings-section admin -->
 </div>
 
 <!-- ═══ USER MANAGEMENT ═══ -->
@@ -2576,6 +2599,7 @@ function showView(name) {
         BackupManager.init();
         loadJobDiscoveryFilters();
         if (typeof JdSourcesUI !== 'undefined') JdSourcesUI.refresh();
+        initSettingsSection();
     }
 }
 
@@ -6529,6 +6553,31 @@ function showCVTab(tabName) {
     if (tabName === 'upload') loadCVStatus();
     if (tabName === 'compare') loadComparePage();
     if (tabName === 'custom-ai') loadCustomAIPlatforms();
+}
+
+function showSettingsSection(name) {
+    const valid = ['jobs', 'ai', 'data', 'admin'];
+    if (!valid.includes(name)) name = 'jobs';
+
+    document.querySelectorAll('.settings-section').forEach(el => {
+        el.hidden = (el.dataset.section !== name);
+    });
+
+    // Active-State auf den Tab-Buttons
+    document.querySelectorAll('.settings-tab').forEach(btn => {
+        const isActive = btn.dataset.section === name;
+        btn.classList.toggle('btn-primary', isActive);
+        btn.classList.toggle('btn-secondary', !isActive);
+    });
+
+    try { localStorage.setItem('settingsLastSection', name); } catch (e) {}
+}
+
+// Beim Öffnen der Settings-View: zuletzt aktive Section wiederherstellen
+function initSettingsSection() {
+    let last = 'jobs';
+    try { last = localStorage.getItem('settingsLastSection') || 'jobs'; } catch (e) {}
+    showSettingsSection(last);
 }
 
 async function uploadCV() {
