@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Batch API Processor Module
  * Handles non-urgent requests via Batch API for 50% cost savings

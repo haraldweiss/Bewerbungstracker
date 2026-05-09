@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 import os
 from flask import Flask
 from services.cron_auth import require_cron_token

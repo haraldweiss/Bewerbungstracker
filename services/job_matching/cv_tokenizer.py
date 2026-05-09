@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """CV-Tokenizer für Pre-Filter-Scoring.
 
 Extrahiert aus dem cv_data_json eines Users drei Token-Mengen:

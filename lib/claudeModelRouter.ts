@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Universal Claude API Model Router
  * Intelligent model selection based on task complexity and cost optimization

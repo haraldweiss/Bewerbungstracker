@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Backup API Client
  * Handles all backup-related API calls: export, import, list, restore

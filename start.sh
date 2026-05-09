@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 
 # Bewerbungs-Tracker Start Script for macOS and Linux
 # Starts Web Server, IMAP Proxy, Email Service, and Data Service

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Tests für Job-Notification-Service."""
 from unittest.mock import patch
 from services.job_matching.notifier import send_match_notification

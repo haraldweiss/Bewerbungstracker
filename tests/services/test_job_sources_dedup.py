@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Tests für shared Dedup-Helper."""
 import pytest
 from services.job_sources.dedup import get_existing_job_urls, deduplicate

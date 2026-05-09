@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Backup API endpoints for export, import, restore, and list operations"""
 
 from flask import Blueprint, request, jsonify, make_response

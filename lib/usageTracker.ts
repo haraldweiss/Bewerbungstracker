@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Usage Tracker Service
  * Integration layer for tracking Claude API usage across multiple projects

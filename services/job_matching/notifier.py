@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Push-Notifications für Match-Treffer.
 
 Phase A: Stub mit logging — wird durch echten Push-Service ersetzt.

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """
 Konfiguriert die MAIL_*-Variablen in /var/www/bewerbungen/.env interaktiv.
 

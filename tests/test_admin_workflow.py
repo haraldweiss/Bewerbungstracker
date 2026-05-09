@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """
 Task 15: Complete Admin User Management Workflow Tests
 Tests all scenarios for the admin dashboard including:

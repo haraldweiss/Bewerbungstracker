@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// © 2026 Harald Weiss
 /**
  * Budget Alerts System
  * Monitors spending and sends webhook notifications for budget thresholds

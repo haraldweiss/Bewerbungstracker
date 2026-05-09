@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 import pytest
 
 # auth_token kommt aus tests/conftest.py (zentrale Fixture mit aktiviertem User)

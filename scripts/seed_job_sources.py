@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Seed-Skript: legt globale Default-Quellen an + optional update env-Felder.
 
 Default (ohne Flag): legt fehlende Sources an, lässt bestehende unverändert.

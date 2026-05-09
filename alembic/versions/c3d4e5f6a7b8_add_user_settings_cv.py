@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """Add user settings_json + cv_data_json columns
 
 Revision ID: c3d4e5f6a7b8

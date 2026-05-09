@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
 """LinkedIn Job-Source Adapter (JSearch Aggregator + optionaler 3rd-party-RSS)."""
 from __future__ import annotations
 import logging
