@@ -67,9 +67,16 @@ def _get_anthropic_client():
 
 
 def _estimate_cost_cents(tokens_in: int, tokens_out: int) -> int:
+    """USD-Kosten in Cents — KEIN Min-Floor.
+
+    Vorher: max(1, round(...)) — bei Calls mit ~2500 in / 250 out tokens
+    sind die echten Kosten ~0.2¢, das wurde fälschlich auf 1¢ aufgerundet.
+    Bei 50 Calls/Tag → fälschlich 50¢ statt der realen ~10¢ → Tagesbudget
+    sprang in HTTP 402 obwohl noch viel Luft war.
+    """
     usd = (tokens_in / 1_000_000 * COST_USD_PER_1M_TOKENS_IN
            + tokens_out / 1_000_000 * COST_USD_PER_1M_TOKENS_OUT)
-    return max(1, round(usd * 100))
+    return max(0, round(usd * 100))
 
 
 def _user_today_cost_cents(user_id: str) -> int:

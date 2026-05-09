@@ -41,7 +41,9 @@ class User(db.Model):
     job_discovery_requested_at = db.Column(db.DateTime, nullable=True)
     job_notification_threshold = db.Column(db.Integer, default=80, nullable=False)
     job_claude_budget_per_tick = db.Column(db.Integer, default=5, nullable=False)
-    job_daily_budget_cents = db.Column(db.Integer, default=50, nullable=False)
+    # Tagesbudget für AI-Calls (nur Claude/OpenAI — Ollama/Custom sind cost=0).
+    # Default 200¢ = 2€/Tag deckt ~200 typische Match-Calls (bei ~0.2¢/Call) ab.
+    job_daily_budget_cents = db.Column(db.Integer, default=200, nullable=False)
     _job_language_filter = db.Column('job_language_filter', db.Text, default='["de","en"]')
     _job_region_filter = db.Column('job_region_filter', db.Text, nullable=True)
 
