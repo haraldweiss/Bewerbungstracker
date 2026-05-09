@@ -569,10 +569,15 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
             f'(score={result.score}, prefilter={match.prefilter_score})'
         )
 
-    cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
-    key_owner = 'server' if response.via == 'claude' else (
-        'user' if response.via == 'ollama' else 'custom_endpoint'
-    )
+    # Cost-Tracking nur für kostenpflichtige Provider. Lokale Provider (Ollama,
+    # Mammouth, Custom-Endpoint) sind aus User-Sicht gratis — Cost mit Claude-
+    # Preisen zu schätzen würde das Tagesbudget falsch verbrauchen.
+    if response.via in ('ollama', 'mammouth', 'custom'):
+        cost_cents = 0
+        key_owner = 'user' if response.via == 'ollama' else 'custom_endpoint'
+    else:
+        cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
+        key_owner = 'server'
 
     db.session.add(ApiCall(
         user_id=user.id, endpoint='/api/jobs/match',
