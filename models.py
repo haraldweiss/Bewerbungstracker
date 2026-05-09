@@ -46,6 +46,10 @@ class User(db.Model):
     job_daily_budget_cents = db.Column(db.Integer, default=200, nullable=False)
     _job_language_filter = db.Column('job_language_filter', db.Text, default='["de","en"]')
     _job_region_filter = db.Column('job_region_filter', db.Text, nullable=True)
+    # Reject-Filter: Firmen mit kürzlich abgelehnter Bewerbung aus Vorschlägen
+    # ausblenden. Default ON, Window 180 Tage.
+    job_reject_filter_enabled = db.Column(db.Boolean, default=True, nullable=False)
+    job_reject_window_days = db.Column(db.Integer, default=180, nullable=False)
 
     # AI Provider Settings (Phase B)
     ai_provider = db.Column(db.String(50), default='claude', nullable=False)  # 'claude', 'ollama', 'openai', etc.

@@ -1022,6 +1022,20 @@
                 Push-Notification ab diesem Match-Score
             </div>
         </div>
+        <div class="form-group" style="margin-bottom:0.75rem">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+                <input type="checkbox" id="jdRejectFilterEnabled" style="width:18px;height:18px">
+                <span>Firmen mit Absage ausblenden</span>
+            </label>
+            <div style="margin-top:0.4rem;display:flex;align-items:center;gap:0.5rem">
+                <span style="font-size:0.85rem;color:var(--text-muted)">Window:</span>
+                <input type="number" id="jdRejectWindowDays" min="1" max="730" value="180" style="width:90px;padding:0.3rem 0.5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text)">
+                <span style="font-size:0.85rem;color:var(--text-muted)">Tage</span>
+            </div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem">
+                Firmen, die dich kürzlich abgelehnt haben, erscheinen für die gewählte Zeit nicht mehr in den Vorschlägen.
+            </div>
+        </div>
         <button class="btn btn-primary" onclick="saveJobDiscoveryFilters()">💾 Filter speichern</button>
         <div id="jdFiltersStatus" style="margin-top:0.5rem;font-size:0.85em;color:var(--text-muted)"></div>
     </div>
@@ -2773,6 +2787,16 @@ async function loadJobDiscoveryFilters() {
                     : '⏸️ Nicht aktiviert (Modal beim ersten CV-Upload)';
             statusEl.textContent = txt;
         }
+        // Reject-Filter-Settings aus dem Backend laden (autoritativ)
+        const f = (status && status.filters) || {};
+        const rejEnabled = document.getElementById('jdRejectFilterEnabled');
+        const rejWindow = document.getElementById('jdRejectWindowDays');
+        if (rejEnabled && typeof f.job_reject_filter_enabled === 'boolean') {
+            rejEnabled.checked = f.job_reject_filter_enabled;
+        }
+        if (rejWindow && typeof f.job_reject_window_days === 'number') {
+            rejWindow.value = f.job_reject_window_days;
+        }
     } catch (e) {
         // silent — Endpoint braucht ggf. Re-Login
     }
@@ -2815,6 +2839,10 @@ async function saveJobDiscoveryFilters() {
     if (document.getElementById('jdEmpUnbefristet').checked) employment_types.push('unbefristet');
     if (document.getElementById('jdEmpBefristet').checked) employment_types.push('befristet');
     const notification_threshold = parseInt(document.getElementById('jdNotifyThreshold').value, 10);
+    const rejectEnabled = !!document.getElementById('jdRejectFilterEnabled')?.checked;
+    let rejectWindow = parseInt(document.getElementById('jdRejectWindowDays')?.value || '180', 10);
+    if (!Number.isFinite(rejectWindow) || rejectWindow < 1) rejectWindow = 180;
+    if (rejectWindow > 730) rejectWindow = 730;
 
     const region_filter = (plz_prefixes.length || remote_ok)
         ? { plz_prefixes, remote_ok, employment_types }
@@ -2826,6 +2854,8 @@ async function saveJobDiscoveryFilters() {
             body: JSON.stringify({
                 job_region_filter: region_filter,
                 job_notification_threshold: notification_threshold,
+                job_reject_filter_enabled: rejectEnabled,
+                job_reject_window_days: rejectWindow,
             }),
         });
         // Frontend-Cache für nächsten Load

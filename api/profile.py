@@ -157,6 +157,8 @@ def get_job_discovery_status(user):
             'job_region_filter': user.job_region_filter,
             'job_language_filter': user.job_language_filter,
             'job_notification_threshold': user.job_notification_threshold,
+            'job_reject_filter_enabled': user.job_reject_filter_enabled,
+            'job_reject_window_days': user.job_reject_window_days,
         },
     }, 200
 
@@ -201,6 +203,18 @@ def update_job_discovery_filters(user):
         except (TypeError, ValueError):
             return {'error': 'job_notification_threshold muss int 0-100 sein'}, 400
 
+    if 'job_reject_filter_enabled' in data:
+        user.job_reject_filter_enabled = bool(data['job_reject_filter_enabled'])
+
+    if 'job_reject_window_days' in data:
+        try:
+            d = int(data['job_reject_window_days'])
+            if not (0 < d <= 730):  # max 2 Jahre, untere Grenze >0
+                raise ValueError
+            user.job_reject_window_days = d
+        except (TypeError, ValueError):
+            return {'error': 'job_reject_window_days muss int 1..730 sein'}, 400
+
     user.updated_at = datetime.utcnow()
     db.session.commit()
 
@@ -208,4 +222,6 @@ def update_job_discovery_filters(user):
         'job_region_filter': user.job_region_filter,
         'job_language_filter': user.job_language_filter,
         'job_notification_threshold': user.job_notification_threshold,
+        'job_reject_filter_enabled': user.job_reject_filter_enabled,
+        'job_reject_window_days': user.job_reject_window_days,
     }, 200
