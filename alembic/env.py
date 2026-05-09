@@ -27,10 +27,28 @@ if config.config_file_name is not None:
 target_metadata = db.metadata
 
 
+def _resolve_db_url() -> str:
+    """Liefert die DB-URL die auch Flask-SQLAlchemy nutzt.
+
+    Flask-SQLAlchemy löst relative SQLite-Pfade gegen `<app>/instance/` auf,
+    Alembic per Default nicht. Damit beide auf dieselbe Datei zugreifen,
+    bauen wir den absoluten Pfad explizit aus dem Flask-instance-Pfad.
+    """
+    url = os.getenv('DATABASE_URL', 'sqlite:///bewerbungstracker.db')
+    if url.startswith('sqlite:///') and not url.startswith('sqlite:////'):
+        # Relativer SQLite-Pfad → instance/-Verzeichnis davorsetzen
+        rel = url[len('sqlite:///'):]
+        instance_dir = Path(__file__).parent.parent / 'instance'
+        instance_dir.mkdir(exist_ok=True)
+        abs_path = (instance_dir / rel).resolve()
+        url = f'sqlite:///{abs_path}'
+    return url
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = os.getenv('DATABASE_URL', 'sqlite:///bewerbungstracker.db')
+    configuration["sqlalchemy.url"] = _resolve_db_url()
 
     context.configure(
         url=configuration["sqlalchemy.url"],
@@ -46,7 +64,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = os.getenv('DATABASE_URL', 'sqlite:///bewerbungstracker.db')
+    configuration["sqlalchemy.url"] = _resolve_db_url()
 
     connectable = engine_from_config(
         configuration,
