@@ -256,12 +256,70 @@ def prefilter():
                     "duration_sec": round(time.time() - started, 2)}), 200
 
 
+def _extract_first_json_object(text: str) -> dict | None:
+    """Extrahiert das erste balanciert geschlossene JSON-Objekt aus dem Text.
+
+    Robust gegen umgebenden Erklärungstext und Code-Fences (```json ... ```),
+    die kleine Modelle wie Mistral/Llama oft erzeugen, obwohl der Prompt
+    explizit nur JSON verlangt.
+    """
+    if not text:
+        return None
+
+    # Code-Fences entfernen
+    cleaned = text.replace('```json', '').replace('```JSON', '').replace('```', '')
+
+    start = cleaned.find('{')
+    if start < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(cleaned)):
+        ch = cleaned[i]
+        if escape:
+            escape = False
+            continue
+        if ch == '\\':
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                snippet = cleaned[start:i + 1]
+                try:
+                    return json.loads(snippet)
+                except Exception:
+                    return None
+    return None
+
+
 def _parse_match_response(text: str, tokens_in: int, tokens_out: int) -> MatchResult:
-    """Parst die JSON-Antwort vom Provider in ein MatchResult."""
-    if text.startswith("```"):
-        text = text.split("```", 2)[1].lstrip("json\n").strip()
+    """Parst die JSON-Antwort vom Provider in ein MatchResult.
+
+    Toleriert Freitext um das JSON, Code-Fences und mehrzeilige Antworten.
+    """
+    data = _extract_first_json_object(text or '')
+    if data is None:
+        # Snippet ins Log damit man später debuggen kann was der Provider lieferte
+        snippet = (text or '')[:300].replace('\n', ' ⏎ ')
+        logger.warning(f'match-response parse failed; raw snippet: {snippet!r}')
+        return MatchResult(
+            score=0,
+            reasoning="Bewertung fehlgeschlagen (ungültiges JSON von Provider).",
+            missing_skills=[],
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+        )
     try:
-        data = json.loads(text)
         return MatchResult(
             score=float(data.get("score", 0)),
             reasoning=str(data.get("reasoning", "")),
@@ -269,10 +327,11 @@ def _parse_match_response(text: str, tokens_in: int, tokens_out: int) -> MatchRe
             tokens_in=tokens_in,
             tokens_out=tokens_out,
         )
-    except Exception:
+    except (TypeError, ValueError) as e:
+        logger.warning(f'match-response parsed but field-extraction failed: {e}; data={data!r}')
         return MatchResult(
             score=0,
-            reasoning="Bewertung fehlgeschlagen (ungültiges JSON von Provider).",
+            reasoning="Bewertung fehlgeschlagen (Felder im JSON unerwartet).",
             missing_skills=[],
             tokens_in=tokens_in,
             tokens_out=tokens_out,

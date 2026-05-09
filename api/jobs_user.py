@@ -9,6 +9,7 @@ from database import db
 from models import JobSource, RawJob, JobMatch, Application
 from api.auth import token_required
 from services.ssrf_guard import is_url_safe_for_rss
+from services import ai_provider_client
 from api.jobs_cron import _run_claude_match_for, _user_today_cost_cents
 
 
@@ -315,9 +316,14 @@ def score_match(user, match_id: int):
     if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
         return jsonify({"error": "Tagesbudget für Claude-Bewertungen erschöpft"}), 402
 
-    client = _get_anthropic_client()
-    if client is None:
-        return jsonify({"error": "ANTHROPIC_API_KEY nicht gesetzt"}), 503
+    # Im Service-Modus brauchen wir keinen lokalen Anthropic-Key — der ai-provider-service
+    # routet selbst zu Claude/Ollama/etc. nach User-Preference.
+    if ai_provider_client.is_enabled():
+        client = None
+    else:
+        client = _get_anthropic_client()
+        if client is None:
+            return jsonify({"error": "Weder AI_PROVIDER_SERVICE_URL noch ANTHROPIC_API_KEY gesetzt"}), 503
 
     success = _run_claude_match_for(client, user, m)
     if not success:
@@ -360,9 +366,13 @@ def score_match_bulk(user):
     forbidden = [m.id for m in matches if m.user_id != user.id]
     own = [m for m in matches if m.user_id == user.id]
 
-    client = _get_anthropic_client()
-    if client is None:
-        return jsonify({"error": "ANTHROPIC_API_KEY nicht gesetzt"}), 503
+    # Im Service-Modus brauchen wir keinen lokalen Anthropic-Key.
+    if ai_provider_client.is_enabled():
+        client = None
+    else:
+        client = _get_anthropic_client()
+        if client is None:
+            return jsonify({"error": "Weder AI_PROVIDER_SERVICE_URL noch ANTHROPIC_API_KEY gesetzt"}), 503
 
     scored = []
     skipped_budget = []
