@@ -4058,6 +4058,83 @@ const Help = (function () {
             ].join(''),
         },
         {
+            id: 'ollama-tailscale',
+            title: 'Eigenes Ollama anbinden (Tailscale)',
+            icon: '🌐',
+            keywords: 'ollama tailscale tunnel mac lokal vpn netz multi-user',
+            html: () => [
+                h(2, '🌐 Eigenes lokales Ollama via Tailscale anbinden'),
+                p('Wenn du dein eigenes Ollama auf deinem Mac/PC nutzen willst, brauchst du eine Möglichkeit damit der VPS dein lokales Ollama erreicht — auch wenn du hinter NAT/Router/WLAN sitzt. Tailscale spannt ein privates VPN zwischen deinem Rechner und dem VPS auf — komplett ohne SSH-Keys oder Port-Forwarding.'),
+                note('Der VPS ist bereits im Tailnet eingerichtet (IP: <code>100.72.188.110</code>). Du musst nur noch deinen eigenen Rechner hinzufügen und den Endpoint in den Provider-Settings eintragen.'),
+
+                h(3, '1. Tailscale auf deinem Mac installieren'),
+                ol([
+                    'Tailscale aus dem Mac App Store laden: <a href="https://apps.apple.com/us/app/tailscale/id1475387142" target="_blank" rel="noopener">apps.apple.com/Tailscale</a>',
+                    'App öffnen → "Sign in" → mit demselben Account anmelden, mit dem der VPS verbunden ist',
+                    'Bei der ersten Verbindung schaltet macOS einen "VPN-Profile installieren"-Dialog frei → bestätigen',
+                    'In der Menüleiste erscheint das Tailscale-Icon — Status muss "Connected" sein',
+                ]),
+                p('Alternativ via Homebrew: <code>brew install --cask tailscale</code>'),
+
+                h(3, '2. Deine Tailscale-IP finden'),
+                p('Im Tailscale-Menü oder via Terminal:'),
+                p('<code>tailscale ip --4</code> → liefert eine IP wie <code>100.x.y.z</code>'),
+                p('Auch im Tailscale-Admin-Panel sichtbar: <a href="https://login.tailscale.com/admin/machines" target="_blank" rel="noopener">login.tailscale.com/admin/machines</a> — dein Mac wird dort gelistet, daneben die IP.'),
+
+                h(3, '3. Ollama auf 0.0.0.0 binden'),
+                p('Standard-Ollama hört nur auf <code>127.0.0.1</code>. Damit der VPS via Tailscale-IP zugreifen kann, muss Ollama auf alle Interfaces hören:'),
+                p('<code>launchctl setenv OLLAMA_HOST 0.0.0.0:11434</code>'),
+                p('Plus: Ollama-App restarten (rechts oben in der Mac-Menüleiste, "Quit Ollama" + erneut starten).'),
+                warn('Für persistente Konfiguration: füge <code>OLLAMA_HOST=0.0.0.0:11434</code> als LaunchAgent-EnvironmentVariable hinzu, sonst geht das Setting bei Neustart verloren.'),
+
+                h(3, '4. Endpoint in Bewerbungstracker eintragen'),
+                p('Settings → <b>🤖 AI Provider</b> → Provider <b>Ollama</b> wählen → <b>Konfiguration</b>:'),
+                ul([
+                    'Endpoint: <code>http://&lt;DEINE-TAILSCALE-IP&gt;:11434</code> (z.B. <code>http://100.64.0.5:11434</code>)',
+                    '<b>💾 Konfiguration speichern</b>',
+                    '<b>🔌 Konfiguration testen</b> — sollte deine lokalen Modelle listen',
+                ]),
+
+                h(3, '5. Test'),
+                p('Im Tab <b>📋 CV Vergleich</b> einen Vergleich anstoßen — die Anfrage geht: Browser → VPS → Tailscale-Tunnel → dein Mac → Ollama. Latenz typisch 50-150ms (ungefähr wie SSH-Tunnel).'),
+
+                h(3, 'Vorteile gegenüber SSH-Tunnel'),
+                ul([
+                    '<b>Zero-Config NAT-Traversal</b> — funktioniert auch hinter Carrier-NAT, Hotel-WLAN, Mobilfunk',
+                    '<b>Stabile IP</b> — dein Mac behält dieselbe 100.x.y.z auch bei WLAN-Wechsel',
+                    '<b>Keine SSH-Keys</b> — nichts zu provisionieren',
+                    '<b>Mehrere User parallel</b> — jeder Mac hat eigene Tailscale-IP, kein Port-Konflikt',
+                    '<b>Auto-Reconnect</b> — bei Netz-Wechsel oder Standby-Wakeup',
+                ]),
+
+                h(3, 'Sicherheit'),
+                ul([
+                    'Tailscale verschlüsselt End-to-End (WireGuard) — kein Traffic über Tailscale-Server',
+                    'Nur Geräte im selben Tailnet sehen sich gegenseitig',
+                    'Optional: <b>ACLs</b> im Admin-Panel feinjustieren wer auf welche Ports darf',
+                    'Ollama auf <code>0.0.0.0:11434</code> ist innerhalb des Tailnets erreichbar — nicht im offenen Internet (Mac-Firewall + NAT blockt das)',
+                ]),
+
+                h(3, 'Mehrere User im Team'),
+                p('Wenn ein zweiter User sein Ollama anbinden will:'),
+                ol([
+                    'Admin lädt User per <a href="https://login.tailscale.com/admin/users" target="_blank" rel="noopener">Tailscale Admin</a> ins Tailnet ein',
+                    'User installiert Tailscale auf seinem Mac, joint das Tailnet',
+                    'User trägt seine eigene <code>100.x.y.z</code>-IP in seinen AI-Provider-Settings ein',
+                    'Fertig — jeder User hat seinen eigenen Endpoint, keine Port-Konflikte',
+                ]),
+                note('Tailscale ist kostenlos für ≤3 Geräte. Größere Teams: <a href="https://tailscale.com/pricing" target="_blank" rel="noopener">tailscale.com/pricing</a>.'),
+
+                h(3, 'Troubleshooting'),
+                ul([
+                    '<code>tailscale ping 100.72.188.110</code> auf deinem Mac — sollte antworten. Wenn nicht: Tailscale-Status checken',
+                    '<code>curl http://&lt;deine-ip&gt;:11434/api/tags</code> vom VPS — sollte deine Modelle listen',
+                    'Mac-Firewall blockt Ollama? System Settings → Network → Firewall → Ollama erlauben',
+                    'Bei Carrier-NAT (LTE/5G): Tailscale nutzt automatisch DERP-Relay — sollte funktionieren, ggf. etwas höhere Latenz',
+                ]),
+            ].join(''),
+        },
+        {
             id: 'sicherheit',
             title: 'Sicherheit & Backup',
             icon: '🔐',
