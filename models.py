@@ -55,6 +55,9 @@ class User(db.Model):
     ai_provider = db.Column(db.String(50), default='claude', nullable=False)  # 'claude', 'ollama', 'openai', etc.
     ai_provider_model = db.Column(db.String(255))  # Spezifisches Model für Job-Matching
     ai_provider_config = db.Column(db.Text)  # JSON: per-user provider config (API keys, endpoints, encrypted)
+    # Pro-Task-Modell-Overrides als JSON. Fehlt der Key → Fallback auf
+    # ai_provider/ai_provider_model. Siehe get_model_for() unten.
+    feature_model_overrides = db.Column(db.Text, nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -91,6 +94,22 @@ class User(db.Model):
     @job_region_filter.setter
     def job_region_filter(self, value):
         self._job_region_filter = _json.dumps(value) if value else None
+
+    def get_model_for(self, feature: str):
+        """Returns (provider, model) für Feature mit Fallback auf Standard.
+
+        Feature-Keys: 'match', 'cover_letter', 'email_analyse', 'cv_summarize'.
+        Bei malformed JSON oder fehlendem Override → Fallback auf
+        ai_provider / ai_provider_model.
+        """
+        try:
+            overrides = _json.loads(self.feature_model_overrides or '{}')
+        except (ValueError, TypeError):
+            overrides = {}
+        override = overrides.get(feature)
+        if isinstance(override, dict) and override.get('provider'):
+            return override['provider'], override.get('model')
+        return self.ai_provider, self.ai_provider_model
 
     def __repr__(self):
         return f'<User {self.email}>'
