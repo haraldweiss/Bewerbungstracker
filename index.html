@@ -8468,6 +8468,80 @@ async function loadProviders() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// PRO-TASK MODEL EMPFEHLUNGS-ENGINE (heuristisch)
+// ═══════════════════════════════════════════════════════════════════
+
+const FEATURE_LABELS = {
+    match: 'Job-Matching',
+    cover_letter: 'Cover-Letter',
+    cv_summarize: 'CV-Summarize',
+    email_analyse: 'Email-Analyse',
+};
+
+const TASK_THRESHOLDS = {
+    match:         { ok: 60, warn: 40 },
+    cover_letter:  { ok: 75, warn: 55 },
+    cv_summarize:  { ok: 65, warn: 45 },
+    email_analyse: { ok: 50, warn: 30 },
+};
+
+function capabilityScore(provider, model) {
+    if (!model) return 50;
+    const m = String(model).toLowerCase();
+
+    const CLOUD = [
+        ['claude-opus', 98],
+        ['claude-sonnet-4', 92],
+        ['claude-sonnet-3.5', 88],
+        ['claude-haiku-4-5', 82],
+        ['claude-haiku-3', 65],
+        ['gpt-4o', 92],
+        ['gpt-4-turbo', 90],
+        ['gpt-4', 88],
+        ['gpt-3.5', 60],
+        ['o1', 95],
+        ['o3', 96],
+        ['gemini-1.5-pro', 90],
+        ['gemini-1.5-flash', 70],
+    ];
+    for (const [pattern, score] of CLOUD) {
+        if (m.includes(pattern)) return score;
+    }
+
+    const paramMatch = m.match(/(\d+)b\b/);
+    const params = paramMatch ? parseInt(paramMatch[1], 10) : null;
+
+    let score = 50;
+    if (params) {
+        if (params >= 400)     score = 95;
+        else if (params >= 70) score = 88;
+        else if (params >= 30) score = 78;
+        else if (params >= 13) score = 65;
+        else if (params >= 7)  score = 50;
+        else                   score = 30;
+    }
+
+    if (m.includes('qwen2.5') || m.includes('qwen3')) score += 5;
+    if (m.includes('llama3.1') || m.includes('llama3.2') || m.includes('llama3.3')) score += 3;
+    if (m.includes('deepseek')) score += 5;
+    if (m.includes('phi-3') || m.includes('phi3')) score -= 5;
+
+    return Math.min(100, Math.max(0, score));
+}
+
+function modelRecommendation(provider, model, feature) {
+    let score = capabilityScore(provider, model);
+    const isReasoning = /(thinking|\br1\b|\bo1\b|\bo3\b)/i.test(model || '');
+    if (isReasoning && (feature === 'cover_letter' || feature === 'match')) score += 8;
+
+    const t = TASK_THRESHOLDS[feature];
+    if (!t) return { level: 'unknown', icon: '❔', text: 'Unbekannte Task' };
+    if (score >= t.ok)   return { level: 'ok',   icon: '✅', text: 'Empfohlen' };
+    if (score >= t.warn) return { level: 'warn', icon: '⚠️', text: 'Geht, aber suboptimal' };
+    return                       { level: 'bad',  icon: '❌', text: 'Wird vermutlich scheitern' };
+}
+
 async function onProviderChange() {
     const provider = document.getElementById('aiProviderSelect').value;
     const modelSelect = document.getElementById('aiModelSelect');
