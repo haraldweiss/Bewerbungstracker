@@ -586,3 +586,49 @@ def test_export_import_error_returns_503(client, auth_headers):
 
     assert r.status_code == 503
     assert 'Library' in r.get_json()['error']
+
+
+def test_generate_uses_cover_letter_override(client, auth_header, db_session):
+    """Wenn User feature_model_overrides für cover_letter gesetzt hat,
+    wird der Override genutzt statt user.ai_provider."""
+    import json as _j
+    from unittest.mock import patch, MagicMock
+    from models import CoverLetter
+
+    headers, user = auth_header
+    user.ai_provider = 'ollama'
+    user.ai_provider_model = 'mistral-nemo:12b'
+    user.feature_model_overrides = _j.dumps({
+        'cover_letter': {'provider': 'claude', 'model': 'claude-haiku-4-5-20251001'},
+    })
+    db_session.commit()
+
+    cl = CoverLetter(
+        user_id=user.id,
+        job_title='Engineer', company_name='X',
+        job_description='Wir suchen einen erfahrenen Senior Engineer mit Python und Cloud Skills, langfristig.',
+        tone='professional', length='medium', focus='balanced',
+        status='draft',
+    )
+    db_session.add(cl); db_session.commit()
+
+    fake_analysis = {'matched_skills': [], 'matched_experience': [],
+                     'interpreted_requirements': [], 'missing_or_weak': []}
+    fake_content = '<!-- confidence: 0.9 -->\n<p>Test</p>'
+
+    with patch('api.cover_letters.CoverLetterService') as MockSvc:
+        instance = MockSvc.return_value
+        instance.analyze.return_value = fake_analysis
+        instance.generate.return_value = fake_content
+
+        r = client.post(f'/api/cover-letters/{cl.id}/generate',
+                        json={'cv_text': 'Python Dev 5y'}, headers=headers)
+        assert r.status_code == 200
+
+        call_kwargs = instance.analyze.call_args.kwargs
+        assert call_kwargs.get('provider') == 'claude'
+        assert call_kwargs.get('model') == 'claude-haiku-4-5-20251001'
+
+        gen_kwargs = instance.generate.call_args.kwargs
+        assert gen_kwargs.get('provider') == 'claude'
+        assert gen_kwargs.get('model') == 'claude-haiku-4-5-20251001'

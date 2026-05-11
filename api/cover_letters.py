@@ -113,11 +113,11 @@ def generate_cover_letter(user, cover_letter_id):
 
     applicant_name = data.get('applicant_name')
 
-    # User-Provider/Modell respektieren (sonst hardcoded auf claude).
-    # Cover-Letter braucht ein starkes Modell — Default-Fallback auf Claude
-    # falls User Ollama/Mistral o.ä. nutzt und Body ohne Override kommt.
-    provider = (data.get('provider') or user.ai_provider or 'claude').strip()
-    model = (data.get('model') or user.ai_provider_model or '').strip() or None
+    # Pro-Task-Override (cover_letter) → fallback Standard → fallback claude.
+    # Body kann beides per Request overriden (explizite User-Wahl in UI).
+    feat_provider, feat_model = user.get_model_for('cover_letter')
+    provider = (data.get('provider') or feat_provider or 'claude').strip()
+    model = (data.get('model') or feat_model or '').strip() or None
 
     try:
         svc = CoverLetterService()
