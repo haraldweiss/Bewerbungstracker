@@ -1,7 +1,7 @@
 """add_cover_letters
 
 Revision ID: a7b8c9d0e1f2
-Revises: f6a7b8c9d0e1
+Revises: a1b2c3d4e5f7
 Create Date: 2026-05-11 09:00:00.000000
 
 Neue Tabelle für den Anschreiben-Generator. Speichert Job-Posting + generiertes
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 
 revision = 'a7b8c9d0e1f2'
-down_revision = 'f6a7b8c9d0e1'
+down_revision = 'a1b2c3d4e5f7'
 branch_labels = None
 depends_on = None
 
