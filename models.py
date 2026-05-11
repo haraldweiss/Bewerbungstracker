@@ -67,6 +67,7 @@ class User(db.Model):
     job_sources = db.relationship('JobSource', backref='user', cascade='all, delete')
     confirmation_tokens = db.relationship('EmailConfirmationToken', backref='user', cascade='all, delete-orphan')
     job_matches = db.relationship('JobMatch', backref='user', cascade='all, delete-orphan', foreign_keys='JobMatch.user_id')
+    cover_letters = db.relationship('CoverLetter', backref='user', cascade='all, delete-orphan')
 
     @property
     def decrypted_imap_password(self) -> str:
@@ -167,6 +168,38 @@ class Application(db.Model):
 
     def __repr__(self):
         return f'<Application {self.company} - {self.position}>'
+
+
+class CoverLetter(db.Model):
+    __tablename__ = 'cover_letters'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False, index=True)
+    application_id = db.Column(db.String(36), db.ForeignKey('applications.id'), nullable=True)
+
+    job_title = db.Column(db.String(255), nullable=False)
+    company_name = db.Column(db.String(255), nullable=False)
+    job_description = db.Column(db.Text, nullable=False)
+    cv_used = db.Column(db.String(255))
+
+    # Generated Content (HTML with data-confidence attributes per paragraph)
+    content = db.Column(db.Text)
+    # JSON: {matched_skills: [...], matched_experience: [...], interpreted_requirements: [...]}
+    analysis_json = db.Column(db.Text)
+
+    tone = db.Column(db.String(50), default='professional')  # professional|casual|technical
+    length = db.Column(db.String(50), default='medium')      # short|medium|long
+    focus = db.Column(db.String(50), default='balanced')     # technical|leadership|projects|balanced
+
+    status = db.Column(db.String(50), default='draft')  # draft|generated|finalized|sent
+    exported_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    application = db.relationship('Application', backref=db.backref('cover_letter', uselist=False))
+
+    def __repr__(self):
+        return f'<CoverLetter {self.company_name} - {self.id}>'
 
 
 class BackupHistory(db.Model):
