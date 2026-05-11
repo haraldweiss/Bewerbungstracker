@@ -12,6 +12,9 @@ from services.job_sources.base import FetchedJob
 @pytest.fixture
 def app(monkeypatch):
     monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
+    # ProviderFactory liest ANTHROPIC_API_KEY direkt aus env — ohne Wert
+    # scheitert _run_match_via_local_factory bevor der Mock greift.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     app = create_app()
     app.config['TESTING'] = True
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'

@@ -16,6 +16,9 @@ from models import User, JobSource, RawJob, JobMatch, ApiCall
 @pytest.fixture
 def app(monkeypatch):
     monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
+    # ProviderFactory liest ANTHROPIC_API_KEY direkt aus env — ohne Wert
+    # scheitert _run_match_via_local_factory bevor der Mock greift.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     app = create_app()
     app.config['TESTING'] = True
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
@@ -126,8 +129,12 @@ def test_prefilter_dismisses_low_scores(app, client, user_factory):
     assert m.status == 'dismissed'
 
 
-@patch("api.jobs_cron._get_anthropic_client")
-def test_claude_match_scores_top_n_per_user(mock_factory, app, client, user_factory):
+def test_claude_match_scores_top_n_per_user(app, client, user_factory):
+    """Cron-Endpoint /claude-match bewertet die Top-N (per job_claude_budget_per_tick).
+
+    Mock greift bei ProviderFactory.get_client + match_job_with_claude — das ist
+    die Stelle, an der der echte Pfad in _run_match_via_local_factory landet.
+    """
     user = user_factory(
         job_discovery_enabled=True,
         cv_data_json=json.dumps({"cv": {"skills": ["react"], "summary": "React expert"}}),
@@ -144,14 +151,12 @@ def test_claude_match_scores_top_n_per_user(mock_factory, app, client, user_fact
                                 prefilter_score=70 + i))
     db.session.commit()
 
-    mock_client = MagicMock()
-    mock_client.messages.create.return_value = MagicMock(
-        content=[MagicMock(text='{"score": 88, "reasoning": "ok", "missing_skills": []}')],
-        usage=MagicMock(input_tokens=100, output_tokens=20),
-    )
-    mock_factory.return_value = mock_client
+    fake_result = MagicMock(score=88, reasoning="ok", missing_skills=[],
+                            tokens_in=100, tokens_out=20)
+    with patch("api.jobs_cron.ProviderFactory.get_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+        r = client.post("/api/jobs/claude-match", headers={"X-Cron-Token": "test-token"})
 
-    r = client.post("/api/jobs/claude-match", headers={"X-Cron-Token": "test-token"})
     body = r.get_json()
     assert body["matched"] == 2
     matched = JobMatch.query.filter(JobMatch.match_score.isnot(None)).all()
@@ -279,7 +284,7 @@ def test_run_claude_match_for_success_writes_all_fields(app, user_factory):
     # Verify ApiCall created
     api_calls = ApiCall.query.filter_by(user_id=user.id).all()
     assert len(api_calls) == 1
-    assert api_calls[0].endpoint == '/api/jobs/claude-match'
+    assert api_calls[0].endpoint == '/api/jobs/match'
 
 
 def test_auto_cron_skips_jobs_below_auto_threshold(app, user_factory, monkeypatch):

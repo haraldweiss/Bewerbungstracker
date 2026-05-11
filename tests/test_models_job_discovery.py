@@ -129,7 +129,7 @@ def test_user_has_job_settings_defaults(app, user_factory):
     assert u.job_discovery_enabled is False
     assert u.job_notification_threshold == 80
     assert u.job_claude_budget_per_tick == 5
-    assert u.job_daily_budget_cents == 50
+    assert u.job_daily_budget_cents == 200
     assert u.job_language_filter == ["de", "en"]
     assert u.job_region_filter is None
 
