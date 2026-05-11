@@ -302,6 +302,66 @@
         }
 
         /* TABS, HIGHLIGHT - Now in components.css */
+
+        /* Cover Letter Generator */
+        .cl-spinner {
+            width: 36px; height: 36px;
+            border: 3px solid var(--border);
+            border-top-color: var(--info);
+            border-radius: 50%;
+            margin: 0 auto;
+            animation: cl-spin 0.9s linear infinite;
+        }
+        @keyframes cl-spin { to { transform: rotate(360deg); } }
+
+        #clContent p[data-confidence] {
+            padding: 0.6rem 0.8rem;
+            margin: 0 0 0.6rem 0;
+            border-left: 4px solid #999;
+            border-radius: 0 4px 4px 0;
+            position: relative;
+            line-height: 1.55;
+        }
+        /* Grün: confidence >= 0.85 */
+        #clContent p[data-confidence="0.85"],
+        #clContent p[data-confidence="0.86"], #clContent p[data-confidence="0.87"], #clContent p[data-confidence="0.88"], #clContent p[data-confidence="0.89"],
+        #clContent p[data-confidence="0.90"], #clContent p[data-confidence="0.91"], #clContent p[data-confidence="0.92"], #clContent p[data-confidence="0.93"], #clContent p[data-confidence="0.94"],
+        #clContent p[data-confidence="0.95"], #clContent p[data-confidence="0.96"], #clContent p[data-confidence="0.97"], #clContent p[data-confidence="0.98"], #clContent p[data-confidence="0.99"],
+        #clContent p[data-confidence="1.0"], #clContent p[data-confidence="1.00"] {
+            background: rgba(76, 175, 80, 0.08);
+            border-left-color: #4caf50;
+        }
+        /* Gelb: confidence 0.70 - 0.84 */
+        #clContent p[data-confidence="0.70"], #clContent p[data-confidence="0.71"], #clContent p[data-confidence="0.72"], #clContent p[data-confidence="0.73"], #clContent p[data-confidence="0.74"],
+        #clContent p[data-confidence="0.75"], #clContent p[data-confidence="0.76"], #clContent p[data-confidence="0.77"], #clContent p[data-confidence="0.78"], #clContent p[data-confidence="0.79"],
+        #clContent p[data-confidence="0.80"], #clContent p[data-confidence="0.81"], #clContent p[data-confidence="0.82"], #clContent p[data-confidence="0.83"], #clContent p[data-confidence="0.84"] {
+            background: rgba(255, 193, 7, 0.10);
+            border-left-color: #fbc02d;
+        }
+        /* Orange: confidence < 0.70 */
+        #clContent p[data-confidence="0.30"], #clContent p[data-confidence="0.40"], #clContent p[data-confidence="0.50"], #clContent p[data-confidence="0.60"], #clContent p[data-confidence="0.65"],
+        #clContent p[data-confidence="0.31"], #clContent p[data-confidence="0.32"], #clContent p[data-confidence="0.33"], #clContent p[data-confidence="0.34"], #clContent p[data-confidence="0.35"],
+        #clContent p[data-confidence="0.36"], #clContent p[data-confidence="0.37"], #clContent p[data-confidence="0.38"], #clContent p[data-confidence="0.39"],
+        #clContent p[data-confidence="0.41"], #clContent p[data-confidence="0.42"], #clContent p[data-confidence="0.43"], #clContent p[data-confidence="0.44"], #clContent p[data-confidence="0.45"],
+        #clContent p[data-confidence="0.46"], #clContent p[data-confidence="0.47"], #clContent p[data-confidence="0.48"], #clContent p[data-confidence="0.49"],
+        #clContent p[data-confidence="0.51"], #clContent p[data-confidence="0.52"], #clContent p[data-confidence="0.53"], #clContent p[data-confidence="0.54"], #clContent p[data-confidence="0.55"],
+        #clContent p[data-confidence="0.56"], #clContent p[data-confidence="0.57"], #clContent p[data-confidence="0.58"], #clContent p[data-confidence="0.59"],
+        #clContent p[data-confidence="0.61"], #clContent p[data-confidence="0.62"], #clContent p[data-confidence="0.63"], #clContent p[data-confidence="0.64"],
+        #clContent p[data-confidence="0.66"], #clContent p[data-confidence="0.67"], #clContent p[data-confidence="0.68"], #clContent p[data-confidence="0.69"] {
+            background: rgba(255, 152, 0, 0.10);
+            border-left-color: #ff9800;
+        }
+        .cl-confidence-badge {
+            display: inline-block; font-size: 0.7rem;
+            padding: 1px 6px; margin-left: 0.5rem;
+            background: rgba(0,0,0,0.1); border-radius: 10px;
+            vertical-align: middle; cursor: help;
+        }
+        .cl-saved-item {
+            padding: 0.6rem 0.8rem; margin-bottom: 0.4rem;
+            background: var(--bg-secondary); border-radius: 4px;
+            display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -819,6 +879,7 @@
             <button class="btn btn-secondary btn-sm" onclick="showCVTab('upload')">📤 CV</button>
             <button class="btn btn-secondary btn-sm" onclick="showCVTab('compare')">🔍 Vergleich</button>
             <button class="btn btn-secondary btn-sm" onclick="showCVTab('custom-ai')">⚙️ KI-Plattformen</button>
+            <button class="btn btn-secondary btn-sm" onclick="showCVTab('coverletter')">✍️ Anschreiben</button>
         </div>
     </div>
 
@@ -939,6 +1000,85 @@
                 <li><strong>API-basiert:</strong> Sendet die Anfrage direkt mit API Key (wird verschlüsselt gespeichert).</li>
                 <li>API Keys werden <strong>verschlüsselt</strong> in der lokalen Datenbank gespeichert.</li>
             </ul>
+        </div>
+    </div>
+
+    <!-- Cover Letter Tab -->
+    <div id="cv-coverletter-tab" class="card" style="display:none;">
+        <div class="card-title" style="margin-bottom:1rem;">✍️ Anschreiben-Generator</div>
+
+        <div id="clAlerts"></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem;">
+            <div>
+                <label style="display:block;font-size:0.9rem;font-weight:600;margin-bottom:0.25rem;">Firma:</label>
+                <input type="text" id="clCompanyName" placeholder="z.B. TechCorp GmbH" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;">
+            </div>
+            <div>
+                <label style="display:block;font-size:0.9rem;font-weight:600;margin-bottom:0.25rem;">Position:</label>
+                <input type="text" id="clJobTitle" placeholder="z.B. Senior Python Engineer" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:4px;">
+            </div>
+        </div>
+
+        <div style="margin-bottom:1rem;">
+            <label style="display:block;font-size:0.9rem;font-weight:600;margin-bottom:0.25rem;">Stellenbeschreibung:</label>
+            <textarea id="clJobDescription" placeholder="Vollständige Stellenbeschreibung hier einfügen..." style="width:100%;min-height:200px;padding:0.75rem;border:1px solid var(--border);border-radius:4px;font-family:monospace;font-size:0.85rem;"></textarea>
+        </div>
+
+        <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap;">
+            <label style="font-size:0.9rem;">Ton:</label>
+            <select id="clTone" style="padding:0.4rem;border:1px solid var(--border);border-radius:4px;">
+                <option value="professional">Professionell</option>
+                <option value="casual">Locker</option>
+                <option value="technical">Technisch</option>
+            </select>
+            <label style="font-size:0.9rem;">Länge:</label>
+            <select id="clLength" style="padding:0.4rem;border:1px solid var(--border);border-radius:4px;">
+                <option value="short">Kurz (~250 W.)</option>
+                <option value="medium" selected>Mittel (~400 W.)</option>
+                <option value="long">Lang (~600 W.)</option>
+            </select>
+            <label style="font-size:0.9rem;">Fokus:</label>
+            <select id="clFocus" style="padding:0.4rem;border:1px solid var(--border);border-radius:4px;">
+                <option value="balanced" selected>Ausgewogen</option>
+                <option value="technical">Technical Skills</option>
+                <option value="leadership">Leadership</option>
+                <option value="projects">Projekte</option>
+            </select>
+        </div>
+
+        <div style="padding:0.75rem;background:var(--bg-secondary);border-radius:4px;margin-bottom:1rem;font-size:0.85rem;color:var(--muted);">
+            ℹ️ Der Generator nutzt deinen gespeicherten CV (Tab "📤 CV") und die Stellenbeschreibung. Confidence-Scores zeigen pro Absatz, wie faktisch vs. interpretiert er ist (grün=Fakt, gelb=überwiegend faktisch, orange=interpretiert).
+        </div>
+
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <button class="btn btn-primary" onclick="generateCoverLetter()">⚡ Anschreiben generieren</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearCoverLetterForm()">🗑️ Formular leeren</button>
+        </div>
+
+        <div id="clLoading" style="display:none;padding:2rem;text-align:center;">
+            <div class="cl-spinner"></div>
+            <div style="margin-top:0.75rem;color:var(--muted);">Anschreiben wird generiert (Analyse + Text, ca. 10-30s)...</div>
+        </div>
+
+        <div id="clResult" style="display:none;">
+            <div style="font-weight:600;margin-bottom:0.5rem;">📄 Generiertes Anschreiben:</div>
+            <div id="clContent" style="padding:1rem;background:var(--input-bg);border:1px solid var(--border);border-radius:4px;min-height:200px;"></div>
+
+            <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+                <button class="btn btn-success btn-sm" onclick="exportCoverLetter('pdf')">📥 PDF</button>
+                <button class="btn btn-success btn-sm" onclick="exportCoverLetter('docx')">📄 DOCX</button>
+                <button class="btn btn-secondary btn-sm" onclick="copyCoverLetterText()">📋 Text kopieren</button>
+                <button class="btn btn-secondary btn-sm" onclick="toggleCoverLetterAnalysis()">📊 Detailanalyse</button>
+                <button class="btn btn-secondary btn-sm" onclick="finalizeCoverLetter()">✅ Als finalisiert markieren</button>
+            </div>
+
+            <div id="clAnalysis" style="display:none;margin-top:1rem;padding:1rem;background:var(--bg-secondary);border-radius:4px;"></div>
+        </div>
+
+        <div style="margin-top:1.5rem;">
+            <div style="font-weight:600;margin-bottom:0.75rem;">📂 Gespeicherte Anschreiben:</div>
+            <div id="clSavedList"></div>
         </div>
     </div>
 </div>
@@ -7413,10 +7553,12 @@ function showCVTab(tabName) {
     document.getElementById('cv-upload-tab').style.display = 'none';
     document.getElementById('cv-compare-tab').style.display = 'none';
     document.getElementById('custom-ai-tab').style.display = 'none';
+    document.getElementById('cv-coverletter-tab').style.display = 'none';
     document.getElementById('cv-' + tabName + '-tab').style.display = 'block';
     if (tabName === 'upload') loadCVStatus();
     if (tabName === 'compare') loadComparePage();
     if (tabName === 'custom-ai') loadCustomAIPlatforms();
+    if (tabName === 'coverletter') loadCoverLetterPage();
 }
 
 function showSettingsSection(name) {
@@ -8612,6 +8754,313 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// COVER LETTER GENERATOR
+// ═══════════════════════════════════════════════════════════════════
+
+let _currentCoverLetterId = null;
+let _currentCoverLetterAnalysis = null;
+
+function _clShowAlert(message, type = 'info') {
+    const container = document.getElementById('clAlerts');
+    if (!container) return;
+    const colors = {
+        error: 'background:#fee;color:#c33;border:1px solid #fcc;',
+        success: 'background:#efe;color:#3a3;border:1px solid #cfc;',
+        info: 'background:#eef;color:#33c;border:1px solid #ccf;',
+        warn: 'background:#ffd;color:#963;border:1px solid #fc9;'
+    };
+    const div = document.createElement('div');
+    div.style.cssText = `padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.5rem;font-size:0.9rem;${colors[type]||colors.info}`;
+    div.textContent = message;
+    container.appendChild(div);
+    setTimeout(() => div.remove(), 5000);
+}
+
+function _clGetCVText() {
+    // Liest gespeicherten CV aus localStorage. Format: {text, file?, …}
+    try {
+        const raw = localStorage.getItem('cvData');
+        if (!raw || raw === 'null') return null;
+        const cv = JSON.parse(raw);
+        return (cv && cv.text) ? cv.text : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function generateCoverLetter() {
+    const companyName = document.getElementById('clCompanyName').value.trim();
+    const jobTitle = document.getElementById('clJobTitle').value.trim();
+    const jobDescription = document.getElementById('clJobDescription').value.trim();
+    const tone = document.getElementById('clTone').value;
+    const length = document.getElementById('clLength').value;
+    const focus = document.getElementById('clFocus').value;
+
+    if (!companyName || !jobTitle || !jobDescription) {
+        _clShowAlert('Bitte Firma, Position und Stellenbeschreibung ausfüllen', 'error');
+        return;
+    }
+    if (jobDescription.length < 50) {
+        _clShowAlert('Stellenbeschreibung zu kurz — mindestens 50 Zeichen', 'error');
+        return;
+    }
+
+    const cvText = _clGetCVText();
+    if (!cvText) {
+        _clShowAlert('Kein CV gefunden — bitte zuerst im Tab "📤 CV" hochladen/speichern', 'error');
+        return;
+    }
+
+    const loading = document.getElementById('clLoading');
+    const result = document.getElementById('clResult');
+    loading.style.display = 'block';
+    result.style.display = 'none';
+
+    try {
+        // Step 1: Create draft
+        const createRes = await fetch('/api/cover-letters/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                company_name: companyName, job_title: jobTitle,
+                job_description: jobDescription,
+                tone, length, focus,
+            }),
+        });
+        if (!createRes.ok) {
+            const err = await createRes.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${createRes.status}`);
+        }
+        const draft = await createRes.json();
+        _currentCoverLetterId = draft.id;
+
+        // Step 2: Generate content
+        const genRes = await fetch(`/api/cover-letters/${draft.id}/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ cv_text: cvText }),
+        });
+        if (!genRes.ok) {
+            const err = await genRes.json().catch(() => ({}));
+            throw new Error(err.error || `Generierung fehlgeschlagen (HTTP ${genRes.status})`);
+        }
+        const generated = await genRes.json();
+        _currentCoverLetterAnalysis = generated.analysis;
+        _clRenderContent(generated.content);
+        _clShowAlert('Anschreiben generiert ✓', 'success');
+        await loadCoverLetterList();
+    } catch (e) {
+        _clShowAlert(`Fehler: ${e.message}`, 'error');
+    } finally {
+        loading.style.display = 'none';
+    }
+}
+
+function _clRenderContent(htmlContent) {
+    const container = document.getElementById('clContent');
+    // Note: htmlContent comes from our own backend API (trusted server-generated HTML).
+    // All user-supplied strings in it are escaped server-side before being stored.
+    container.innerHTML = htmlContent; // trusted server HTML
+    // Confidence-Badges nachträglich anhängen
+    container.querySelectorAll('p[data-confidence]').forEach(p => {
+        const c = parseFloat(p.dataset.confidence);
+        const badge = document.createElement('span');
+        badge.className = 'cl-confidence-badge';
+        badge.textContent = `${Math.round(c * 100)}%`;
+        let label = 'interpretiert';
+        if (c >= 0.85) label = 'faktisch (aus CV/Job)';
+        else if (c >= 0.70) label = 'überwiegend faktisch';
+        badge.title = `Confidence: ${label}`;
+        p.appendChild(badge);
+    });
+    // Warnung wenn > 30% niedrige Confidence
+    const all = container.querySelectorAll('p[data-confidence]');
+    if (all.length > 0) {
+        const low = Array.from(all).filter(p => parseFloat(p.dataset.confidence) < 0.7).length;
+        if (low / all.length > 0.3) {
+            _clShowAlert('⚠️ Über 30% der Absätze sind eher interpretiert als faktisch — bitte vor Versand prüfen', 'warn');
+        }
+    }
+    document.getElementById('clResult').style.display = 'block';
+}
+
+function toggleCoverLetterAnalysis() {
+    const div = document.getElementById('clAnalysis');
+    if (div.style.display === 'block') { div.style.display = 'none'; return; }
+    if (!_currentCoverLetterAnalysis) {
+        _clShowAlert('Keine Analyse vorhanden', 'info');
+        return;
+    }
+    const a = _currentCoverLetterAnalysis;
+    const sec = (title, items, renderer) => {
+        if (!items || items.length === 0) return '';
+        return `<div style="margin-bottom:1rem;"><div style="font-weight:600;margin-bottom:0.4rem;">${title}</div>${items.map(renderer).join('')}</div>`;
+    };
+    const pct = c => `<span style="background:rgba(0,0,0,0.1);padding:1px 6px;border-radius:10px;font-size:0.75rem;margin-left:0.5rem;">${Math.round(c*100)}%</span>`;
+    // Note: all user-supplied strings rendered via _esc() (HTML-escapes textContent)
+    div.innerHTML = [ // analysis display built from _esc()-sanitized strings
+        sec('✓ Matched Skills', a.matched_skills, s => `<div style="padding:0.4rem 0.6rem;margin-bottom:0.3rem;border-left:3px solid #4caf50;background:var(--input-bg);"><strong>${_esc(s.skill)}</strong> → ${_esc(s.job_requirement || '')}${pct(s.confidence)}</div>`),
+        sec('✓ Matched Experience', a.matched_experience, e => `<div style="padding:0.4rem 0.6rem;margin-bottom:0.3rem;border-left:3px solid #4caf50;background:var(--input-bg);"><strong>${_esc(e.experience)}</strong> → ${_esc(e.alignment || '')}${pct(e.confidence)}</div>`),
+        sec('◆ Interpretiert', a.interpreted_requirements, r => `<div style="padding:0.4rem 0.6rem;margin-bottom:0.3rem;border-left:3px solid #ff9800;background:var(--input-bg);"><strong>${_esc(r.requirement)}</strong> — ${_esc(r.reasoning || '')}${pct(r.confidence)}</div>`),
+        sec('⚠ Schwache Übereinstimmungen', a.missing_or_weak, m => `<div style="padding:0.4rem 0.6rem;margin-bottom:0.3rem;border-left:3px solid #999;background:var(--input-bg);"><strong>${_esc(m.requirement)}</strong> — ${_esc(m.cv_status || '')}${pct(m.confidence_of_fit)}</div>`),
+    ].join('') || '<em style="color:var(--muted);">Keine Analyse-Daten</em>';
+    div.style.display = 'block';
+}
+
+function _esc(s) {
+    if (s == null) return '';
+    const div = document.createElement('div');
+    div.textContent = String(s);
+    return div.innerHTML;
+}
+
+async function exportCoverLetter(format) {
+    if (!_currentCoverLetterId) {
+        _clShowAlert('Kein Anschreiben zum Exportieren', 'error');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/cover-letters/${_currentCoverLetterId}/export`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ format }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        // Filename aus Content-Disposition extrahieren
+        const cd = res.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename="?([^";]+)"?/);
+        a.download = m ? m[1] : `Anschreiben.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        _clShowAlert(`Als ${format.toUpperCase()} exportiert ✓`, 'success');
+    } catch (e) {
+        _clShowAlert(`Export-Fehler: ${e.message}`, 'error');
+    }
+}
+
+function copyCoverLetterText() {
+    const container = document.getElementById('clContent');
+    const text = container.innerText || '';
+    if (!text.trim()) { _clShowAlert('Nichts zu kopieren', 'error'); return; }
+    navigator.clipboard.writeText(text).then(
+        () => _clShowAlert('In Zwischenablage kopiert ✓', 'success'),
+        () => _clShowAlert('Kopieren fehlgeschlagen', 'error')
+    );
+}
+
+async function finalizeCoverLetter() {
+    if (!_currentCoverLetterId) return;
+    try {
+        const res = await fetch(`/api/cover-letters/${_currentCoverLetterId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ status: 'finalized' }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        _clShowAlert('Als finalisiert markiert ✓', 'success');
+        await loadCoverLetterList();
+    } catch (e) {
+        _clShowAlert(`Fehler: ${e.message}`, 'error');
+    }
+}
+
+function clearCoverLetterForm() {
+    document.getElementById('clCompanyName').value = '';
+    document.getElementById('clJobTitle').value = '';
+    document.getElementById('clJobDescription').value = '';
+    document.getElementById('clContent').innerHTML = ''; // safe: clearing own element
+    document.getElementById('clResult').style.display = 'none';
+    document.getElementById('clAnalysis').style.display = 'none';
+    _currentCoverLetterId = null;
+    _currentCoverLetterAnalysis = null;
+}
+
+async function loadCoverLetterList() {
+    const container = document.getElementById('clSavedList');
+    try {
+        const res = await fetch('/api/cover-letters', { credentials: 'include' });
+        if (!res.ok) {
+            container.innerHTML = `<em style="color:var(--muted);">Liste konnte nicht geladen werden (HTTP ${res.status})</em>`; // status is a number, safe
+            return;
+        }
+        const data = await res.json();
+        const items = data.cover_letters || [];
+        if (items.length === 0) {
+            container.innerHTML = '<em style="color:var(--muted);">Noch keine Anschreiben gespeichert.</em>'; // static string
+            return;
+        }
+        // All user data escaped via _esc(); numeric fields (status code) are safe numbers
+        container.innerHTML = items.map(cl => { // list items: all strings via _esc()
+            const date = cl.updated_at ? new Date(cl.updated_at).toLocaleDateString('de-DE') : '';
+            const statusBadge = cl.status === 'finalized' ? '✅' : (cl.status === 'generated' ? '✍️' : '📝');
+            return `<div class="cl-saved-item">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;">${statusBadge} ${_esc(cl.company_name)} — ${_esc(cl.job_title)}</div>
+                    <div style="font-size:0.8rem;color:var(--muted);">${date} · ${_esc(cl.status)}</div>
+                </div>
+                <div style="display:flex;gap:0.25rem;">
+                    <button class="btn btn-secondary btn-sm" onclick="loadCoverLetter('${cl.id}')">👁️ Öffnen</button>
+                    <button class="btn btn-secondary btn-sm" onclick="deleteCoverLetter('${cl.id}')">🗑️</button>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = `<em style="color:var(--muted);">Fehler: ${_esc(e.message)}</em>`; // e.message via _esc()
+    }
+}
+
+async function loadCoverLetter(id) {
+    try {
+        const res = await fetch(`/api/cover-letters/${id}`, { credentials: 'include' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const cl = await res.json();
+        document.getElementById('clCompanyName').value = cl.company_name || '';
+        document.getElementById('clJobTitle').value = cl.job_title || '';
+        document.getElementById('clJobDescription').value = cl.job_description || '';
+        document.getElementById('clTone').value = cl.tone || 'professional';
+        document.getElementById('clLength').value = cl.length || 'medium';
+        document.getElementById('clFocus').value = cl.focus || 'balanced';
+        _currentCoverLetterId = cl.id;
+        _currentCoverLetterAnalysis = cl.analysis || null;
+        if (cl.content) _clRenderContent(cl.content);
+    } catch (e) {
+        _clShowAlert(`Laden fehlgeschlagen: ${e.message}`, 'error');
+    }
+}
+
+async function deleteCoverLetter(id) {
+    if (!confirm('Anschreiben wirklich löschen?')) return;
+    try {
+        const res = await fetch(`/api/cover-letters/${id}`, {
+            method: 'DELETE', credentials: 'include',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        _clShowAlert('Gelöscht ✓', 'success');
+        if (_currentCoverLetterId === id) clearCoverLetterForm();
+        await loadCoverLetterList();
+    } catch (e) {
+        _clShowAlert(`Löschen fehlgeschlagen: ${e.message}`, 'error');
+    }
+}
+
+function loadCoverLetterPage() {
+    loadCoverLetterList();
+}
 </script>
 
 <!-- Backup Client for database sync -->
