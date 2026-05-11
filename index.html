@@ -8577,6 +8577,13 @@ function capabilityScore(provider, model) {
     if (!model) return 50;
     const m = String(model).toLowerCase();
 
+    // Embedding-Modelle: NICHT für Chat/JSON-Tasks geeignet
+    if (m.includes('embed') || m.includes('embedding') ||
+        m.includes('bge-') || m.includes('e5-') || m.includes('nomic-')) {
+        return 0;
+    }
+
+    // Cloud-Modelle (hardcoded Capability)
     const CLOUD = [
         ['claude-opus', 98],
         ['claude-sonnet-4', 92],
@@ -8596,6 +8603,23 @@ function capabilityScore(provider, model) {
         if (m.includes(pattern)) return score;
     }
 
+    // Bekannte starke Ollama-Modelle ohne Param-Count im Namen
+    // (User taggen lokale Modelle oft als ':latest' — kein 'Nb' im String)
+    const OLLAMA_NAMED = [
+        ['qwen3-coder', 88],   // 30B+ Coder, exzellent für JSON
+        ['qwen3.6', 88],       // Qwen3-Variante, ~32B
+        ['qwen2.5-coder', 72], // 14B Coder
+        ['deepseek-r1', 88],   // Reasoning, sehr stark
+        ['mixtral', 82],       // 8x7B/8x22B MoE
+        ['gemma4', 68],        // Gemma4 mittel-stark (für unbekannte Größe)
+    ];
+    for (const [pattern, baseScore] of OLLAMA_NAMED) {
+        if (m.includes(pattern) && !/(\d+)b\b/.test(m)) {
+            // Familie-Modifier addieren wird unten skipped — direkt zurückgeben
+            return baseScore;
+        }
+    }
+
     const paramMatch = m.match(/(\d+)b\b/);
     const params = paramMatch ? parseInt(paramMatch[1], 10) : null;
 
@@ -8604,15 +8628,21 @@ function capabilityScore(provider, model) {
         if (params >= 400)     score = 95;
         else if (params >= 70) score = 88;
         else if (params >= 30) score = 78;
-        else if (params >= 13) score = 65;
+        else if (params >= 12) score = 62;   // Mistral-Nemo 12B in dieser Klasse
         else if (params >= 7)  score = 50;
         else                   score = 30;
     }
 
-    if (m.includes('qwen2.5') || m.includes('qwen3')) score += 5;
+    // Familie-Modifier (Qwen3 > Qwen2.5)
+    if (m.includes('qwen3'))      score += 8;
+    else if (m.includes('qwen2.5')) score += 5;
     if (m.includes('llama3.1') || m.includes('llama3.2') || m.includes('llama3.3')) score += 3;
     if (m.includes('deepseek')) score += 5;
+    if (m.includes('gemma3') || m.includes('gemma4') || m.includes('gemma-3') || m.includes('gemma-4')) score += 3;
     if (m.includes('phi-3') || m.includes('phi3')) score -= 5;
+
+    // Coder/Code-Modelle: stark für strukturiertes JSON
+    if (m.includes('coder') || m.includes('-code') || m.endsWith('-code')) score += 4;
 
     return Math.min(100, Math.max(0, score));
 }
