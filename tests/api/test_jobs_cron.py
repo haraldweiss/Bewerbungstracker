@@ -327,3 +327,42 @@ def test_auto_cron_skips_jobs_below_auto_threshold(app, user_factory, monkeypatc
     db.session.refresh(m_high)
     assert m_low.match_score is None    # geskippt (prefilter < 50)
     assert m_high.match_score == 85     # bewertet (prefilter >= 50)
+
+
+def test_match_uses_feature_override(app, user_factory, db_session):
+    """Wenn User feature_model_overrides für match gesetzt hat,
+    wird der Override genutzt."""
+    import json as _j
+    from unittest.mock import patch, MagicMock
+    from api.jobs_cron import _run_claude_match_for
+    from models import JobSource, RawJob, JobMatch
+
+    user = user_factory(cv_data_json='{"cv": {"summary": "Dev"}}')
+    user.ai_provider = 'ollama'
+    user.ai_provider_model = 'mistral-nemo:12b'
+    user.feature_model_overrides = _j.dumps({
+        'match': {'provider': 'claude', 'model': 'claude-haiku-4-5-20251001'},
+    })
+    user.job_daily_budget_cents = 1000
+    db_session.commit()
+
+    src = JobSource(name='x', type='rss', config={'url': 'x'})
+    db_session.add(src); db_session.flush()
+    raw = RawJob(source_id=src.id, external_id='a', title='Dev',
+                 url='https://j/1', description='Wir suchen Python', crawl_status='raw')
+    db_session.add(raw); db_session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    db_session.add(m); db_session.commit()
+
+    fake_result = MagicMock(score=80, reasoning='ok', missing_skills=[],
+                            tokens_in=10, tokens_out=10)
+    captured = {}
+    def fake_get_client(provider, *args, **kwargs):
+        captured['provider'] = provider
+        return MagicMock()
+
+    with patch('api.jobs_cron.ProviderFactory.get_client', side_effect=fake_get_client), \
+         patch('api.jobs_cron.match_job_with_claude', return_value=fake_result):
+        _run_claude_match_for(None, user, m)
+
+    assert captured.get('provider') == 'claude'

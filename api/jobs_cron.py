@@ -710,8 +710,10 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
         return False
 
     cv_summary = _build_cv_summary(user.cv_data_json)
-    provider = user.ai_provider or ProviderConfig.CLAUDE
-    model = user.ai_provider_model or DEFAULT_MODEL
+    # Pro-Task-Override für 'match' (fallback auf user.ai_provider/_model)
+    feat_provider, feat_model = user.get_model_for('match')
+    provider = feat_provider or ProviderConfig.CLAUDE
+    model = feat_model or DEFAULT_MODEL
 
     if ai_provider_client.is_enabled():
         return _run_match_via_service(user, match, raw, cv_summary, provider, model)
