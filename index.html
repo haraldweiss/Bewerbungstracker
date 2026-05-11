@@ -1422,6 +1422,31 @@
         <div id="providerStatus" style="margin-top:1rem;font-size:0.85rem;color:var(--text-muted);"></div>
     </div>
 
+    <!-- ═══ PRO-TASK MODELL-OVERRIDES ═══ -->
+    <div class="card" style="padding:1rem;margin-top:1rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+            <div style="font-weight:600;">🎯 Pro-Task-Modelle (optional)</div>
+            <button class="btn btn-secondary btn-sm" onclick="openModelComparisonModal()">📊 Modelle vergleichen</button>
+        </div>
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;">
+            Wenn du verschiedene Modelle für verschiedene Tasks nutzen willst — z.B. ein
+            kleines lokales Modell für Job-Matching aber Claude für Cover-Letter.
+            Wenn nicht aktiv, wird das Standard-Modell oben genutzt.
+        </div>
+        <div id="featureOverrideCards"></div>
+    </div>
+
+    <!-- Modal: Empfehlungs-Tabelle -->
+    <div id="modelComparisonModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+        <div style="background:var(--bg-card);padding:1.5rem;border-radius:8px;max-width:800px;width:90%;max-height:80vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <h3 style="margin:0;">📊 Modell-Vergleich</h3>
+                <button class="btn btn-secondary btn-sm" onclick="closeModelComparisonModal()">✕</button>
+            </div>
+            <div id="modelComparisonContent"></div>
+        </div>
+    </div>
+
     </div><!-- /settings-section ai -->
 
     <!-- Section: Daten & Sicherheit -->
@@ -7612,6 +7637,10 @@ function showSettingsSection(name) {
     });
 
     try { localStorage.setItem('settingsLastSection', name); } catch (e) {}
+
+    if (name === 'ai') {
+        loadFeatureOverrides();
+    }
 }
 
 // Beim Öffnen der Settings-View: zuletzt aktive Section wiederherstellen
@@ -8540,6 +8569,344 @@ function modelRecommendation(provider, model, feature) {
     if (score >= t.ok)   return { level: 'ok',   icon: '✅', text: 'Empfohlen' };
     if (score >= t.warn) return { level: 'warn', icon: '⚠️', text: 'Geht, aber suboptimal' };
     return                       { level: 'bad',  icon: '❌', text: 'Wird vermutlich scheitern' };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FEATURE-OVERRIDES UI
+// ═══════════════════════════════════════════════════════════════════
+
+let _featureOverridesState = {};
+let _standardModelState = { provider: '', model: '' };
+
+async function loadFeatureOverrides() {
+    try {
+        const r = await fetchAPI('/api/profile/feature-models');
+        if (!r.ok) {
+            console.error('feature-models load failed:', r.status);
+            return;
+        }
+        const data = await r.json();
+        _featureOverridesState = data.overrides || {};
+        _standardModelState = data.standard || { provider: '', model: '' };
+        renderFeatureOverrideCards();
+    } catch (e) {
+        console.error('feature-models error:', e);
+    }
+}
+
+function renderFeatureOverrideCards() {
+    const container = document.getElementById('featureOverrideCards');
+    if (!container) return;
+    const features = ['match', 'cover_letter', 'email_analyse', 'cv_summarize'];
+    container.replaceChildren();
+    for (const f of features) {
+        container.appendChild(buildOverrideCard(f));
+    }
+}
+
+function buildOverrideCard(feature) {
+    const label = FEATURE_LABELS[feature] || feature;
+    const override = _featureOverridesState[feature];
+    const isActive = !!(override && override.provider);
+    const activeProv = isActive ? override.provider : _standardModelState.provider;
+    const activeModel = isActive ? override.model : _standardModelState.model;
+    const rec = modelRecommendation(activeProv, activeModel, feature);
+
+    const details = document.createElement('details');
+    details.style.cssText = 'border:1px solid var(--border);border-radius:6px;margin-bottom:0.5rem;padding:0.5rem;';
+
+    const summary = document.createElement('summary');
+    summary.style.cssText = 'cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:500;';
+
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = label;
+    summary.appendChild(labelSpan);
+
+    const statusSpan = document.createElement('span');
+    statusSpan.textContent = rec.icon + ' ' + (isActive ? 'Override aktiv' : 'Standard') + ' (' + rec.text + ')';
+    summary.appendChild(statusSpan);
+    details.appendChild(summary);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border);';
+
+    const checkboxLabel = document.createElement('label');
+    checkboxLabel.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = 'override-active-' + feature;
+    checkbox.checked = isActive;
+    checkbox.onchange = () => toggleOverride(feature, checkbox.checked);
+    const checkboxText = document.createElement('span');
+    checkboxText.textContent = 'Eigenes Modell für diese Task nutzen';
+    checkboxLabel.appendChild(checkbox);
+    checkboxLabel.appendChild(checkboxText);
+    body.appendChild(checkboxLabel);
+
+    const fields = document.createElement('div');
+    fields.id = 'override-fields-' + feature;
+    fields.style.display = isActive ? 'block' : 'none';
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem;';
+
+    const provSelect = document.createElement('select');
+    provSelect.id = 'override-provider-' + feature;
+    provSelect.style.cssText = 'padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);';
+    provSelect.onchange = () => onOverrideProviderChange(feature);
+    grid.appendChild(provSelect);
+
+    const modelSelect = document.createElement('select');
+    modelSelect.id = 'override-model-' + feature;
+    modelSelect.style.cssText = 'padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);';
+    modelSelect.onchange = () => onOverrideModelChange(feature);
+    grid.appendChild(modelSelect);
+
+    fields.appendChild(grid);
+
+    const recDiv = document.createElement('div');
+    recDiv.id = 'override-recommendations-' + feature;
+    recDiv.style.cssText = 'font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;';
+    fields.appendChild(recDiv);
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-primary btn-sm';
+    saveBtn.textContent = '💾 Speichern';
+    saveBtn.onclick = () => saveOverride(feature);
+    fields.appendChild(saveBtn);
+
+    body.appendChild(fields);
+    details.appendChild(body);
+
+    return details;
+}
+
+async function toggleOverride(feature, checked) {
+    const fields = document.getElementById('override-fields-' + feature);
+    fields.style.display = checked ? 'block' : 'none';
+    if (checked) {
+        await populateOverrideProviders(feature);
+    } else {
+        delete _featureOverridesState[feature];
+        await persistOverrides();
+        renderFeatureOverrideCards();
+    }
+}
+
+async function populateOverrideProviders(feature) {
+    const select = document.getElementById('override-provider-' + feature);
+    if (!select) return;
+    try {
+        const r = await fetchAPI('/api/providers');
+        if (!r.ok) return;
+        const data = await r.json();
+        const providers = (data.providers || []).filter(p => p.configured);
+        select.replaceChildren();
+        for (const p of providers) {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.name || p.id;
+            select.appendChild(opt);
+        }
+        const current = _featureOverridesState[feature];
+        if (current && current.provider) select.value = current.provider;
+        await onOverrideProviderChange(feature);
+    } catch (e) {
+        console.error('providers load:', e);
+    }
+}
+
+async function onOverrideProviderChange(feature) {
+    const provSel = document.getElementById('override-provider-' + feature);
+    const modelSel = document.getElementById('override-model-' + feature);
+    if (!provSel || !modelSel) return;
+    const provider = provSel.value;
+    try {
+        const r = await fetchAPI('/api/providers/' + provider + '/models');
+        modelSel.replaceChildren();
+        if (!r.ok) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = '⚠️ Models nicht verfügbar';
+            modelSel.appendChild(opt);
+            return;
+        }
+        const data = await r.json();
+        for (const m of (data.models || [])) {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m;
+            modelSel.appendChild(opt);
+        }
+        const current = _featureOverridesState[feature];
+        if (current && current.model) modelSel.value = current.model;
+        else modelSel.value = data.default || (data.models[0] || '');
+        onOverrideModelChange(feature);
+    } catch (e) {
+        console.error('models load:', e);
+    }
+}
+
+function onOverrideModelChange(feature) {
+    const provSel = document.getElementById('override-provider-' + feature);
+    const modelSel = document.getElementById('override-model-' + feature);
+    const recDiv = document.getElementById('override-recommendations-' + feature);
+    if (!provSel || !modelSel || !recDiv) return;
+    const provider = provSel.value;
+    const model = modelSel.value;
+    recDiv.replaceChildren();
+    const features = ['match', 'cover_letter', 'cv_summarize', 'email_analyse'];
+    for (const f of features) {
+        const rec = modelRecommendation(provider, model, f);
+        const isActive = (f === feature);
+        const line = document.createElement('div');
+        if (isActive) line.style.fontWeight = '600';
+        line.textContent = FEATURE_LABELS[f] + ': ' + rec.icon + ' ' + rec.text + (isActive ? ' ← aktiv' : '');
+        recDiv.appendChild(line);
+    }
+}
+
+async function saveOverride(feature) {
+    const provSel = document.getElementById('override-provider-' + feature);
+    const modelSel = document.getElementById('override-model-' + feature);
+    if (!provSel || !modelSel) return;
+    _featureOverridesState[feature] = {
+        provider: provSel.value,
+        model: modelSel.value || null,
+    };
+    const ok = await persistOverrides();
+    if (ok) {
+        renderFeatureOverrideCards();
+    }
+}
+
+async function persistOverrides() {
+    try {
+        const r = await fetchAPI('/api/profile/feature-models', {
+            method: 'PATCH',
+            body: JSON.stringify({ overrides: _featureOverridesState }),
+        });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            alert('Speichern fehlgeschlagen: ' + (err.error || r.status));
+            return false;
+        }
+        const data = await r.json();
+        _featureOverridesState = data.overrides || {};
+        return true;
+    } catch (e) {
+        console.error('persistOverrides:', e);
+        alert('Fehler: ' + e.message);
+        return false;
+    }
+}
+
+async function openModelComparisonModal() {
+    const modal = document.getElementById('modelComparisonModal');
+    const content = document.getElementById('modelComparisonContent');
+    modal.style.display = 'flex';
+    content.replaceChildren();
+    const loading = document.createElement('em');
+    loading.textContent = 'Lade Modelle...';
+    content.appendChild(loading);
+
+    try {
+        const provRes = await fetchAPI('/api/providers');
+        if (!provRes.ok) throw new Error('providers load failed');
+        const provData = await provRes.json();
+        const providers = (provData.providers || []).filter(p => p.configured);
+
+        const rows = [];
+        for (const p of providers) {
+            try {
+                const mr = await fetchAPI('/api/providers/' + p.id + '/models');
+                if (!mr.ok) continue;
+                const mdata = await mr.json();
+                for (const m of (mdata.models || [])) {
+                    rows.push({ provider: p.id, providerName: p.name || p.id, model: m });
+                }
+            } catch (e) { /* skip */ }
+        }
+
+        content.replaceChildren();
+        if (rows.length === 0) {
+            const em = document.createElement('em');
+            em.textContent = 'Keine Modelle gefunden.';
+            content.appendChild(em);
+            return;
+        }
+
+        const features = ['match', 'cover_letter', 'cv_summarize', 'email_analyse'];
+        const table = document.createElement('table');
+        table.style.cssText = 'width:100%;border-collapse:collapse;';
+
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        headerRow.style.background = 'var(--bg-card2)';
+        const thModel = document.createElement('th');
+        thModel.style.cssText = 'padding:0.5rem;text-align:left;';
+        thModel.textContent = 'Modell';
+        headerRow.appendChild(thModel);
+        for (const f of features) {
+            const th = document.createElement('th');
+            th.style.cssText = 'padding:0.5rem;text-align:center;';
+            th.textContent = FEATURE_LABELS[f];
+            headerRow.appendChild(th);
+        }
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        for (const r of rows) {
+            const tr = document.createElement('tr');
+            tr.style.borderTop = '1px solid var(--border)';
+            const tdModel = document.createElement('td');
+            tdModel.style.cssText = 'padding:0.4rem;font-size:0.85rem;';
+            const muted = document.createElement('span');
+            muted.style.color = 'var(--text-muted)';
+            muted.textContent = r.providerName + ': ';
+            tdModel.appendChild(muted);
+            tdModel.appendChild(document.createTextNode(r.model));
+            tr.appendChild(tdModel);
+
+            for (const f of features) {
+                const rec = modelRecommendation(r.provider, r.model, f);
+                const td = document.createElement('td');
+                td.style.cssText = 'padding:0.4rem;text-align:center;cursor:pointer;';
+                td.title = rec.text;
+                td.textContent = rec.icon;
+                td.onclick = () => quickSetOverride(r.provider, r.model, f);
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        content.appendChild(table);
+
+        const hint = document.createElement('div');
+        hint.style.cssText = 'margin-top:0.75rem;font-size:0.8rem;color:var(--text-muted);';
+        hint.textContent = 'Klick auf eine Zelle übernimmt das Modell als Override für die Task.';
+        content.appendChild(hint);
+    } catch (e) {
+        content.replaceChildren();
+        const err = document.createElement('em');
+        err.textContent = 'Fehler: ' + e.message;
+        content.appendChild(err);
+    }
+}
+
+function closeModelComparisonModal() {
+    document.getElementById('modelComparisonModal').style.display = 'none';
+}
+
+async function quickSetOverride(provider, model, feature) {
+    _featureOverridesState[feature] = { provider, model: model || null };
+    const ok = await persistOverrides();
+    if (ok) {
+        renderFeatureOverrideCards();
+        closeModelComparisonModal();
+        alert('✓ ' + FEATURE_LABELS[feature] + ' → ' + model);
+    }
 }
 
 async function onProviderChange() {
