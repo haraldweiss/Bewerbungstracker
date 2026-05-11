@@ -113,13 +113,23 @@ def generate_cover_letter(user, cover_letter_id):
 
     applicant_name = data.get('applicant_name')
 
+    # User-Provider/Modell respektieren (sonst hardcoded auf claude).
+    # Cover-Letter braucht ein starkes Modell — Default-Fallback auf Claude
+    # falls User Ollama/Mistral o.ä. nutzt und Body ohne Override kommt.
+    provider = (data.get('provider') or user.ai_provider or 'claude').strip()
+    model = (data.get('model') or user.ai_provider_model or '').strip() or None
+
     try:
         svc = CoverLetterService()
-        analysis = svc.analyze(cv_text, cl.job_description, user_id=user.id)
+        analysis = svc.analyze(
+            cv_text, cl.job_description, user_id=user.id,
+            provider=provider, model=model,
+        )
         content = svc.generate(
             company_name=cl.company_name, job_title=cl.job_title,
             analysis=analysis, tone=cl.tone, length=cl.length, focus=cl.focus,
             user_id=user.id, applicant_name=applicant_name,
+            provider=provider, model=model,
         )
     except RuntimeError as e:
         logger.warning('cover-letter generate failed for user=%s: %s', user.id, e)

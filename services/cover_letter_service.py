@@ -76,14 +76,64 @@ def _call_ai(system_prompt: str, user_prompt: str, user_id: Optional[str] = None
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
-    """Extrahiert JSON aus KI-Output (entfernt Markdown-Code-Fences)."""
-    cleaned = re.sub(r'```(?:json)?\n?', '', text)
+    """Extrahiert JSON aus KI-Output (entfernt Markdown, balanced braces).
+
+    Mistral/Llama/Ollama-Modelle liefern oft erklärenden Text drumherum oder
+    schließende Klammern an falscher Stelle. Wir nutzen balanced-brace-matching
+    statt greedy regex und loggen den raw output bei Fehler für Debugging.
+    """
+    # Entferne Markdown-Codefences + <think>-Blöcke (reasoning models)
+    cleaned = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    cleaned = re.sub(r'```(?:json)?\n?', '', cleaned)
     cleaned = cleaned.replace('```', '').strip()
-    # Suche erstes valides JSON-Objekt
-    match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-    if not match:
-        raise ValueError(f"No JSON object found in response: {text[:200]}")
-    return json.loads(match.group(0))
+
+    # Balanced-brace-matching: erstes { bis zur matchenden }
+    start = cleaned.find('{')
+    if start < 0:
+        logger.error("Kein '{' in KI-Output gefunden. Raw output: %s", text[:500])
+        raise ValueError(f"KI-Antwort enthält kein JSON-Objekt. Bitte erneut versuchen.")
+
+    depth = 0
+    in_string = False
+    escape = False
+    end = -1
+    for i in range(start, len(cleaned)):
+        ch = cleaned[i]
+        if escape:
+            escape = False
+            continue
+        if ch == '\\' and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+
+    if end < 0:
+        logger.error("Unbalanced braces in KI-Output. Raw: %s", text[:500])
+        raise ValueError("KI-Antwort hat unvollständiges JSON. Bitte erneut versuchen.")
+
+    candidate = cleaned[start:end]
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError as e:
+        logger.error("JSON-Parse-Fehler: %s\nKandidat: %s\nRaw KI-Output: %s",
+                     e, candidate[:500], text[:500])
+        raise ValueError(
+            f"KI-Antwort ist kein valides JSON: {e.msg}. "
+            f"Modell-Wahl prüfen — Cover-Letter braucht ein starkes Modell "
+            f"(Claude, GPT-4, Llama-70B). Mistral-7B oder kleinere Modelle "
+            f"liefern oft kein sauberes JSON."
+        )
 
 
 ANALYSIS_SYSTEM = """Du bist ein präziser Recruiting-Analyst. Du vergleichst einen CV mit einer Stellenausschreibung und gibst NUR FAKTEN zurück, keine Erfindungen.
@@ -110,7 +160,9 @@ class CoverLetterService:
     """Zweistufige Anschreiben-Generierung mit Confidence-Scoring."""
 
     def analyze(self, cv_text: str, job_description: str,
-                user_id: Optional[str] = None) -> Dict[str, Any]:
+                user_id: Optional[str] = None,
+                provider: str = 'claude',
+                model: Optional[str] = None) -> Dict[str, Any]:
         """Phase 1: CV ↔ Job-Posting Matching mit Confidence-Scores.
 
         Returns dict mit Keys:
@@ -146,7 +198,8 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
   ]
 }}"""
 
-        text = _call_ai(ANALYSIS_SYSTEM, user_prompt, user_id=user_id, max_tokens=2000)
+        text = _call_ai(ANALYSIS_SYSTEM, user_prompt, user_id=user_id,
+                        provider=provider, model=model or DEFAULT_MODEL, max_tokens=2000)
         analysis = _extract_json(text)
 
         # Defensive: sicherstellen dass alle erwarteten Keys existieren
@@ -158,7 +211,9 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
     def generate(self, company_name: str, job_title: str, analysis: Dict[str, Any],
                  tone: str = 'professional', length: str = 'medium',
                  focus: str = 'balanced', user_id: Optional[str] = None,
-                 applicant_name: Optional[str] = None) -> str:
+                 applicant_name: Optional[str] = None,
+                 provider: str = 'claude',
+                 model: Optional[str] = None) -> str:
         """Phase 2: Anschreiben-Text basierend auf Analyse generieren.
 
         Returns: HTML-String mit <p data-confidence="0.XX">…</p>-Absätzen.
@@ -191,7 +246,8 @@ BEISPIEL:
 
 Gib NUR die HTML-Absätze zurück, keine Erklärung."""
 
-        raw_html = _call_ai(GENERATION_SYSTEM, user_prompt, user_id=user_id, max_tokens=2000)
+        raw_html = _call_ai(GENERATION_SYSTEM, user_prompt, user_id=user_id,
+                            provider=provider, model=model or DEFAULT_MODEL, max_tokens=2000)
         # Entferne eventuelle Markdown-Codefences
         raw_html = re.sub(r'```(?:html)?\n?', '', raw_html).replace('```', '').strip()
         return self._inject_confidence_attributes(raw_html)
