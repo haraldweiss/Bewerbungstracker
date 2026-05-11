@@ -3337,6 +3337,7 @@ const JobsView = (() => {
                 <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap">
                     <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">🔗 Original</a>
                     ${evaluateBtn}
+                    <button class="btn btn-secondary btn-sm" onclick="JobsView.generateCoverLetterFromMatch(${m.id})">✍️ Anschreiben</button>
                     <button class="btn btn-success btn-sm" onclick="JobsView.importMatch(${m.id})">📥 Übernehmen</button>
                     <button class="btn btn-secondary btn-sm" onclick="JobsView.markSeen(${m.id})">👁 Verbergen</button>
                     <button class="btn btn-danger btn-sm" onclick="JobsView.dismissMatch(${m.id})">🗑️ Verwerfen</button>
@@ -3975,6 +3976,40 @@ const JobsView = (() => {
             renderBulkActionBar();
             // Re-render so checkboxes visually reset
             fetchMatches();
+        },
+        generateCoverLetterFromMatch(matchId) {
+            const match = (state.lastMatches || []).find(m => m.id === matchId);
+            if (!match) {
+                alert('Match nicht im aktuellen State — bitte Liste aktualisieren');
+                return;
+            }
+            const raw = match.raw_job || {};
+            const title = raw.title || '';
+            const company = raw.company || '';
+            const description = raw.description || '';
+            if (!description || description.length < 50) {
+                alert('Stellenbeschreibung zu kurz oder fehlt — Anschreiben kann nicht generiert werden');
+                return;
+            }
+            // Navigate to CV-Vergleich → Cover Letter tab
+            showView('cvcompare');
+            showCVTab('coverletter');
+            // setTimeout ensures DOM is rendered before we set values
+            setTimeout(() => {
+                const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+                setVal('clCompanyName', company);
+                setVal('clJobTitle', title);
+                setVal('clJobDescription', description);
+                // Hint banner
+                const alerts = document.getElementById('clAlerts');
+                if (alerts) {
+                    const hint = document.createElement('div');
+                    hint.style.cssText = 'padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.5rem;font-size:0.9rem;background:#eef;color:#33c;border:1px solid #ccf;';
+                    hint.textContent = `📋 Felder aus Job-Vorschlag "${company} — ${title}" übernommen. Jetzt "⚡ Anschreiben generieren" klicken.`;
+                    alerts.appendChild(hint);
+                    setTimeout(() => hint.remove(), 8000);
+                }
+            }, 50);
         },
         updateBadge,
     };
