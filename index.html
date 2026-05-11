@@ -8855,10 +8855,8 @@ async function generateCoverLetter() {
 
     try {
         // Step 1: Create draft
-        const createRes = await fetch('/api/cover-letters/create', {
+        const createRes = await fetchAPI('/api/cover-letters/create', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({
                 company_name: companyName, job_title: jobTitle,
                 job_description: jobDescription,
@@ -8873,10 +8871,8 @@ async function generateCoverLetter() {
         _currentCoverLetterId = draft.id;
 
         // Step 2: Generate content
-        const genRes = await fetch(`/api/cover-letters/${draft.id}/generate`, {
+        const genRes = await fetchAPI(`/api/cover-letters/${draft.id}/generate`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ cv_text: cvText }),
         });
         if (!genRes.ok) {
@@ -8959,10 +8955,8 @@ async function exportCoverLetter(format) {
         return;
     }
     try {
-        const res = await fetch(`/api/cover-letters/${_currentCoverLetterId}/export`, {
+        const res = await fetchAPI(`/api/cover-letters/${_currentCoverLetterId}/export`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ format }),
         });
         if (!res.ok) {
@@ -9000,10 +8994,8 @@ function copyCoverLetterText() {
 async function finalizeCoverLetter() {
     if (!_currentCoverLetterId) return;
     try {
-        const res = await fetch(`/api/cover-letters/${_currentCoverLetterId}`, {
+        const res = await fetchAPI(`/api/cover-letters/${_currentCoverLetterId}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ status: 'finalized' }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -9028,7 +9020,7 @@ function clearCoverLetterForm() {
 async function loadCoverLetterList() {
     const container = document.getElementById('clSavedList');
     try {
-        const res = await fetch('/api/cover-letters', { credentials: 'include' });
+        const res = await fetchAPI('/api/cover-letters');
         if (!res.ok) {
             container.innerHTML = `<em style="color:var(--muted);">Liste konnte nicht geladen werden (HTTP ${res.status})</em>`; // status is a number, safe
             return;
@@ -9061,7 +9053,7 @@ async function loadCoverLetterList() {
 
 async function loadCoverLetter(id) {
     try {
-        const res = await fetch(`/api/cover-letters/${id}`, { credentials: 'include' });
+        const res = await fetchAPI(`/api/cover-letters/${id}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const cl = await res.json();
         document.getElementById('clCompanyName').value = cl.company_name || '';
@@ -9081,8 +9073,8 @@ async function loadCoverLetter(id) {
 async function deleteCoverLetter(id) {
     if (!confirm('Anschreiben wirklich löschen?')) return;
     try {
-        const res = await fetch(`/api/cover-letters/${id}`, {
-            method: 'DELETE', credentials: 'include',
+        const res = await fetchAPI(`/api/cover-letters/${id}`, {
+            method: 'DELETE',
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         _clShowAlert('Gelöscht ✓', 'success');
