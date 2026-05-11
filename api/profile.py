@@ -8,7 +8,7 @@ Endpoints sind Pass-Through: Frontend bestimmt Struktur, Backend persistiert.
 import json
 from datetime import datetime
 
-from flask import Blueprint, request
+from flask import Blueprint, jsonify, request
 
 from api.auth import token_required
 from database import db
@@ -225,3 +225,65 @@ def update_job_discovery_filters(user):
         'job_reject_filter_enabled': user.job_reject_filter_enabled,
         'job_reject_window_days': user.job_reject_window_days,
     }, 200
+
+
+# ─── Pro-Task-Modell-Overrides ───────────────────────────────────────────────
+import json as _profile_json
+
+VALID_FEATURES = {'match', 'cover_letter', 'email_analyse', 'cv_summarize'}
+VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom'}
+
+
+@profile_bp.get('/profile/feature-models')
+@token_required
+def get_feature_models(user):
+    """Liefert Standard-Modell + aktuelle Pro-Task-Overrides."""
+    try:
+        overrides = _profile_json.loads(user.feature_model_overrides or '{}')
+    except (ValueError, TypeError):
+        overrides = {}
+    return jsonify({
+        'standard': {
+            'provider': user.ai_provider,
+            'model': user.ai_provider_model,
+        },
+        'overrides': overrides,
+    }), 200
+
+
+@profile_bp.patch('/profile/feature-models')
+@token_required
+def update_feature_models(user):
+    """Update Pro-Task-Overrides. Body: {overrides: {feature: {provider, model} | null}}."""
+    data = request.get_json() or {}
+    overrides = data.get('overrides')
+
+    if not isinstance(overrides, dict):
+        return jsonify({'error': 'overrides muss ein Object sein'}), 400
+
+    for feat, cfg in overrides.items():
+        if feat not in VALID_FEATURES:
+            return jsonify({'error': f'Unbekanntes Feature: {feat}'}), 400
+        if cfg is None:
+            continue
+        if not isinstance(cfg, dict):
+            return jsonify({'error': f'{feat}: muss Object oder null sein'}), 400
+        provider = cfg.get('provider')
+        if provider and provider not in VALID_PROVIDERS:
+            return jsonify({'error': f'{feat}: unbekannter Provider {provider}'}), 400
+
+    # Normalisierung: null-Werte rausfiltern, leere Provider-Strings rausfiltern
+    clean = {}
+    for feat, cfg in overrides.items():
+        if cfg is None or not isinstance(cfg, dict):
+            continue
+        if not cfg.get('provider'):
+            continue
+        clean[feat] = {
+            'provider': cfg['provider'],
+            'model': cfg.get('model') or None,
+        }
+
+    user.feature_model_overrides = _profile_json.dumps(clean, ensure_ascii=False) if clean else None
+    db.session.commit()
+    return jsonify({'status': 'updated', 'overrides': clean}), 200
