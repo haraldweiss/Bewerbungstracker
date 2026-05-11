@@ -18,6 +18,7 @@ Ein datenschutzfreundliches Tool zur Verwaltung von Bewerbungen mit automatische
 - 🗂️ **Kanban-Board** - Visuelle Übersicht nach Status
 - 📋 **CV Vergleich** - Vergleiche deine CV mit Bewerbungsanforderungen — direkte Analyse via konfiguriertem KI-Provider (mit Fallback) oder Copy-Paste an Web-Plattformen
 - 🤖 **Multi-Provider AI** - Claude (Anthropic), lokales Ollama, ChatGPT/OpenAI, Mammouth, eigener OpenAI-kompatibler Endpoint. Per-User-Konfiguration mit verschlüsselten API-Keys. Optional: Fallback-Provider und Queue-Persistenz bei Nicht-Erreichbarkeit (z.B. lokales Ollama)
+- 🌐 **Multi-User Local-Ollama via Tailscale** - mehrere User können ihr eigenes Ollama anbinden ohne Port-Konflikt. VPS + User-Macs in einem privaten Tailnet, ACL erlaubt nur Port 11434 pro Member. Siehe Handbuch-Sektion *"Eigenes Ollama anbinden"* + [deploy/tailscale-acl.hujson](deploy/tailscale-acl.hujson)
 - 🔍 **Job-Discovery** - Automatische Stellensuche aus RSS-Feeds + Bundesagentur/Adzuna/Arbeitnow APIs mit KI-Match-Score gegen deinen CV (Provider frei wählbar). Inkl. Quellen-Verwaltung, Pagination, Volltextsuche, Filter (Remote/PLZ/Anstellungsart), Browser-Push für Top-Matches und Onboarding-Checkliste
 - 👤 **Multi-User mit Admin-Approval** - User registrieren sich selbst, Admin schaltet Konten + Job-Discovery frei
 - 🔐 **Envelope-Encryption** - Pro-User-DEK + KEK aus Passwort, Backups bleiben bei Passwort-Reset entschlüsselbar
@@ -117,6 +118,7 @@ A privacy-friendly job application tracker with automated email monitoring, stat
 - 🗂️ **Kanban Board** - Visual overview by status
 - 📋 **CV Comparison** - Compare your CV against job requirements — direct analysis via your configured AI provider (with fallback) or copy-paste to web platforms
 - 🤖 **Multi-Provider AI** - Claude (Anthropic), local Ollama, ChatGPT/OpenAI, Mammouth, custom OpenAI-compatible endpoints. Per-user configuration with encrypted API keys. Optional: fallback provider and queue persistence for unavailable providers (e.g. local Ollama)
+- 🌐 **Multi-User Local-Ollama via Tailscale** - multiple users can plug their own Ollama instance without port conflicts. VPS + user Macs in a private Tailnet, ACL limits members to port 11434. See in-app manual section *"Eigenes Ollama anbinden"* + [deploy/tailscale-acl.hujson](deploy/tailscale-acl.hujson)
 - 🔍 **Job-Discovery** - Automated job search from RSS feeds + Bundesagentur/Adzuna/Arbeitnow APIs with AI match-scoring against your CV (provider freely selectable). Includes source management, pagination, full-text search, filters (Remote/postal-code/employment-type), browser push notifications for top matches, and onboarding checklist
 - 👤 **Multi-User with Admin Approval** - Users self-register, admin approves accounts + Job-Discovery activation
 - 🔐 **Envelope-Encryption** - Per-user DEK + KEK derived from password, backups remain decryptable on password reset

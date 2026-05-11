@@ -1,0 +1,39 @@
+// Tailscale ACL-Policy für den Bewerbungstracker-VPS
+// ────────────────────────────────────────────────────────────────────────
+// Im Tailscale-Admin einzuspielen unter:
+//   https://login.tailscale.com/admin/acls/file
+//
+// Diese Policy ist defense-in-depth:
+//   - Member-User-Macs (z.B. für eigenes Ollama) können den VPS NUR
+//     auf Port 11434 (Ollama) erreichen — kein SSH, kein HTTP, kein DB.
+//   - Admins (autogroup:admin) haben Vollzugriff für Maintenance.
+//   - User-Macs sehen sich gegenseitig nicht.
+//
+// Anwendung der Policy ist NICHT git-getriggert — manuell ins Admin
+// einspielen oder via Tailscale GitOps (separates Repo, nicht eingerichtet).
+// Diese Datei dient als Source-of-Truth + Disaster-Recovery-Backup.
+{
+  "tagOwners": {
+    "tag:server": ["autogroup:admin"]
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["autogroup:member", "autogroup:admin"],
+      "dst": ["tag:server:11434"]
+    },
+    {
+      "action": "accept",
+      "src": ["autogroup:admin"],
+      "dst": ["*:*"]
+    }
+  ],
+  "ssh": [
+    {
+      "action": "accept",
+      "src": ["autogroup:admin"],
+      "dst": ["tag:server"],
+      "users": ["root", "autogroup:nonroot"]
+    }
+  ]
+}
