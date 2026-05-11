@@ -548,8 +548,13 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
             f'retrying with summarized description'
         )
         try:
+            # CV-Summarize hat eigenen Pro-Task-Override (sonst: match-Modell)
+            sum_provider, sum_model = user.get_model_for('cv_summarize')
             short_desc = _summarize_description(
-                client, user.id, provider, model, raw.description or ''
+                client, user.id,
+                sum_provider or provider,
+                sum_model or model,
+                raw.description or ''
             )
             if short_desc and short_desc != raw.description:
                 response2 = call_match(short_desc)
