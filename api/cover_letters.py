@@ -119,17 +119,23 @@ def generate_cover_letter(user, cover_letter_id):
     provider = (data.get('provider') or feat_provider or 'claude').strip()
     model = (data.get('model') or feat_model or '').strip() or None
 
+    # Backup-Provider (Fallback wenn primary nicht erreichbar) durchreichen
+    from services.ai_provider_client import build_fallback_kwargs
+    fallback_kwargs = build_fallback_kwargs(user)
+
     try:
         svc = CoverLetterService()
         analysis = svc.analyze(
             cv_text, cl.job_description, user_id=user.id,
             provider=provider, model=model,
+            fallback_kwargs=fallback_kwargs,
         )
         content = svc.generate(
             company_name=cl.company_name, job_title=cl.job_title,
             analysis=analysis, tone=cl.tone, length=cl.length, focus=cl.focus,
             user_id=user.id, applicant_name=applicant_name,
             provider=provider, model=model,
+            fallback_kwargs=fallback_kwargs,
         )
     except RuntimeError as e:
         logger.warning('cover-letter generate failed for user=%s: %s', user.id, e)

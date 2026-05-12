@@ -8,6 +8,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta
+from typing import Optional
 from flask import Blueprint, jsonify
 
 from database import db
@@ -458,7 +459,8 @@ def _strip_thinking_block(text: str) -> str:
 
 
 def _summarize_description(client, user_id: str, provider: str, model: str,
-                            description: str, target_chars: int = 1500) -> str:
+                            description: str, target_chars: int = 1500,
+                            fallback_kwargs: Optional[dict] = None) -> str:
     """Fasst eine zu lange Job-Description via KI zusammen.
 
     Wird als Fallback aufgerufen wenn der erste Match-Call leer/unparsbar war
@@ -476,6 +478,7 @@ def _summarize_description(client, user_id: str, provider: str, model: str,
             # Großzügig: Reasoning-Modelle (qwen3, deepseek-r1) brauchen Output-Budget
             # für ihren <think>-Block + die eigentliche Summary.
             max_tokens=_max_tokens_for(model),
+            **(fallback_kwargs or {}),
         )
         text = response.content[0].text.strip() if response.content else ''
         # <think>...</think>-Blöcke entfernen (Qwen3, DeepSeek-R1)
@@ -501,6 +504,7 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
     vor-zusammengefasster Job-Description.
     """
     client = ai_provider_client.get_client()
+    fallback_kwargs = ai_provider_client.build_fallback_kwargs(user)
 
     def call_match(description: str):
         # System+User-Message: Anweisungen separiert von unvertrauten Daten.
@@ -517,6 +521,7 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
             # Reasoning-Modelle (qwen3, deepseek-r1, o1, …) brauchen mehr Budget
             # für ihren <think>-Block, sonst wird der JSON-Output abgeschnitten.
             max_tokens=_max_tokens_for(model),
+            **fallback_kwargs,
         )
 
     try:
@@ -554,7 +559,8 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
                 client, user.id,
                 sum_provider or provider,
                 sum_model or model,
-                raw.description or ''
+                raw.description or '',
+                fallback_kwargs=fallback_kwargs,
             )
             if short_desc and short_desc != raw.description:
                 response2 = call_match(short_desc)

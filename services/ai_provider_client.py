@@ -147,12 +147,28 @@ class AIProviderClient:
         model: str,
         messages: List[Dict],
         max_tokens: int = 600,
+        fallback_provider: Optional[str] = None,
+        fallback_model: Optional[str] = None,
+        fallback_config: Optional[dict] = None,
     ) -> ChatResponse:
-        """Sendet Chat-Request. Bei Queueing wirft AIProviderQueuedError."""
-        result = self._post('/chat', {
+        """Sendet Chat-Request. Bei Queueing wirft AIProviderQueuedError.
+
+        Optional: fallback_provider+fallback_model schalten Per-Call-Fallback
+        ein. fallback_config (z.B. {'api_key': '...'}) wird einmalig an den
+        Service mitgegeben — nützlich für Admin-User mit zentralem env-Key,
+        wo nichts in der Service-DB persistiert werden soll.
+        """
+        body = {
             'user_id': user_id, 'provider': provider, 'model': model,
             'messages': messages, 'max_tokens': max_tokens,
-        })
+        }
+        if fallback_provider:
+            body['fallback_provider'] = fallback_provider
+        if fallback_model:
+            body['fallback_model'] = fallback_model
+        if fallback_config:
+            body['fallback_config'] = fallback_config
+        result = self._post('/chat', body)
         if result.get('queued'):
             raise AIProviderQueuedError(
                 queue_id=result.get('queue_id', ''),
@@ -197,3 +213,28 @@ def get_client() -> Optional[AIProviderClient]:
 def is_enabled() -> bool:
     """True wenn der Service-Modus aktiv ist (Env-Vars gesetzt)."""
     return bool(Config.AI_PROVIDER_SERVICE_URL and Config.AI_PROVIDER_SERVICE_TOKEN)
+
+
+def build_fallback_kwargs(user) -> dict:
+    """Baut die fallback_provider/fallback_model/fallback_config kwargs für chat().
+
+    - Returns {} wenn der User kein Backup hat
+    - Returns nur provider+model wenn explizit konfiguriert (Service nutzt
+      die vom User gespeicherte Config)
+    - Returns provider+model+config wenn Admin-Auto-Fallback (zentraler
+      CLAUDE_API_KEY wird per-call mitgegeben, NICHT im Service persistiert)
+    """
+    import os
+    backup = user.get_backup_config() if user else None
+    if not backup:
+        return {}
+    provider, model, is_auto = backup
+    kwargs = {'fallback_provider': provider}
+    if model:
+        kwargs['fallback_model'] = model
+    if is_auto:
+        # Admin-Default: zentraler API-Key aus env mitgeben
+        api_key = os.getenv('CLAUDE_API_KEY')
+        if api_key:
+            kwargs['fallback_config'] = {'api_key': api_key}
+    return kwargs

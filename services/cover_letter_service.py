@@ -46,8 +46,12 @@ def _get_direct_anthropic_client():
 
 def _call_ai(system_prompt: str, user_prompt: str, user_id: Optional[str] = None,
              provider: str = 'claude', model: str = DEFAULT_MODEL,
-             max_tokens: int = 2000) -> str:
+             max_tokens: int = 2000,
+             fallback_kwargs: Optional[Dict[str, Any]] = None) -> str:
     """Sendet Chat-Call via ai_provider_client (wenn enabled) oder direkt an Anthropic.
+
+    Optional fallback_kwargs (z.B. {'fallback_provider': 'claude', 'fallback_model': '...',
+    'fallback_config': {'api_key': '...'}}) wird an client.chat() durchgereicht.
 
     Returns: Text der KI-Antwort.
     Raises: RuntimeError wenn weder Service-Modus noch ANTHROPIC_API_KEY verfügbar.
@@ -61,6 +65,7 @@ def _call_ai(system_prompt: str, user_prompt: str, user_id: Optional[str] = None
                 {"role": "user", "content": user_prompt},
             ],
             max_tokens=max_tokens,
+            **(fallback_kwargs or {}),
         )
         return (response.content[0].text if response.content else '').strip()
 
@@ -162,7 +167,8 @@ class CoverLetterService:
     def analyze(self, cv_text: str, job_description: str,
                 user_id: Optional[str] = None,
                 provider: str = 'claude',
-                model: Optional[str] = None) -> Dict[str, Any]:
+                model: Optional[str] = None,
+                fallback_kwargs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Phase 1: CV ↔ Job-Posting Matching mit Confidence-Scores.
 
         Returns dict mit Keys:
@@ -199,7 +205,8 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
 }}"""
 
         text = _call_ai(ANALYSIS_SYSTEM, user_prompt, user_id=user_id,
-                        provider=provider, model=model or DEFAULT_MODEL, max_tokens=2000)
+                        provider=provider, model=model or DEFAULT_MODEL, max_tokens=2000,
+                        fallback_kwargs=fallback_kwargs)
         analysis = _extract_json(text)
 
         # Defensive: sicherstellen dass alle erwarteten Keys existieren
@@ -213,7 +220,8 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
                  focus: str = 'balanced', user_id: Optional[str] = None,
                  applicant_name: Optional[str] = None,
                  provider: str = 'claude',
-                 model: Optional[str] = None) -> str:
+                 model: Optional[str] = None,
+                 fallback_kwargs: Optional[Dict[str, Any]] = None) -> str:
         """Phase 2: Anschreiben-Text basierend auf Analyse generieren.
 
         Returns: HTML-String mit <p data-confidence="0.XX">…</p>-Absätzen.
@@ -247,7 +255,8 @@ BEISPIEL:
 Gib NUR die HTML-Absätze zurück, keine Erklärung."""
 
         raw_html = _call_ai(GENERATION_SYSTEM, user_prompt, user_id=user_id,
-                            provider=provider, model=model or DEFAULT_MODEL, max_tokens=2000)
+                            provider=provider, model=model or DEFAULT_MODEL, max_tokens=2000,
+                            fallback_kwargs=fallback_kwargs)
         # Entferne eventuelle Markdown-Codefences
         raw_html = re.sub(r'```(?:html)?\n?', '', raw_html).replace('```', '').strip()
         return self._inject_confidence_attributes(raw_html)

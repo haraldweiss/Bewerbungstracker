@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # © 2026 Harald Weiss
+import os
 from database import db
 from datetime import datetime
 from enum import Enum
@@ -59,6 +60,13 @@ class User(db.Model):
     # ai_provider/ai_provider_model. Siehe get_model_for() unten.
     feature_model_overrides = db.Column(db.Text, nullable=True)
 
+    # Backup-/Fallback-KI: wenn der primäre Provider nicht erreichbar ist,
+    # routet der ai-provider-service auf diesen. Reuses ai_provider_config
+    # für API-Keys. Admin-User bekommen automatisch CLAUDE_API_KEY aus env
+    # wenn nichts explizit gesetzt — siehe get_backup_config().
+    ai_provider_backup = db.Column(db.String(50), nullable=True)
+    ai_provider_backup_model = db.Column(db.String(255), nullable=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -110,6 +118,23 @@ class User(db.Model):
         if isinstance(override, dict) and override.get('provider'):
             return override['provider'], override.get('model')
         return self.ai_provider, self.ai_provider_model
+
+    def get_backup_config(self):
+        """Returns (provider, model, is_auto) für den Backup-Provider, oder None.
+
+        - Explizit gesetzt: (ai_provider_backup, ai_provider_backup_model, False)
+        - Admin ohne explizite Config + env CLAUDE_API_KEY: ('claude', default, True)
+        - Sonst: None (kein Backup verfügbar)
+
+        is_auto signalisiert dem Frontend, dass kein User-Setting greift —
+        nur der env-Default.
+        """
+        if self.ai_provider_backup:
+            return (self.ai_provider_backup, self.ai_provider_backup_model or None, False)
+        if self.is_admin and os.getenv('CLAUDE_API_KEY'):
+            default_model = os.getenv('CLAUDE_DEFAULT_MODEL') or 'claude-haiku-4-5-20251001'
+            return ('claude', default_model, True)
+        return None
 
     def __repr__(self):
         return f'<User {self.email}>'

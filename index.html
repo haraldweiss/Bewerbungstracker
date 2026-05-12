@@ -1422,6 +1422,30 @@
         <div id="providerStatus" style="margin-top:1rem;font-size:0.85rem;color:var(--text-muted);"></div>
     </div>
 
+    <!-- ═══ BACKUP-KI / FALLBACK-PROVIDER ═══ -->
+    <div class="card" style="padding:1rem;margin-top:1rem;">
+        <div style="font-weight:600;margin-bottom:0.4rem;">🛟 Backup-KI (Fallback)</div>
+        <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;">
+            Wird automatisch genutzt wenn die primäre KI nicht erreichbar ist (z.B. lokales Ollama down).
+        </div>
+        <div id="backupAutoHint" style="display:none;font-size:0.85rem;color:#86EFAC;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);padding:0.5rem 0.75rem;border-radius:6px;margin-bottom:0.75rem;">
+            ℹ️ Aktuell automatisch: Claude (zentraler API-Key) — wähle unten ein anderes Modell um zu überschreiben.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem;">
+            <select id="backupProviderSelect" onchange="onBackupProviderChange()" style="padding:0.5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                <option value="">— Kein Backup —</option>
+            </select>
+            <select id="backupModelSelect" style="padding:0.5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                <option value="">—</option>
+            </select>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="saveBackupSettings()">💾 Backup speichern</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearBackupSettings()">🗑 Backup entfernen</button>
+        </div>
+        <div id="backupStatus" style="margin-top:0.5rem;font-size:0.85rem;color:var(--text-muted);"></div>
+    </div>
+
     <!-- ═══ PRO-TASK MODELL-OVERRIDES ═══ -->
     <div class="card" style="padding:1rem;margin-top:1rem;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
@@ -7698,6 +7722,7 @@ function showSettingsSection(name) {
 
     if (name === 'ai') {
         loadFeatureOverrides();
+        loadBackupSettings();
     }
 }
 
@@ -8692,6 +8717,193 @@ async function loadFeatureOverrides() {
         renderFeatureOverrideCards();
     } catch (e) {
         console.error('feature-models error:', e);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BACKUP-KI / FALLBACK-PROVIDER UI
+// ═══════════════════════════════════════════════════════════════════
+
+let _backupState = { provider: null, model: null, auto: false };
+
+async function loadBackupSettings() {
+    const provSel = document.getElementById('backupProviderSelect');
+    const modelSel = document.getElementById('backupModelSelect');
+    const hint = document.getElementById('backupAutoHint');
+    if (!provSel || !modelSel) return;
+
+    try {
+        // 1. Provider-Dropdown mit configured Providern befüllen
+        const provRes = await fetchAPI('/api/providers');
+        if (provRes.ok) {
+            const data = await provRes.json();
+            const providers = (data.providers || []).filter(p => p.configured);
+            provSel.replaceChildren();
+            const noneOpt = document.createElement('option');
+            noneOpt.value = '';
+            noneOpt.textContent = '— Kein Backup —';
+            provSel.appendChild(noneOpt);
+            for (const p of providers) {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name || p.id;
+                provSel.appendChild(opt);
+            }
+        }
+
+        // 2. Aktuelle Settings holen
+        const r = await fetchAPI('/api/providers/user/settings');
+        if (!r.ok) return;
+        const s = await r.json();
+        _backupState = {
+            provider: s.backup_provider || null,
+            model: s.backup_model || null,
+            auto: !!s.backup_auto,
+        };
+
+        // 3. UI-State setzen
+        if (_backupState.auto) {
+            // Admin-Auto-Default: kein explizites Setting, aber Hinweis anzeigen
+            hint.style.display = 'block';
+            provSel.value = '';
+            modelSel.replaceChildren();
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = '—';
+            modelSel.appendChild(opt);
+        } else {
+            hint.style.display = 'none';
+            provSel.value = _backupState.provider || '';
+            if (_backupState.provider) {
+                await onBackupProviderChange();
+                modelSel.value = _backupState.model || '';
+            } else {
+                modelSel.replaceChildren();
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '—';
+                modelSel.appendChild(opt);
+            }
+        }
+    } catch (e) {
+        console.error('loadBackupSettings:', e);
+    }
+}
+
+async function onBackupProviderChange() {
+    const provSel = document.getElementById('backupProviderSelect');
+    const modelSel = document.getElementById('backupModelSelect');
+    if (!provSel || !modelSel) return;
+    const provider = provSel.value;
+    modelSel.replaceChildren();
+    if (!provider) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '—';
+        modelSel.appendChild(opt);
+        return;
+    }
+    try {
+        const r = await fetchAPI('/api/providers/' + provider + '/models');
+        if (!r.ok) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = '⚠️ Models nicht verfügbar';
+            modelSel.appendChild(opt);
+            return;
+        }
+        const data = await r.json();
+        for (const m of (data.models || [])) {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m;
+            modelSel.appendChild(opt);
+        }
+        // Wenn aktuelle Backup-Config diesen Provider hat → Modell auto-selecten
+        if (_backupState.provider === provider && _backupState.model) {
+            modelSel.value = _backupState.model;
+        } else if (data.default) {
+            modelSel.value = data.default;
+        }
+    } catch (e) {
+        console.error('backup models load:', e);
+    }
+}
+
+async function saveBackupSettings() {
+    const provSel = document.getElementById('backupProviderSelect');
+    const modelSel = document.getElementById('backupModelSelect');
+    const status = document.getElementById('backupStatus');
+    const primaryProv = document.getElementById('aiProviderSelect');
+    if (!provSel || !modelSel) return;
+
+    const backupProvider = provSel.value || null;
+    const backupModel = modelSel.value || null;
+
+    if (backupProvider && primaryProv && backupProvider === primaryProv.value) {
+        if (!confirm('Backup-Provider ist identisch mit Primary. Weitermachen?')) return;
+    }
+
+    try {
+        const r = await fetchAPI('/api/providers/user/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({
+                backup_provider: backupProvider,
+                backup_model: backupModel,
+            }),
+        });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            status.textContent = '❌ ' + (err.error || ('HTTP ' + r.status));
+            return;
+        }
+        const data = await r.json();
+        _backupState = {
+            provider: data.backup_provider || null,
+            model: data.backup_model || null,
+            auto: !!data.backup_auto,
+        };
+        status.textContent = '✓ Backup gespeichert';
+        document.getElementById('backupAutoHint').style.display = _backupState.auto ? 'block' : 'none';
+    } catch (e) {
+        status.textContent = '❌ Fehler: ' + e.message;
+    }
+}
+
+async function clearBackupSettings() {
+    const status = document.getElementById('backupStatus');
+    try {
+        const r = await fetchAPI('/api/providers/user/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({
+                backup_provider: null,
+                backup_model: null,
+            }),
+        });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            status.textContent = '❌ ' + (err.error || ('HTTP ' + r.status));
+            return;
+        }
+        const data = await r.json();
+        _backupState = {
+            provider: data.backup_provider || null,
+            model: data.backup_model || null,
+            auto: !!data.backup_auto,
+        };
+        document.getElementById('backupProviderSelect').value = '';
+        const modelSel = document.getElementById('backupModelSelect');
+        modelSel.replaceChildren();
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '—';
+        modelSel.appendChild(opt);
+        document.getElementById('backupAutoHint').style.display = _backupState.auto ? 'block' : 'none';
+        status.textContent = _backupState.auto
+            ? '✓ Backup entfernt — Auto-Default greift'
+            : '✓ Backup entfernt';
+    } catch (e) {
+        status.textContent = '❌ Fehler: ' + e.message;
     }
 }
 

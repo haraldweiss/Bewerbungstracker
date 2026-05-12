@@ -86,41 +86,79 @@ def get_provider_models(user, provider_id):
 @token_required
 def get_user_provider_settings(user):
     """User-Preference (welcher Provider/Model). Bleibt lokal in der Bewerbungstracker-DB."""
+    backup = user.get_backup_config()
+    if backup:
+        backup_provider, backup_model, backup_auto = backup
+    else:
+        backup_provider, backup_model, backup_auto = None, None, False
     return {
         'provider': user.ai_provider or 'claude',
-        'model': user.ai_provider_model
+        'model': user.ai_provider_model,
+        'backup_provider': backup_provider,
+        'backup_model': backup_model,
+        'backup_auto': backup_auto,
     }, 200
 
 
 @providers_bp.route('/user/settings', methods=['PATCH'])
 @token_required
 def update_user_provider_settings(user):
-    """Speichere User-Preference."""
+    """Speichere User-Preference.
+
+    Akzeptiert primär (provider, model) und optional (backup_provider, backup_model).
+    Backup-Felder explizit auf None gesetzt → Backup-Override gelöscht
+    (Admin-User fallen dann auf env-Default zurück).
+    """
     data = request.get_json() or {}
-    provider = data.get('provider', user.ai_provider or 'claude')
-    model = data.get('model')
+    has_provider = 'provider' in data
+    has_backup = 'backup_provider' in data or 'backup_model' in data
 
-    if provider not in VALID_PROVIDERS:
-        return {'error': f'Unbekannter Provider: {provider}'}, 400
-
-    # Bei User-Providern: prüfe ob im Service konfiguriert
-    if provider in USER_PROVIDERS and ai_provider_client.is_enabled():
-        try:
-            client = ai_provider_client.get_client()
-            cfg = client.get_config(user.id, provider)
-            if not cfg.get('configured'):
-                return {'error': f'Provider {provider} ist nicht konfiguriert'}, 400
-        except Exception as e:
-            logger.warning(f'Config-Check für {provider} fehlgeschlagen: {e}')
-
-    try:
+    # Primary
+    if has_provider:
+        provider = (data.get('provider') or user.ai_provider or 'claude')
+        model = data.get('model')
+        if provider not in VALID_PROVIDERS:
+            return {'error': f'Unbekannter Provider: {provider}'}, 400
+        # Bei User-Providern: prüfe ob im Service konfiguriert
+        if provider in USER_PROVIDERS and ai_provider_client.is_enabled():
+            try:
+                client = ai_provider_client.get_client()
+                cfg = client.get_config(user.id, provider)
+                if not cfg.get('configured'):
+                    return {'error': f'Provider {provider} ist nicht konfiguriert'}, 400
+            except Exception as e:
+                logger.warning(f'Config-Check für {provider} fehlgeschlagen: {e}')
         user.ai_provider = provider
         user.ai_provider_model = model
+
+    # Backup (optional, unabhängig vom primary update)
+    if has_backup:
+        backup_provider = data.get('backup_provider')
+        backup_model = data.get('backup_model')
+        if backup_provider:
+            if backup_provider not in VALID_PROVIDERS:
+                return {'error': f'Unbekannter Backup-Provider: {backup_provider}'}, 400
+        # backup_provider == None → Override löschen (Admin fällt auf env-Default)
+        user.ai_provider_backup = backup_provider or None
+        user.ai_provider_backup_model = backup_model if backup_provider else None
+
+    try:
         db.session.commit()
-        logger.info(f'User {user.email} set provider={provider}, model={model}')
+        backup = user.get_backup_config()
+        if backup:
+            bp, bm, ba = backup
+        else:
+            bp, bm, ba = None, None, False
+        logger.info(
+            f'User {user.email} settings: provider={user.ai_provider} model={user.ai_provider_model} '
+            f'backup={bp} backup_model={bm} backup_auto={ba}'
+        )
         return {
             'provider': user.ai_provider,
             'model': user.ai_provider_model,
+            'backup_provider': bp,
+            'backup_model': bm,
+            'backup_auto': ba,
             'message': 'Einstellungen gespeichert ✓'
         }, 200
     except Exception as e:
@@ -277,10 +315,12 @@ def chat_with_user_provider(user):
 
     try:
         client = ai_provider_client.get_client()
+        fallback_kwargs = ai_provider_client.build_fallback_kwargs(user)
         response = client.chat(
             user_id=user.id, provider=provider, model=model,
             messages=[{'role': 'user', 'content': prompt}],
             max_tokens=max_tokens,
+            **fallback_kwargs,
         )
         return {
             'response': response.content[0].text if response.content else '',
