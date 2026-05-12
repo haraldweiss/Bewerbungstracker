@@ -3874,14 +3874,18 @@ const JobsView = (() => {
             if (progressEl) progressEl.style.display = 'inline-flex';
             if (cancelBtn) cancelBtn.style.display = 'inline-block';
 
-            // Provider+Model vorab holen für Anzeige in der Progress-Bar
+            // Provider+Model vorab holen für Anzeige in der Progress-Bar.
+            // WICHTIG: Pro-Task-Override für 'match' hat Vorrang vor primary!
             let providerLabel = '';
             try {
-                const settingsResp = await fetchAPI('/api/providers/user/settings', { method: 'GET' });
-                if (settingsResp.ok) {
-                    const settings = await settingsResp.json();
-                    const p = settings.provider || 'claude';
-                    const m = settings.model ? settings.model.split(':')[0].slice(0, 20) : '';
+                const fmResp = await fetchAPI('/api/profile/feature-models', { method: 'GET' });
+                if (fmResp.ok) {
+                    const fm = await fmResp.json();
+                    const matchOverride = (fm.overrides || {}).match;
+                    const standard = fm.standard || {};
+                    const p = (matchOverride && matchOverride.provider) || standard.provider || 'claude';
+                    const rawModel = (matchOverride && matchOverride.model) || standard.model || '';
+                    const m = rawModel ? rawModel.split(':')[0].slice(0, 20) : '';
                     providerLabel = m ? `${p} · ${m}` : p;
                 }
             } catch (e) { /* silent */ }

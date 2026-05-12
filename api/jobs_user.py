@@ -411,6 +411,9 @@ def score_match(user, match_id: int):
         return jsonify({"error": "Bewertung fehlgeschlagen"}), 500
 
     db.session.commit()
+    # Pro-Task-Override für 'match' liefert das *tatsächlich* genutzte Modell.
+    # Fallback auf user.ai_provider/_model nur wenn kein Override gesetzt.
+    match_provider, match_model = user.get_model_for('match')
     return jsonify({
         "match_score": m.match_score,
         "match_reasoning": m.match_reasoning,
@@ -418,8 +421,8 @@ def score_match(user, match_id: int):
         # Transient-Info aus _run_match_via_service: tatsächlich genutzter
         # Provider (kann durch Service-Fallback vom Default abweichen) und
         # Model. Frontend zeigt das in der Bulk-Progress-Anzeige.
-        "provider_used": getattr(m, '_last_via', None) or user.ai_provider,
-        "model_used": user.ai_provider_model,
+        "provider_used": getattr(m, '_last_via', None) or match_provider or user.ai_provider,
+        "model_used": match_model or user.ai_provider_model,
         "fallback_used": getattr(m, '_last_fallback_used', False),
     }), 200
 
