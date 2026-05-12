@@ -1,263 +1,76 @@
-# Deployment Guide
+# Apache ProxyPass Deployment Rules
 
-Dieses Dokument beschreibt zwei parallele Deployment-Profile:
+**Problem (2026-05-12):** Globale ProxyPass-Regel in claudetracker.conf intercepted `/api/*` requests für bewerbungen.wolfinisoftware.de. Login schlug fehl weil Requests an Node.js auf 3001 statt Flask auf 5000 geroutet wurden.
 
-- **A) Lokales Setup** – ein Mac/Linux-Rechner, alle Services auf `localhost`.
-- **B) VPS Production** – z.B. IONOS VPS mit Apache, Let's Encrypt, gunicorn,
-  systemd, SELinux.
+## Regel 1: Keine globalen ProxyPass-Regeln ⚠️
 
-Die Codebase enthält **dieselben Quellen für beide Profile**. Unterschiede
-liegen ausschließlich in `.env`-Werten, systemd-Units, Apache-vhost und
-SELinux-Contexts.
+ProxyPass IMMER in der VirtualHost einfügen, nie auf Root-Level:
 
----
+```apache
+# ✅ RICHTIG - ProxyPass IN der VirtualHost
+<VirtualHost *:443>
+    ServerName wolfinisoftware.de
+    <IfModule mod_proxy.c>
+        ProxyPass /api/ http://127.0.0.1:3001/api/
+        ProxyPassReverse /api/ http://127.0.0.1:3001/api/
+    </IfModule>
+</VirtualHost>
 
-## A) Lokales Setup
+# ❌ FALSCH - ProxyPass global (beeinträchtigt ALLE Domains!)
+<IfModule mod_proxy.c>
+    ProxyPass /api/ http://127.0.0.1:3001/api/
+</IfModule>
+```
 
-Vorausgesetzt: Python ≥ 3.9, Git.
+Apache verarbeitet ProxyPass-Regeln global, die erste Übereinstimmung gewinnt — auch über VirtualHost-Grenzen!
+
+## Regel 2: Für neue Services
+
+1. **Eigene `.conf` Datei erstellen** mit dem Service-Namen
+   ```bash
+   /etc/httpd/conf.d/<service-name>.conf
+   ```
+
+2. **NUR VirtualHost-Definitionen** dort, keine globalen Regeln
+   
+3. **ProxyPass Domain-spezifisch** (alle Regeln IN die VirtualHost)
+
+## Regel 3: Testing vor Deploy
 
 ```bash
-git clone <repo-url> bewerbungstracker
-cd bewerbungstracker
+# 1. Syntax validieren
+httpd -t
+# Output sollte: "Syntax OK"
 
-# 1) venv + Pakete
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# 2. Sanft neuladen (nicht restart!)
+systemctl reload httpd
 
-# 2) .env anlegen
-cp .env.example .env
-# In .env editieren:
-#   FLASK_ENV=development
-#   APP_URL=http://localhost:8080
-#   CORS_ORIGINS=http://localhost:3000,http://localhost:8080
-#   JWT_SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
-#   MAIL_USERNAME=… MAIL_PASSWORD=…   # SMTP, falls Confirmation-Mails getestet werden
-
-# 3) DB-Schema
-python -m alembic upgrade head      # erstellt instance/bewerbungstracker.db
-python scripts/create_user.py --email du@example.com --admin --auto-confirm
-
-# 4) Services starten (3 Terminals oder per ./start.sh)
-./start.sh
-# startet: Flask (Port 8080), imap_proxy.py (8765), email_service.py (8766)
+# 3. API testen
+curl -i https://bewerbungen.wolfinisoftware.de/api/auth/login
+# Sollte JSON sein, NICHT HTML "Cannot POST"
 ```
 
-**Frontend öffnen:** `http://localhost:8080` – das Frontend erkennt
-automatisch, dass `location.hostname` lokal ist und ruft `127.0.0.1:8765/8766`
-direkt an.
-
----
-
-## B) VPS / Production (IONOS oder vergleichbar)
-
-### B1. Einmal-Setup auf dem Server
+## Regel 4: Backup vor Änderung
 
 ```bash
-# Voraussetzung: root oder sudo, Python 3.9+, httpd, certbot
-sudo dnf install -y python3 python3-venv httpd mod_ssl certbot python3-certbot-apache
-
-# Code klonen
-sudo mkdir -p /var/www/bewerbungen
-sudo chown -R $USER:$USER /var/www/bewerbungen
-git clone <repo-url> /var/www/bewerbungen
-cd /var/www/bewerbungen
-
-# venv (auf dem Server, nicht vom Mac übertragen!)
-python3 -m venv venv
-venv/bin/pip install --upgrade pip
-venv/bin/pip install -r requirements.txt
-
-# Logs + Instance-Verzeichnis
-sudo mkdir -p /var/log/bewerbungen /var/www/bewerbungen/instance
-sudo chown -R root:root /var/log/bewerbungen
+cp /etc/httpd/conf.d/service.conf /etc/httpd/conf.d/service.conf.$(date +%s)
 ```
 
-### B2. Konfiguration
+## Regel 5: Health-Check nach Deploy
 
 ```bash
-# .env (chmod 600, enthält Secrets)
-sudo cp .env.example /var/www/bewerbungen/.env
-sudo $EDITOR /var/www/bewerbungen/.env
-# Einstellen:
-#   FLASK_ENV=production
-#   APP_URL=https://bewerbungen.deinedomain.de
-#   CORS_ORIGINS=https://bewerbungen.deinedomain.de,https://bewerbung.deinedomain.de
-#   JWT_SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
-#   MAIL_SERVER=smtp.ionos.de  MAIL_PORT=465  MAIL_USERNAME=...  MAIL_PASSWORD=...
-sudo chmod 600 /var/www/bewerbungen/.env
-```
-
-### B3. SELinux (nur RHEL/Rocky/CentOS)
-
-Pflichtschritt – sonst bekommt SQLAlchemy `attempt to write a readonly database`:
-
-```bash
-sudo chcon -R -t httpd_sys_rw_content_t /var/www/bewerbungen/instance/
-sudo chcon -t httpd_sys_rw_content_t /var/www/bewerbungen/email_config.db || true
-```
-
-### B4. systemd-Services
-
-```bash
-sudo cp deploy/systemd/bewerbungen.service /etc/systemd/system/
-sudo cp deploy/systemd/imap-proxy.service /etc/systemd/system/
-sudo cp deploy/systemd/email-service.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now bewerbungen imap-proxy email-service
-sudo systemctl status bewerbungen imap-proxy email-service
-```
-
-### B5. Apache vhost + SSL
-
-```bash
-# vhost installieren
-sudo cp deploy/apache/bewerbungen.conf /etc/httpd/conf.d/
-sudo $EDITOR /etc/httpd/conf.d/bewerbungen.conf
-# Hostnames im ServerName / ServerAlias / SSLCertificateFile anpassen
-
-# DocumentRoot für ACME-Challenge
-sudo mkdir -p /var/www/html/.well-known/acme-challenge
-sudo apachectl configtest
-sudo systemctl reload httpd
-
-# SSL-Cert (zwei Hostnames – Plural + Singular sind eine gute Praxis)
-sudo certbot certonly --webroot -w /var/www/html \
-    -d bewerbungen.deinedomain.de \
-    -d bewerbung.deinedomain.de \
-    --agree-tos -m admin@deinedomain.de
-sudo systemctl reload httpd
-```
-
-### B6. DB-Schema
-
-```bash
-cd /var/www/bewerbungen
-sudo -u root venv/bin/python -m alembic upgrade head
-sudo -u root venv/bin/python scripts/create_user.py \
-    --email harald@example.com --admin --auto-confirm
-```
-
-### B7. DB-Backups (täglich, automatisch)
-
-```bash
-sudo cp deploy/systemd/bewerbungen-backup.service /etc/systemd/system/
-sudo cp deploy/systemd/bewerbungen-backup.timer /etc/systemd/system/
-sudo mkdir -p /var/backups/bewerbungen && sudo chmod 700 /var/backups/bewerbungen
-sudo systemctl daemon-reload
-sudo systemctl enable --now bewerbungen-backup.timer
-
-# Manuell starten (für ersten Test):
-sudo systemctl start bewerbungen-backup.service
-ls -lh /var/backups/bewerbungen/
-sudo tail /var/log/bewerbungen/backup.log
-```
-
-Default: täglich 03:00 (mit bis zu 30 Min Jitter), Retention 30 Tage. Nutzt
-SQLite-Backup-API für **atomare Online-Snapshots** – kein Lock-Konflikt mit
-laufenden gunicorn-Workers. Komprimiert jedes Backup mit gzip.
-
-**Restore-Beispiel:**
-```bash
-# Letztes Backup zurückspielen:
-LATEST=$(ls -t /var/backups/bewerbungen/bewerbungstracker_*.db.gz | head -1)
-sudo systemctl stop bewerbungen
-sudo zcat "$LATEST" > /var/www/bewerbungen/instance/bewerbungstracker.db
-sudo chcon -t httpd_sys_rw_content_t /var/www/bewerbungen/instance/bewerbungstracker.db
-sudo systemctl start bewerbungen
-```
-
-Konfiguration via Env-Vars (in der `.service`-Unit überschreibbar):
-```
-BACKUP_DIR=/var/backups/bewerbungen
-RETENTION_DAYS=30
-DB_PATHS=/var/www/bewerbungen/instance/bewerbungstracker.db,/var/www/bewerbungen/email_config.db
-```
-
-### B8. Verifikation
-
-```bash
-curl -sI https://bewerbungen.deinedomain.de/                            # 200
-curl -s  https://bewerbungen.deinedomain.de/api/auth/me                  # 401 ohne Token
-curl -s  https://bewerbungen.deinedomain.de/email-service/api/status     # 200
-curl -s -X POST https://bewerbungen.deinedomain.de/imap-proxy/ -d '{}'   # 400 (no body)
-```
-
-### B9. Job-Discovery: Claude-Match Cron-Frequenz
-
-`claude-match` Stage in `/etc/cron.d/job-discovery` läuft **1×/Tag um 08:00 UTC**
-und bewertet **nur prefilter_score ≥ AUTO_CLAUDE_THRESHOLD (50)**. User-getriggerte
-Bewertungen (Single, Bulk, Import) ignorieren diesen Threshold und respektieren
-nur das Tagesbudget (`User.job_daily_budget_cents`).
-
-```cron
-# Stage 3: Claude-Match (1×/Tag, nur prefilter_score >= 50)
-0 8 * * *           root /usr/local/bin/job-discovery-cron.sh claude-match
-```
-
-Falls User-Volume oder Bewertungsbedarf wächst: auf 2×/Tag (`0 8,18 * * *`)
-oder Threshold senken (Konstante `AUTO_CLAUDE_THRESHOLD` in `api/jobs_cron.py`).
-
----
-
-## C) Architektur-Übersicht
-
-| Komponente | Lokal | VPS (Production) |
-|---|---|---|
-| Flask-App | `python app.py` (Port 8080) | gunicorn 127.0.0.1:5000 (systemd) |
-| imap_proxy.py | `python imap_proxy.py` (8765) | systemd `imap-proxy` (8765) |
-| email_service.py | `python email_service.py` (8766) | systemd `email-service` (8766) |
-| TLS / Routing | nicht nötig | Apache 443 → reverse-proxy |
-| Frontend-URL für Services | `http://127.0.0.1:8765/6` | `/imap-proxy`, `/email-service` |
-| Auth-Backend | bcrypt + JWT | identisch |
-| Encryption | Envelope-Encryption (DEK + KEK) | identisch |
-| SMTP für Confirmation-Mails | Flask-Mail (.env) | identisch |
-
-Frontend-Auto-Detect (siehe `index.html`):
-
-```js
-const _isLocalSetup = ['localhost','127.0.0.1',''].includes(location.hostname);
-const EMAIL_SERVICE_URL = _isLocalSetup ? 'http://127.0.0.1:8766' : '/email-service';
-const IMAP_PROXY        = _isLocalSetup ? 'http://127.0.0.1:8765' : '/imap-proxy';
+/usr/local/bin/api-health-check.sh
+# Prüft ob alle kritischen APIs erreichbar sind
 ```
 
 ---
 
-## D) Was im Repo steht vs. was nicht
+**Checkliste für Apache-Config-Änderungen:**
 
-**Universal (im Git):**
-
-- gesamter Python-, JS-, HTML-Code
-- `alembic/versions/*.py` (Schema-Migrationen)
-- `requirements.txt`
-- `deploy/systemd/*.service`, `deploy/apache/bewerbungen.conf` (Templates)
-- `scripts/create_user.py`, `scripts/migrate_legacy_data.py`,
-  `scripts/reconcile_localstorage.py`
-- `.env.example`, `DEPLOYMENT.md`
-
-**Per-Deployment, NICHT im Git** (`.gitignore` deckt das ab):
-
-- `.env` (Secrets!)
-- `instance/bewerbungstracker.db` (User-Daten)
-- `email_config.db` (verschlüsselte SMTP/IMAP-Credentials)
-- `venv/` (Python-venv – muss pro Host neu erzeugt werden, da plattformabhängig)
-- `*.deprecated`, `*.bak` (lokale Sicherungen)
-
-**Nicht im Git, in `deploy/` aber Template:**
-
-- systemd-Units (real liegen sie in `/etc/systemd/system/`)
-- Apache vhost (real liegt in `/etc/httpd/conf.d/`)
-
----
-
-## E) Häufige Stolpersteine
-
-| Symptom | Ursache | Fix |
-|---|---|---|
-| `attempt to write a readonly database` | SELinux blockt schreiben | `chcon -R -t httpd_sys_rw_content_t instance/` |
-| `from app import app` ImportError | Alte `wsgi.py` ohne `app = create_app()` | aktualisierte `wsgi.py` (im Repo) |
-| `203/EXEC` bei systemd | SELinux blockt venv-Python | systemd-Unit nutzt `/bin/bash -c 'exec …'` (im Repo) |
-| `dict \| None` SyntaxError | Python 3.9 ohne PEP 604 | `Optional[dict]` (im Repo gefixt) |
-| Frontend findet imap_proxy nicht | URL hartkodiert | Auto-Detect in `index.html` (im Repo) |
-| Cert-Mismatch | Hostname nicht im Cert | `certbot --expand -d primary -d alias` |
-| 404 für `manifest.json` / `service-worker.js` | Flask-Routes fehlten | Routes in `app.py` (im Repo) |
+- [ ] Backup: `cp service.conf service.conf.$(date +%s)`
+- [ ] Syntax: `httpd -t` → "Syntax OK"
+- [ ] ProxyPass IN `<VirtualHost>`, nie global
+- [ ] Reload: `systemctl reload httpd`
+- [ ] Test API: `curl -i https://domain/api/endpoint`
+- [ ] Health-Check: `/usr/local/bin/api-health-check.sh`
+- [ ] Commit + Push mit Details
