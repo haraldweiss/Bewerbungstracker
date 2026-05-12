@@ -71,6 +71,7 @@ Setup-Anleitung im jeweiligen Repo.
 - **[Deployment](docs/DEPLOYMENT/)** - Installation & Hosting
   - [Generic Server](docs/DEPLOYMENT/DEPLOYMENT_GENERIC.md)
   - [IONOS Shared Hosting](docs/DEPLOYMENT/DEPLOYMENT_IONOS.md)
+  - **[Apache ProxyPass Deployment Rules](DEPLOYMENT.md)** - ⚠️ Safety-Checklist für Multi-Service VPS mit Safeguards gegen Config-Konflikte
 - **[Setup Guides](docs/GUIDES/)** - Provider-spezifische Konfiguration
   - [Gmail Setup](docs/GUIDES/SETUP_GMAIL.md)
   - [Outlook Setup](docs/GUIDES/SETUP_OUTLOOK.md)
@@ -84,6 +85,7 @@ Setup-Anleitung im jeweiligen Repo.
 - **Source-Adapter:** RSS (`feedparser`), Adzuna-API, Bundesagentur Jobsuche-API (mit parallel Detail-Fetch), Arbeitnow-API
 - **AI-Routing:** entweder Anthropic Claude SDK direkt (Default), oder Delegation an externen `ai-provider-service` (separates Repo) für Multi-Provider, Fallback und Queue-Persistenz. Beide Modi via gleicher User-Settings-UI bedienbar.
 - **Libraries:** jsPDF, TweetNaCl.js, Mammoth (DOCX), pdf.js, cryptography (Fernet)
+- **Production-Safeguards:** Git pre-commit hooks, Apache-Config Validation, Hourly Health-Check Timer (siehe [DEPLOYMENT.md](DEPLOYMENT.md))
 
 ### 💾 Datenschutz
 
