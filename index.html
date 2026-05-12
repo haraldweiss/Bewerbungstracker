@@ -8566,6 +8566,19 @@ const FEATURE_LABELS = {
     email_analyse: 'Email-Analyse',
 };
 
+const PROVIDER_DISPLAY = {
+    claude: 'Claude',
+    openai: 'OpenAI',
+    ollama: 'Ollama',
+    mammouth: 'Mammouth',
+    custom: 'Custom',
+};
+
+function providerDisplayName(id) {
+    if (!id) return '';
+    return PROVIDER_DISPLAY[id] || (id.charAt(0).toUpperCase() + id.slice(1));
+}
+
 const TASK_THRESHOLDS = {
     match:         { ok: 60, warn: 40 },
     cover_letter:  { ok: 75, warn: 55 },
@@ -8704,15 +8717,35 @@ function buildOverrideCard(feature) {
     details.style.cssText = 'border:1px solid var(--border);border-radius:6px;margin-bottom:0.5rem;padding:0.5rem;';
 
     const summary = document.createElement('summary');
-    summary.style.cssText = 'cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:500;';
+    summary.style.cssText = 'cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:0.75rem;flex-wrap:wrap;font-weight:500;';
 
     const labelSpan = document.createElement('span');
     labelSpan.textContent = label;
+    labelSpan.style.cssText = 'flex:0 0 auto;';
     summary.appendChild(labelSpan);
 
+    const infoSpan = document.createElement('span');
+    infoSpan.style.cssText = 'display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;font-weight:400;font-size:0.9rem;';
+
+    const modelSpan = document.createElement('span');
+    if (activeProv && activeModel) {
+        const provName = document.createElement('span');
+        provName.style.color = 'var(--text-muted)';
+        provName.textContent = providerDisplayName(activeProv) + ': ';
+        modelSpan.appendChild(provName);
+        modelSpan.appendChild(document.createTextNode(activeModel));
+    } else {
+        modelSpan.style.color = 'var(--text-muted)';
+        modelSpan.textContent = '— kein Modell —';
+    }
+    infoSpan.appendChild(modelSpan);
+
     const statusSpan = document.createElement('span');
-    statusSpan.textContent = rec.icon + ' ' + (isActive ? 'Override aktiv' : 'Standard') + ' (' + rec.text + ')';
-    summary.appendChild(statusSpan);
+    statusSpan.style.cssText = 'color:var(--text-muted);';
+    statusSpan.textContent = rec.icon + ' ' + (isActive ? 'Override' : 'Standard') + ' · ' + rec.text;
+    infoSpan.appendChild(statusSpan);
+
+    summary.appendChild(infoSpan);
     details.appendChild(summary);
 
     const body = document.createElement('div');
@@ -8925,6 +8958,18 @@ async function openModelComparisonModal() {
         }
 
         const features = ['match', 'cover_letter', 'cv_summarize', 'email_analyse'];
+
+        // Pre-Select: aktueller Override pro Feature, sonst Standard
+        const initialSelection = {};
+        for (const f of features) {
+            const ov = _featureOverridesState[f];
+            if (ov && ov.provider && ov.model) {
+                initialSelection[f] = ov.provider + '|' + ov.model;
+            } else {
+                initialSelection[f] = 'STANDARD';
+            }
+        }
+
         const table = document.createElement('table');
         table.style.cssText = 'width:100%;border-collapse:collapse;';
 
@@ -8945,6 +8990,35 @@ async function openModelComparisonModal() {
         table.appendChild(thead);
 
         const tbody = document.createElement('tbody');
+
+        // "Standard"-Zeile (Reset-Option pro Spalte)
+        const stdTr = document.createElement('tr');
+        stdTr.style.cssText = 'border-top:1px solid var(--border);background:var(--bg-card2);';
+        const stdLabel = document.createElement('td');
+        stdLabel.style.cssText = 'padding:0.4rem;font-size:0.85rem;font-style:italic;';
+        let stdText = '🔄 Standard';
+        if (_standardModelState.provider && _standardModelState.model) {
+            stdText += ' (' + providerDisplayName(_standardModelState.provider) + ': ' + _standardModelState.model + ')';
+        } else {
+            stdText += ' (kein Modell konfiguriert)';
+        }
+        stdLabel.textContent = stdText;
+        stdTr.appendChild(stdLabel);
+        for (const f of features) {
+            const td = document.createElement('td');
+            td.style.cssText = 'padding:0.4rem;text-align:center;';
+            const radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'model-pick-' + f;
+            radio.value = 'STANDARD';
+            radio.checked = (initialSelection[f] === 'STANDARD');
+            radio.style.cssText = 'cursor:pointer;';
+            td.appendChild(radio);
+            stdTr.appendChild(td);
+        }
+        tbody.appendChild(stdTr);
+
+        // Modell-Zeilen mit Radio-Buttons pro Task-Spalte
         for (const r of rows) {
             const tr = document.createElement('tr');
             tr.style.borderTop = '1px solid var(--border)';
@@ -8957,13 +9031,27 @@ async function openModelComparisonModal() {
             tdModel.appendChild(document.createTextNode(r.model));
             tr.appendChild(tdModel);
 
+            const rowValue = r.provider + '|' + r.model;
             for (const f of features) {
                 const rec = modelRecommendation(r.provider, r.model, f);
                 const td = document.createElement('td');
-                td.style.cssText = 'padding:0.4rem;text-align:center;cursor:pointer;';
+                td.style.cssText = 'padding:0.4rem;text-align:center;';
                 td.title = rec.text;
-                td.textContent = rec.icon;
-                td.onclick = () => quickSetOverride(r.provider, r.model, f);
+
+                const wrap = document.createElement('label');
+                wrap.style.cssText = 'display:inline-flex;align-items:center;gap:0.3rem;cursor:pointer;';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = 'model-pick-' + f;
+                radio.value = rowValue;
+                radio.checked = (initialSelection[f] === rowValue);
+                radio.style.cssText = 'cursor:pointer;';
+                wrap.appendChild(radio);
+                const iconSpan = document.createElement('span');
+                iconSpan.textContent = rec.icon;
+                wrap.appendChild(iconSpan);
+
+                td.appendChild(wrap);
                 tr.appendChild(td);
             }
             tbody.appendChild(tr);
@@ -8973,8 +9061,22 @@ async function openModelComparisonModal() {
 
         const hint = document.createElement('div');
         hint.style.cssText = 'margin-top:0.75rem;font-size:0.8rem;color:var(--text-muted);';
-        hint.textContent = 'Klick auf eine Zelle übernimmt das Modell als Override für die Task.';
+        hint.textContent = 'Wähle pro Task ein Modell und klicke "Übernehmen". "Standard" entfernt den Override für diese Task.';
         content.appendChild(hint);
+
+        const footer = document.createElement('div');
+        footer.style.cssText = 'margin-top:1rem;display:flex;justify-content:flex-end;gap:0.5rem;';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-secondary btn-sm';
+        cancelBtn.textContent = 'Abbrechen';
+        cancelBtn.onclick = () => closeModelComparisonModal();
+        const applyBtn = document.createElement('button');
+        applyBtn.className = 'btn btn-primary btn-sm';
+        applyBtn.textContent = '✓ Übernehmen';
+        applyBtn.onclick = () => applyModelComparisonSelections();
+        footer.appendChild(cancelBtn);
+        footer.appendChild(applyBtn);
+        content.appendChild(footer);
     } catch (e) {
         content.replaceChildren();
         const err = document.createElement('em');
@@ -8994,6 +9096,46 @@ async function quickSetOverride(provider, model, feature) {
         renderFeatureOverrideCards();
         closeModelComparisonModal();
         alert('✓ ' + FEATURE_LABELS[feature] + ' → ' + model);
+    }
+}
+
+async function applyModelComparisonSelections() {
+    const features = ['match', 'cover_letter', 'cv_summarize', 'email_analyse'];
+    const newOverrides = { ..._featureOverridesState };
+    const changes = [];
+
+    for (const f of features) {
+        const radio = document.querySelector('input[name="model-pick-' + f + '"]:checked');
+        if (!radio) continue;
+        const val = radio.value;
+        if (val === 'STANDARD') {
+            if (newOverrides[f]) {
+                delete newOverrides[f];
+                changes.push(FEATURE_LABELS[f] + ' → Standard');
+            }
+        } else {
+            const idx = val.indexOf('|');
+            if (idx < 0) continue;
+            const provider = val.slice(0, idx);
+            const model = val.slice(idx + 1);
+            const prev = newOverrides[f];
+            if (!prev || prev.provider !== provider || prev.model !== model) {
+                newOverrides[f] = { provider, model };
+                changes.push(FEATURE_LABELS[f] + ' → ' + providerDisplayName(provider) + ': ' + model);
+            }
+        }
+    }
+
+    _featureOverridesState = newOverrides;
+    const ok = await persistOverrides();
+    if (ok) {
+        renderFeatureOverrideCards();
+        closeModelComparisonModal();
+        if (changes.length > 0) {
+            alert('✓ Pro-Task Modelle aktualisiert:\n\n' + changes.join('\n'));
+        } else {
+            alert('✓ Keine Änderungen');
+        }
     }
 }
 
