@@ -9,6 +9,7 @@ neue Wörter durch Vergleich mit bestehenden Einträgen.
 from __future__ import annotations
 import logging
 import requests
+from datetime import datetime
 from html.parser import HTMLParser
 from typing import Set, Optional
 
@@ -88,26 +89,30 @@ class AIWordsResearchService:
     
     def research(self, existing: Optional[Set[str]] = None) -> dict:
         """Führt vollständige Forschung durch: scrapen und vergleichen.
-        
+
         Args:
             existing: Optional Set von bekannten Wörtern. Wenn None,
                      wird mit leerer Menge verglichen (alle gescrapten
                      Wörter sind "neu").
-        
+
         Returns:
             Dict mit:
-                - found: Set aller gescrapten Wörter
-                - new: Set von neuen Wörtern
-                - count_new: Anzahl der neuen Wörter
+                - timestamp: ISO datetime string of when research was conducted
+                - found_total: Total number of words found
+                - new_count: Number of new words discovered
+                - new_words: Sorted list of new words
+                - sources_checked: List of source names checked
         """
         if existing is None:
             existing = set()
-        
-        found = self.scrape_arbeits_abc()
-        new = self.compare_with_existing(existing, found)
-        
+
+        found_words = self.scrape_arbeits_abc()
+        new_words = self.compare_with_existing(existing, found_words)
+
         return {
-            'found': found,
-            'new': new,
-            'count_new': len(new),
+            'timestamp': datetime.utcnow().isoformat(),
+            'found_total': len(found_words),
+            'new_count': len(new_words),
+            'new_words': sorted(list(new_words)),
+            'sources_checked': ['arbeits-abc.de'],
         }
