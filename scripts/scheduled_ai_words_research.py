@@ -9,13 +9,19 @@ Exit code 0 on success, 1 on error. Logs all activity to disk and database.
 import sys
 import logging
 import json
+import os
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add project root to path so we can import our modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Load environment variables BEFORE importing config (same as app.py)
+load_dotenv()
+
 from flask import Flask
+from config import config
 from database import db
 from models import AIWordsResearchLog
 from services.ai_words_research_service import AIWordsResearchService
@@ -35,7 +41,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run_research_task():
+def run_research_task() -> int:
     """Run research and store results in database.
 
     Returns:
@@ -45,10 +51,10 @@ def run_research_task():
 
     # Initialize Flask app context (needed for database operations)
     app = Flask(__name__)
-    # Use environment config or defaults
-    app.config['SQLALCHEMY_DATABASE_URI'] = (
-        'sqlite:///bewerbungen.db'  # Default for local testing
-    )
+    # Load config from config module (respects FLASK_ENV and DATABASE_URL env vars)
+    env = os.getenv('FLASK_ENV', 'development')
+    config_class = config.get(env, config['development'])
+    app.config.from_object(config_class)
     db.init_app(app)
 
     try:

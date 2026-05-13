@@ -35,10 +35,12 @@ def test_scheduled_task_logs_to_file(script_path, log_file):
         timeout=30
     )
 
-    # Verify log file created (even on error)
+    # Verify log file created (even on error, since error logging is resilient)
     assert log_file.exists(), "Log file should be created"
     log_content = log_file.read_text()
     assert 'Starting scheduled AI words research task' in log_content
+    # Verify that script exits with correct code (0 on success, 1 on error)
+    assert result.returncode in (0, 1), f"Script should exit with 0 or 1, got {result.returncode}"
 
 
 def test_scheduled_task_stores_result_in_database(app, db_session):
