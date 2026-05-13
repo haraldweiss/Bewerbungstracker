@@ -106,18 +106,25 @@ def _call_ai(system_prompt: str, user_prompt: str, user_id: Optional[str] = None
     Returns: Text der KI-Antwort.
     Raises: RuntimeError wenn weder Service-Modus noch ANTHROPIC_API_KEY verfügbar.
     """
+    # Normalize model first
+    model = _normalize_model(model)
+
     if ai_provider_client.is_enabled() and user_id:
         client = ai_provider_client.get_client()
-        response = client.chat(
-            user_id=user_id, provider=provider, model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=max_tokens,
-            **(fallback_kwargs or {}),
-        )
-        return (response.content[0].text if response.content else '').strip()
+        try:
+            response = client.chat(
+                user_id=user_id, provider=provider, model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=max_tokens,
+                **(fallback_kwargs or {}),
+            )
+            return (response.content[0].text if response.content else '').strip()
+        except Exception as e:
+            # Provider unavailable or failed → fall back to direct Anthropic
+            logger.warning('AI Provider Service failed (%s: %s), falling back to direct Anthropic', provider, e)
 
     # Fallback: direkter Anthropic-Call
     client = _get_direct_anthropic_client()
@@ -273,7 +280,7 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
 }}"""
 
         text = _call_ai(ANALYSIS_SYSTEM, user_prompt, user_id=user_id,
-                        provider=provider, model=_normalize_model(model), max_tokens=2000,
+                        provider=provider, model=model, max_tokens=2000,
                         fallback_kwargs=fallback_kwargs)
         analysis = _extract_json(text)
 
@@ -323,7 +330,7 @@ BEISPIEL:
 Gib NUR die HTML-Absätze zurück, keine Erklärung."""
 
         raw_html = _call_ai(GENERATION_SYSTEM, user_prompt, user_id=user_id,
-                            provider=provider, model=_normalize_model(model), max_tokens=2000,
+                            provider=provider, model=model, max_tokens=2000,
                             fallback_kwargs=fallback_kwargs)
         # Entferne eventuelle Markdown-Codefences
         raw_html = re.sub(r'```(?:html)?\n?', '', raw_html).replace('```', '').strip()
