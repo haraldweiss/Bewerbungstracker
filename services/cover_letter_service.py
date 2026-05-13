@@ -158,7 +158,25 @@ REGELN:
 - Jeder Absatz beginnt mit HTML-Kommentar <!-- confidence: 0.XX -->
 - Nutze NUR die in der Analyse vorhandenen Fakten
 - Schreibe in HTML mit <p>-Tags, KEIN Markdown
-- Schreibe natürliches Deutsch, vermeide Floskeln"""
+- Schreibe natürliches, authentisches Deutsch — als würde ein Mensch es sprechen
+
+⛔ ABSOLUT ZU VERMEIDEN — Diese Wörter verraten ChatGPT:
+  HIGH RISK: "eintauchen", "versiert", "navigieren", "gewährleisten", "dynamisches Umfeld", "hiermit bewerbe ich mich"
+  MEDIUM RISK: "mit Begeisterung", "präzise", "umfassend", "ganzheitlich"
+  PATTERN RISK: "nicht nur...sondern auch", "tauchen Sie ein in", mehrere Gedankenstriche pro Absatz
+
+🎯 STATTDESSEN NUTZEN:
+  - Konkrete Beispiele statt generische Floskeln
+  - "Ich freue mich auf..." statt "Mit Begeisterung lese ich..."
+  - "Ihre Anforderung passt zu meiner Erfahrung..." statt "Meine versierte Expertise..."
+  - "Ich interessiere mich für..." statt "Hiermit bewerbe ich mich..."
+  - Kommas oder Punkte statt "nicht nur...sondern auch"
+  - Max. 1 Gedankenstrich pro Absatz, besser: gar keine
+
+✅ AUTHENTIZITÄT-Check vor dem Output:
+  - Lies den Text durch die Augen eines Personalers — wirkt er natürlich?
+  - Kein Satz sollte wirken, als hätte ihn eine KI geschrieben
+  - Nutze deine Kenntnisse über echte Bewerbungen, nicht Standard-Templates"""
 
 
 class CoverLetterService:
@@ -259,7 +277,40 @@ Gib NUR die HTML-Absätze zurück, keine Erklärung."""
                             fallback_kwargs=fallback_kwargs)
         # Entferne eventuelle Markdown-Codefences
         raw_html = re.sub(r'```(?:html)?\n?', '', raw_html).replace('```', '').strip()
+        # Sanitize KI-verdächtige Wörter (Fallback-Filter)
+        raw_html = self._sanitize_ai_suspicious_words(raw_html)
         return self._inject_confidence_attributes(raw_html)
+
+    @staticmethod
+    def _sanitize_ai_suspicious_words(html: str) -> str:
+        """Fallback-Filter: Ersetzt/entfernt verdächtige KI-Wörter.
+
+        Dies ist ein Sicherheitsnetz, falls die KI sie trotzdem nutzt.
+        Nutzt Case-Insensitive Matching bei Wort-Grenzen.
+        """
+        # Mapping: verdächtiges Wort -> Replacement
+        replacements = {
+            r'\beintauchen(d|en|e|es|s|r|m)?\b': 'vertiefen',
+            r'\bversiert(e|en|er|es|em|a|as)?\b': 'erfahren',
+            r'\bnavigieren(d|en|e|es|t|)?\b': 'bewältigen',
+            r'\bgewährleisten(d|en|e|s|t|)?\b': 'sicherstellen',
+            r'\b[Dd]ynamisches?\s+Umfeld\b': 'anspruchsvollen Umfeld',
+            r'\bhiermit\s+bewerbe\s+ich\s+mich\b': 'ich bewerbe mich',
+            r'\bHiermit\s+bewerbe\s+ich\s+mich\b': 'Ich bewerbe mich',
+            r'\bmit\s+Begeisterung\b': 'mit großem Interesse',
+            r'\bpräzise(n|r|m|s|)?\b': 'sorgfältig',
+            r'\bumfassend(e|en|er|es|em|a|as)?\b': 'gründlich',
+            r'\bganzheitlich(e|en|er|es|em|a|as)?\b': 'vollständig',
+            r'\btauchen\s+Sie\s+ein\s+in\s+eine\s+Welt\b': 'entdecken Sie',
+            # Mehrfache Gedankenstriche: ersetze mit Komma
+            r'\s–\s[^–]*–\s': ', ',
+        }
+
+        result = html
+        for pattern, replacement in replacements.items():
+            result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+
+        return result
 
     @staticmethod
     def _inject_confidence_attributes(html: str) -> str:
@@ -287,3 +338,131 @@ Gib NUR die HTML-Absätze zurück, keine Erklärung."""
                 line = line.replace('<p>', '<p data-confidence="0.85">', 1)
             out_lines.append(line)
         return '\n'.join(l for l in out_lines if l.strip())
+
+    @staticmethod
+    def check_ai_detectability(html: str) -> Dict[str, Any]:
+        """Prüft HTML auf KI-verdächtige Wörter/Muster.
+
+        Returns dict mit:
+          has_risks: bool
+          risk_level: 'low'|'medium'|'high'
+          findings: [
+            {
+              risk: 'high'|'medium'|'low',
+              word_or_pattern: 'eintauchen',
+              reason: 'ChatGPT-typische Formulierung',
+              context: 'Ich möchte tief eintauchen...',  (sentence snippet)
+              count: 2
+            }
+          ]
+          recommendations: [str, ...]
+        """
+        # Definiere verdächtige Wörter mit Risiko-Level
+        SUSPICIOUS_WORDS = {
+            # HIGH RISK — sehr ChatGPT-typisch
+            'high': [
+                (r'\beintauchen\b', 'ChatGPT-typische Übersetzung von "delve"'),
+                (r'\bversiert\b', 'Übermäßig formal, sehr KI-verdächtig'),
+                (r'\bnavigieren\b', 'Selten in Bewerbungen, ChatGPT-Muster'),
+                (r'\bgewährleisten\b', 'Zu steif, selten im natürlichen Deutsch'),
+                (r'\bdynamisch(?:e[ns]?)?\s+Umfeld', 'Klassische KI-Phrase'),
+                (r'\bhiermit\s+bewerbe\s+ich\s+mich\b', 'Überalte formale Eröffnung'),
+                (r'\bnicht\s+nur\s*[^,]*?,\s*sondern\s+auch\b', '"Nicht nur...sondern auch" ist KI-Signal'),
+            ],
+            # MEDIUM RISK — typisch aber nicht eindeutig
+            'medium': [
+                (r'\bmit\s+Begeisterung\b', 'Zu gewollt, generisches Phraschen-Deutsch'),
+                (r'\bpräzise\b', 'Übernutzung durch KI in Bewerbungen'),
+                (r'\bumfassend\b', 'Generische KI-Floskeln'),
+                (r'\bganzheitlich\b', 'Übermäßig verwendet von KI'),
+                (r'\btauchen\s+Sie\s+ein\s+in\s+eine\s+Welt', 'Sehr typisch für ChatGPT'),
+                (r'\bgedankenstrich.*gedankenstrich', 'Mehrere Gedankenstriche pro Absatz = KI-Signal'),
+            ],
+            # LOW RISK — vorsichtiger, aber verdächtig bei Häufung
+            'low': [
+                (r'\b(werden|kann|haben)\b', 'Übernutzung von Hilfsverben (nur bei 5+ Hits)',
+                 'count_threshold'),  # besonderes Flag: nur zählen, wenn Häufung
+            ],
+        }
+
+        # Entferne HTML-Tags für Text-Analyse
+        text = re.sub(r'<[^>]+>', '', html)
+        findings = []
+
+        for risk_level, patterns in SUSPICIOUS_WORDS.items():
+            for pattern_tuple in patterns:
+                if len(pattern_tuple) == 3 and pattern_tuple[2] == 'count_threshold':
+                    pattern, reason = pattern_tuple[0], pattern_tuple[1]
+                    # Zähle Vorkommen, warnung nur bei 5+
+                    matches = re.findall(pattern, text, re.IGNORECASE)
+                    if len(matches) >= 5:
+                        findings.append({
+                            'risk': risk_level,
+                            'word_or_pattern': pattern.replace(r'\b', '').replace('\\', ''),
+                            'reason': reason,
+                            'count': len(matches),
+                            'context': None,  # zu viele Matches für Kontext
+                        })
+                else:
+                    pattern, reason = pattern_tuple[0], pattern_tuple[1]
+                    matches = list(re.finditer(pattern, text, re.IGNORECASE))
+                    if matches:
+                        # Extrahiere Kontext (±30 chars)
+                        contexts = []
+                        for m in matches[:2]:  # max 2 Beispiele
+                            start = max(0, m.start() - 30)
+                            end = min(len(text), m.end() + 30)
+                            snippet = text[start:end].replace('\n', ' ')
+                            if start > 0:
+                                snippet = '...' + snippet
+                            if end < len(text):
+                                snippet = snippet + '...'
+                            contexts.append(snippet.strip())
+
+                        findings.append({
+                            'risk': risk_level,
+                            'word_or_pattern': pattern.replace(r'\b', '').replace('\\', ''),
+                            'reason': reason,
+                            'count': len(matches),
+                            'examples': contexts[:1],
+                        })
+
+        # Aggregiere Risk-Level
+        risk_levels = [f['risk'] for f in findings]
+        if 'high' in risk_levels:
+            overall_risk = 'high'
+        elif 'medium' in risk_levels:
+            overall_risk = 'medium'
+        elif risk_levels:
+            overall_risk = 'low'
+        else:
+            overall_risk = None
+
+        # Empfehlungen basierend auf Findings
+        recommendations = []
+        if overall_risk == 'high':
+            recommendations.append(
+                '🚨 HOHE WARNUNG: Mehrere ChatGPT-typische Wörter erkannt. '
+                'Personaler könnten KI-Generierung vermuten.'
+            )
+        elif overall_risk == 'medium':
+            recommendations.append(
+                '⚠️ MITTLERE WARNUNG: Einige KI-verdächtige Formulierungen erkannt. '
+                'Überarbeiten würde helfen.'
+            )
+        else:
+            recommendations.append('✅ Keine kritischen KI-Indikatoren erkannt.')
+
+        recommendations.extend([
+            'Nutze mehr persönliche Beispiele und konkrete Projekte',
+            'Ersetze generische Floskeln durch deine eigenen Worte',
+            'Lies das Anschreiben laut vor — Übernatürlichkeit fällt sofort auf',
+        ])
+
+        return {
+            'has_risks': bool(findings),
+            'risk_level': overall_risk,
+            'finding_count': len(findings),
+            'findings': sorted(findings, key=lambda f: {'high': 0, 'medium': 1, 'low': 2}[f['risk']]),
+            'recommendations': recommendations,
+        }

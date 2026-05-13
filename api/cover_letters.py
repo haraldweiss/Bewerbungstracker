@@ -137,6 +137,8 @@ def generate_cover_letter(user, cover_letter_id):
             provider=provider, model=model,
             fallback_kwargs=fallback_kwargs,
         )
+        # KI-Erkennbarkeit prüfen
+        ai_detectability = svc.check_ai_detectability(content)
     except RuntimeError as e:
         logger.warning('cover-letter generate failed for user=%s: %s', user.id, e)
         return jsonify({'error': str(e)}), 503
@@ -152,7 +154,9 @@ def generate_cover_letter(user, cover_letter_id):
     cl.updated_at = datetime.utcnow()
     db.session.commit()
 
-    return jsonify(_serialize(cl)), 200
+    result = _serialize(cl)
+    result['ai_detectability'] = ai_detectability
+    return jsonify(result), 200
 
 
 @cover_letters_bp.get('/<cover_letter_id>')

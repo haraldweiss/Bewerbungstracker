@@ -426,10 +426,19 @@ def test_generate_success(client, auth_headers):
     }
     fake_content = '<p data-confidence="0.95">Sehr geehrte Damen und Herren...</p>'
 
+    fake_detectability = {
+        'has_risks': False,
+        'risk_level': None,
+        'finding_count': 0,
+        'findings': [],
+        'recommendations': ['✅ Keine kritischen KI-Indikatoren erkannt.'],
+    }
+
     with patch('api.cover_letters.CoverLetterService') as MockSvc:
         instance = MockSvc.return_value
         instance.analyze.return_value = fake_analysis
         instance.generate.return_value = fake_content
+        instance.check_ai_detectability.return_value = fake_detectability
 
         r = client.post(f'/api/cover-letters/{cl.id}/generate', headers=headers, json={
             'cv_text': 'Python-Entwickler mit 5 Jahren Erfahrung in Flask und REST-APIs.',
@@ -440,6 +449,7 @@ def test_generate_success(client, auth_headers):
     assert body['status'] == 'generated'
     assert body['content'] == fake_content
     assert body['analysis'] == fake_analysis
+    assert body['ai_detectability'] == fake_detectability
 
     db.session.refresh(cl)
     assert cl.content == fake_content
@@ -616,10 +626,19 @@ def test_generate_uses_cover_letter_override(client, auth_header, db_session):
                      'interpreted_requirements': [], 'missing_or_weak': []}
     fake_content = '<!-- confidence: 0.9 -->\n<p>Test</p>'
 
+    fake_detectability = {
+        'has_risks': False,
+        'risk_level': None,
+        'finding_count': 0,
+        'findings': [],
+        'recommendations': ['✅ Keine kritischen KI-Indikatoren erkannt.'],
+    }
+
     with patch('api.cover_letters.CoverLetterService') as MockSvc:
         instance = MockSvc.return_value
         instance.analyze.return_value = fake_analysis
         instance.generate.return_value = fake_content
+        instance.check_ai_detectability.return_value = fake_detectability
 
         r = client.post(f'/api/cover-letters/{cl.id}/generate',
                         json={'cv_text': 'Python Dev 5y'}, headers=headers)

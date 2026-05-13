@@ -103,3 +103,60 @@ def test_generate_returns_html_with_confidence(mock_call):
     assert 'data-confidence="0.95"' in result
     assert 'data-confidence="0.80"' in result
     assert 'TechCorp' not in result or 'Python' in result  # KI-Output wird unverändert durchgereicht (mit unserem Mock-Output)
+
+
+def test_check_ai_detectability_high_risk():
+    """Prüft Erkennung von HIGH-RISK KI-Wörtern."""
+    html = '<p>Ich möchte tief in diese Rolle eintauchen und Ihre dynamisches Umfeld gestalten.</p>'
+    svc = CoverLetterService()
+    result = svc.check_ai_detectability(html)
+
+    assert result['has_risks'] is True
+    assert result['risk_level'] == 'high'
+    assert len(result['findings']) >= 2
+    assert any(f['word_or_pattern'] == 'eintauchen' for f in result['findings'])
+    assert any(f['word_or_pattern'].startswith('dynamisch') for f in result['findings'])
+    assert len(result['recommendations']) > 0
+    assert any('🚨' in r for r in result['recommendations'])
+
+
+def test_check_ai_detectability_medium_risk():
+    """Prüft Erkennung von MEDIUM-RISK KI-Wörtern."""
+    html = '<p>Mit Begeisterung habe ich Ihre Ausschreibung präzise gelesen.</p>'
+    svc = CoverLetterService()
+    result = svc.check_ai_detectability(html)
+
+    assert result['has_risks'] is True
+    assert result['risk_level'] == 'medium'
+    assert len(result['findings']) >= 2
+
+
+def test_check_ai_detectability_no_risk():
+    """Prüft korrekte Erkennung von saubere Texte ohne Verdächtige Wörtern."""
+    html = '<p>Ich bin sehr an dieser Position interessiert. Meine Erfahrung in Python und DevOps passt gut zu euren Anforderungen.</p>'
+    svc = CoverLetterService()
+    result = svc.check_ai_detectability(html)
+
+    assert result['has_risks'] is False
+    assert result['risk_level'] is None
+    assert len(result['findings']) == 0
+    assert len(result['recommendations']) > 0
+
+
+def test_sanitize_ai_suspicious_words():
+    """Prüft dass verdächtige KI-Wörter automatisch ersetzt werden."""
+    html = '<p>Ich möchte tief eintauchen und meine versierte Expertise zeigen.</p>'
+    result = CoverLetterService._sanitize_ai_suspicious_words(html)
+
+    assert 'eintauchen' not in result.lower()
+    assert 'versiert' not in result.lower()
+    assert 'vertiefen' in result.lower()
+    assert 'erfahren' in result.lower()
+
+
+def test_sanitize_preserves_other_text():
+    """Prüft dass nicht-verdächtige Wörter unverändert bleiben."""
+    html = '<p>Meine Python-Erfahrung ist relevant für diese Rolle.</p>'
+    result = CoverLetterService._sanitize_ai_suspicious_words(html)
+
+    assert result == html  # Unverändert
