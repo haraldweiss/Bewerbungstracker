@@ -27,6 +27,33 @@ VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom'}
 USER_PROVIDERS = {'claude', 'openai', 'mammouth', 'custom'}
 
 
+def _validate_model_for_provider(user_id: str, provider: str, model: str) -> str | None:
+    """Prüft, ob `model` für `provider` verfügbar ist (via ai-provider-service).
+
+    Returns None bei Erfolg oder einen Fehlerstring bei ungültigem Modell.
+    Lenient: Wenn der Service nicht antwortet oder keine Modell-Liste zurückgibt,
+    wird die Validierung übersprungen (statt den Save zu blockieren).
+    """
+    if not model or not ai_provider_client.is_enabled():
+        return None
+    try:
+        client = ai_provider_client.get_client()
+        models = client.get_models(provider, user_id=user_id) or []
+    except Exception as e:
+        logger.warning(f'Model-Validation für {provider} übersprungen (Service-Fehler): {e}')
+        return None
+    if not models:
+        # Kein Wissen über verfügbare Modelle → nicht blockieren
+        return None
+    if model in models:
+        return None
+    preview = ', '.join(models[:5])
+    return (
+        f'Model {model!r} ist für Provider {provider!r} nicht verfügbar. '
+        f'Verfügbare Modelle: {preview}'
+    )
+
+
 def _service_or_400():
     """Holt den AIProviderClient; gibt JSON-Fehler zurück wenn nicht konfiguriert."""
     if not ai_provider_client.is_enabled():
@@ -128,6 +155,11 @@ def update_user_provider_settings(user):
                     return {'error': f'Provider {provider} ist nicht konfiguriert'}, 400
             except Exception as e:
                 logger.warning(f'Config-Check für {provider} fehlgeschlagen: {e}')
+        # Modell-Validierung: verhindert dass nicht existente Modelle gespeichert werden
+        # (z.B. veraltete oder umbenannte Modelle wie 'qwen3.6:latest')
+        err = _validate_model_for_provider(user.id, provider, model)
+        if err:
+            return {'error': err}, 400
         user.ai_provider = provider
         user.ai_provider_model = model
 
@@ -138,6 +170,9 @@ def update_user_provider_settings(user):
         if backup_provider:
             if backup_provider not in VALID_PROVIDERS:
                 return {'error': f'Unbekannter Backup-Provider: {backup_provider}'}, 400
+            err = _validate_model_for_provider(user.id, backup_provider, backup_model)
+            if err:
+                return {'error': f'Backup: {err}'}, 400
         # backup_provider == None → Override löschen (Admin fällt auf env-Default)
         user.ai_provider_backup = backup_provider or None
         user.ai_provider_backup_model = backup_model if backup_provider else None
