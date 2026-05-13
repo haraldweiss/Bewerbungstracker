@@ -280,7 +280,7 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
 }}"""
 
         text = _call_ai(ANALYSIS_SYSTEM, user_prompt, user_id=user_id,
-                        provider=provider, model=model, max_tokens=2000,
+                        provider=provider, model=model, max_tokens=4000,
                         fallback_kwargs=fallback_kwargs)
         analysis = _extract_json(text)
 
@@ -330,7 +330,7 @@ BEISPIEL:
 Gib NUR die HTML-Absätze zurück, keine Erklärung."""
 
         raw_html = _call_ai(GENERATION_SYSTEM, user_prompt, user_id=user_id,
-                            provider=provider, model=model, max_tokens=2000,
+                            provider=provider, model=model, max_tokens=4000,
                             fallback_kwargs=fallback_kwargs)
         # Entferne eventuelle Markdown-Codefences
         raw_html = re.sub(r'```(?:html)?\n?', '', raw_html).replace('```', '').strip()

@@ -137,10 +137,8 @@ def generate_cover_letter(user, cover_letter_id):
             provider=provider, model=model,
             fallback_kwargs=fallback_kwargs,
         )
-        # KI-Erkennbarkeit prüfen
+        # KI-Erkennbarkeit prüfen (Sanitization läuft bereits in svc.generate())
         ai_detectability = svc.check_ai_detectability(content)
-        # Automatisch verdächtige Wörter ersetzen
-        content = CoverLetterService._sanitize_ai_suspicious_words(content)
     except RuntimeError as e:
         logger.warning('cover-letter generate failed for user=%s: %s', user.id, e)
         return jsonify({'error': str(e)}), 503
