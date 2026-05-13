@@ -178,3 +178,27 @@ def test_sanitize_preserves_other_text():
     result = CoverLetterService._sanitize_ai_suspicious_words(html)
 
     assert result == html  # Unverändert
+
+
+@patch('services.cover_letter_service._call_ai')
+def test_generate_automatically_sanitizes(mock_call):
+    """Prüft dass generate() automatisch verdächtige Wörter entfernt."""
+    # Output mit verdächtige KI-Wörtern
+    mock_call.return_value = '''<!-- confidence: 0.95 -->
+<p>Ich möchte tief eintauchen und meine versierte Expertise zeigen.</p>'''
+
+    svc = CoverLetterService()
+    analysis = {
+        "matched_skills": [],
+        "matched_experience": [],
+        "interpreted_requirements": [],
+        "missing_or_weak": []
+    }
+    result = svc.generate("TechCorp", "Python Engineer", analysis)
+
+    # Verdächtige Wörter sollten ersetzt sein
+    assert 'eintauchen' not in result.lower()
+    assert 'versiert' not in result.lower()
+    # Ersetzte Wörter sollten da sein
+    assert 'vertiefen' in result.lower()
+    assert 'erfahren' in result.lower()
