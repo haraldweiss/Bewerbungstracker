@@ -423,3 +423,19 @@ class JobMatch(db.Model):
     @missing_skills.setter
     def missing_skills(self, value: list):
         self._missing_skills = _json.dumps(value) if value else None
+
+
+class AIWordsResearchLog(db.Model):
+    """Tracks AI words research runs for monitoring and debugging."""
+    __tablename__ = 'ai_words_research_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    found_total = db.Column(db.Integer, nullable=False)  # Total words found in this run
+    new_count = db.Column(db.Integer, nullable=False)   # Count of newly detected words
+    new_words = db.Column(db.JSON, nullable=True)        # List of new words (JSON array of strings)
+    sources_checked = db.Column(db.JSON, nullable=False) # Dict: {source_name: checked_bool}
+    error_message = db.Column(db.Text, nullable=True)    # If research failed, error details here
+
+    def __repr__(self):
+        return f'<AIWordsResearchLog {self.id} at {self.timestamp}: {self.found_total} words, {self.new_count} new>'

@@ -7,7 +7,7 @@ from flask import Blueprint, request, jsonify, current_app
 from functools import wraps
 
 from api.auth import token_required, admin_required
-from models import User, Application, EmailConfirmationToken, ApiCall
+from models import User, Application, EmailConfirmationToken, ApiCall, AIWordsResearchLog
 from database import db
 from sqlalchemy import func
 from services.email_service import send_approval_notification, send_confirmation_email
@@ -405,3 +405,53 @@ def usage_stats(user):
         'rows': detailed,
         'totals_per_user': totals,
     }, 200
+
+
+@admin_bp.get('/ai-words-research/history')
+@token_required
+@admin_required
+def get_research_history(user):
+    """List last 10 research runs (admin only)."""
+    logs = AIWordsResearchLog.query.order_by(
+        AIWordsResearchLog.timestamp.desc()
+    ).limit(10).all()
+
+    return jsonify({
+        'research_history': [
+            {
+                'id': log.id,
+                'timestamp': log.timestamp.isoformat(),
+                'found_total': log.found_total,
+                'new_count': log.new_count,
+                'new_words': log.new_words or [],
+                'sources_checked': log.sources_checked or {},
+                'error_message': log.error_message,
+            }
+            for log in logs
+        ]
+    }), 200
+
+
+@admin_bp.get('/ai-words-research/latest')
+@token_required
+@admin_required
+def get_latest_research(user):
+    """Get most recent research run (admin only)."""
+    log = AIWordsResearchLog.query.order_by(
+        AIWordsResearchLog.timestamp.desc()
+    ).first()
+
+    if not log:
+        return jsonify({'research_run': None}), 200
+
+    return jsonify({
+        'research_run': {
+            'id': log.id,
+            'timestamp': log.timestamp.isoformat(),
+            'found_total': log.found_total,
+            'new_count': log.new_count,
+            'new_words': log.new_words or [],
+            'sources_checked': log.sources_checked or {},
+            'error_message': log.error_message,
+        }
+    }), 200
