@@ -31,6 +31,56 @@ LENGTH_WORDS = {
 
 DEFAULT_MODEL = 'claude-haiku-4-5-20251001'
 
+# Known valid Claude models (from Claude's API docs as of 2026-05)
+KNOWN_MODELS = {
+    'claude-opus-4-7',
+    'claude-sonnet-4-6',
+    'claude-haiku-4-5-20251001',
+    # Legacy models
+    'claude-3-5-sonnet',
+    'claude-3-opus',
+    'claude-3-sonnet',
+}
+
+# Known invalid/deprecated models (from production errors)
+INVALID_MODELS = {
+    'claude-3-5-sonnet-20241022',  # 404: model not found (never existed in API)
+}
+
+
+def _normalize_model(model: Optional[str]) -> str:
+    """Returns model if valid, otherwise DEFAULT_MODEL.
+
+    - Checks explicit KNOWN_MODELS list first
+    - Rejects INVALID_MODELS
+    - Accepts any claude-* model (for forward compatibility)
+    - Falls back to DEFAULT_MODEL for anything else
+    """
+    if not model or not isinstance(model, str):
+        return DEFAULT_MODEL
+    model = model.strip()
+    if not model:
+        return DEFAULT_MODEL
+
+    # Reject known invalid models first
+    if model in INVALID_MODELS:
+        logger.warning('Invalid model "%s", falling back to %s', model, DEFAULT_MODEL)
+        return DEFAULT_MODEL
+
+    # Check if it's a known good model
+    if model in KNOWN_MODELS:
+        return model
+
+    # Accept claude-* models for forward compatibility, but log unknown ones
+    if model.startswith('claude-'):
+        if model not in KNOWN_MODELS:
+            logger.debug('Using unknown claude model "%s" (not in KNOWN_MODELS)', model)
+        return model
+
+    # Unknown model → fall back to default
+    logger.warning('Unknown model "%s", falling back to %s', model, DEFAULT_MODEL)
+    return DEFAULT_MODEL
+
 
 def _get_direct_anthropic_client():
     """Lazy import Anthropic SDK für Fallback-Modus (kein ai-provider-service)."""
@@ -223,7 +273,7 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
 }}"""
 
         text = _call_ai(ANALYSIS_SYSTEM, user_prompt, user_id=user_id,
-                        provider=provider, model=model or DEFAULT_MODEL, max_tokens=2000,
+                        provider=provider, model=_normalize_model(model), max_tokens=2000,
                         fallback_kwargs=fallback_kwargs)
         analysis = _extract_json(text)
 
@@ -273,7 +323,7 @@ BEISPIEL:
 Gib NUR die HTML-Absätze zurück, keine Erklärung."""
 
         raw_html = _call_ai(GENERATION_SYSTEM, user_prompt, user_id=user_id,
-                            provider=provider, model=model or DEFAULT_MODEL, max_tokens=2000,
+                            provider=provider, model=_normalize_model(model), max_tokens=2000,
                             fallback_kwargs=fallback_kwargs)
         # Entferne eventuelle Markdown-Codefences
         raw_html = re.sub(r'```(?:html)?\n?', '', raw_html).replace('```', '').strip()

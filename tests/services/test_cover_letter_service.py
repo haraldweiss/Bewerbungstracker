@@ -7,6 +7,24 @@ import json
 from services.cover_letter_service import CoverLetterService, _extract_json
 
 
+def test_normalize_model_accepts_valid_models():
+    """Test that _normalize_model accepts known Claude models."""
+    from services.cover_letter_service import _normalize_model
+    assert _normalize_model('claude-opus-4-7') == 'claude-opus-4-7'
+    assert _normalize_model('claude-sonnet-4-6') == 'claude-sonnet-4-6'
+    assert _normalize_model('claude-haiku-4-5-20251001') == 'claude-haiku-4-5-20251001'
+
+
+def test_normalize_model_rejects_invalid_models():
+    """Test that _normalize_model falls back to DEFAULT_MODEL for invalid models."""
+    from services.cover_letter_service import _normalize_model, DEFAULT_MODEL
+    assert _normalize_model('claude-3-5-sonnet-20241022') == DEFAULT_MODEL  # In INVALID_MODELS blocklist
+    assert _normalize_model('invalid-model') == DEFAULT_MODEL
+    assert _normalize_model('') == DEFAULT_MODEL
+    assert _normalize_model(None) == DEFAULT_MODEL
+    assert _normalize_model('   ') == DEFAULT_MODEL
+
+
 def test_extract_json_clean():
     text = '{"matched_skills": [], "matched_experience": []}'
     result = _extract_json(text)
