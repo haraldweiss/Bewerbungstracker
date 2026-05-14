@@ -508,7 +508,7 @@
                 Status:
                 <select id="jobs-status-filter" style="padding:4px 8px;background:var(--bg-card2);color:var(--text);border:1px solid var(--border);border-radius:4px">
                     <option value="new" selected>Neu</option>
-                    <option value="seen">Gesehen</option>
+                    <option value="unbewertet">Unbewertete</option>
                     <option value="imported">Übernommen</option>
                     <option value="dismissed">Verworfen</option>
                 </select>
@@ -3774,7 +3774,7 @@ const JobsView = (() => {
             try {
                 await Auth.fetch(`/jobs/matches/${id}`, {
                     method: 'PATCH',
-                    body: JSON.stringify({ status: 'seen' }),
+                    body: JSON.stringify({ status: 'unbewertet' }),
                 });
                 fetchMatches();
             } catch (e) { alert('Fehler: ' + e.message); }
@@ -3987,7 +3987,7 @@ const JobsView = (() => {
             try {
                 const r = await Auth.fetch('/jobs/matches/bulk', {
                     method: 'PATCH',
-                    body: JSON.stringify({ match_ids: ids, status: 'seen' }),
+                    body: JSON.stringify({ match_ids: ids, status: 'unbewertet' }),
                 });
                 if (r) {
                     if (typeof showToast === 'function') {
