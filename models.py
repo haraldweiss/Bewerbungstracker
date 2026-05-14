@@ -388,8 +388,11 @@ class RawJob(db.Model):
 class JobMatch(db.Model):
     """Per-User-Bewertung eines RawJob.
 
-    status: 'new' = noch nicht angesehen, 'seen' = User hat ihn gesehen,
-    'imported' = übernommen, 'dismissed' = verworfen oder Auto-Verworfen.
+    status:
+    - 'new' = noch nicht angesehen
+    - 'seen' = User hat ihn angesehen
+    - 'imported' = übernommen in eine Bewerbung
+    - 'dismissed' = verworfen oder Auto-Verworfen
     """
     __tablename__ = 'job_matches'
     __table_args__ = (
