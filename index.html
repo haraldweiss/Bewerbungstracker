@@ -19,8 +19,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
     <!-- Encryption: TweetNaCl.js for secure password encryption -->
-    <script src="/static/nacl.min.js"></script>
-    <script src="/static/nacl-util.min.js"></script>
+    <script src="/components/vendor/nacl.min.js"></script>
+    <script src="/components/vendor/nacl-util.min.js"></script>
     <!-- Authentication Module - must load before main script -->
     <script src="/frontend/auth.js"></script>
     <style>
@@ -5619,9 +5619,9 @@ async function handleAppsScriptAnswers(answers) {
         // Send notification
         const notificationKey = `notifyStatus_${parsed.status}`;
         if (state.settings[notificationKey] && state.settings.pushNotificationsEnabled) {
-            sendNotification(
+            sendPushNotification(
                 `✅ ${existingApp.firma}`,
-                `Status geändert: ${oldStatus} → ${parsed.status}`
+                { body: `Status geändert: ${oldStatus} → ${parsed.status}` }
             );
         }
 
