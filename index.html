@@ -1519,58 +1519,42 @@
         </div>
     </div>
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
-        <div class="card-title" style="margin-bottom:1rem;">⚙️ Konfiguration Backups</div>
-        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Automatische Backups bei jeder Änderung. Max. 10 Backups lokal gespeichert.</p>
-        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
-            <button class="btn btn-success btn-sm" onclick="downloadConfigBackups()">⬇️ Alle Config-Backups herunterladen</button>
-            <button class="btn btn-info btn-sm" onclick="showConfigBackups()">📋 Backups anzeigen</button>
-        </div>
-        <div id="configBackupsList" style="display:none;max-height:300px;overflow-y:auto;background:var(--bg-card2);border-radius:8px;padding:1rem;margin-top:1rem;">
-        </div>
-    </div>
-
-    <div class="card" style="max-width:600px;margin-bottom:1rem;">
-        <div class="card-title" style="margin-bottom:1rem;">📦 Daten & Backup</div>
-        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
-            <button class="btn btn-info" onclick="exportJSON()">📥 JSON Backup</button>
-            <button class="btn btn-secondary" onclick="document.getElementById('importInput').click()">📤 JSON Import</button>
-            <button class="btn btn-warning" onclick="exportPDF()">📄 PDF Export</button>
-            <button class="btn btn-danger" onclick="clearAllData()">🗑️ Alles löschen</button>
-        </div>
-    </div>
-
-    <div class="card" style="max-width:600px;margin-bottom:1rem;">
-        <div class="card-title" style="margin-bottom:1rem;">🔐 Sicherung & Export (Cloud)</div>
-        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Sichere deine Daten auf dem Server mit Verschlüsselung und stelle sie wieder her.</p>
-
-        <!-- Export Cards -->
-        <div class="backup-export-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
-            <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem; text-align: center; cursor: pointer;" onclick="BackupManager.exportAs('json')">
-                <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem;">📄 JSON Export</h3>
-                <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Strukturiertes Format</p>
-                <button class="btn btn-primary btn-sm" style="margin-top: 0.5rem;">Download</button>
-            </div>
-            <div style="border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem; text-align: center; cursor: pointer;" onclick="BackupManager.exportAs('csv')">
-                <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem;">📊 CSV Export</h3>
-                <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Spreadsheet Format</p>
-                <button class="btn btn-primary btn-sm" style="margin-top: 0.5rem;">Download</button>
-            </div>
-        </div>
+        <div class="card-title" style="margin-bottom:1rem;">💾 Backup &amp; Wiederherstellung</div>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">
+            ✅ Backups werden bei jeder Änderung automatisch erstellt und serverseitig verschlüsselt gespeichert.
+        </p>
 
         <!-- Backup History -->
-        <div style="margin-bottom: 1.5rem;">
-            <h4 style="margin-bottom: 1rem;">📋 Backup-Verlauf</h4>
-            <div id="backupList" style="min-height: 100px; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
+        <div style="margin-bottom: 1.25rem;">
+            <h4 style="margin-bottom: 0.75rem;">📋 Backup-Verlauf</h4>
+            <div id="backupList" style="min-height: 80px; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
                 <p style="color: var(--text-muted);">Lädt Backups...</p>
             </div>
         </div>
 
         <!-- Import -->
-        <div style="margin-bottom: 1rem;">
-            <h4 style="margin-bottom: 0.5rem;">📥 Backup Importieren</h4>
+        <div>
+            <h4 style="margin-bottom: 0.5rem;">📥 Backup aus Datei importieren</h4>
+            <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:0.5rem;">Für Wiederherstellung aus einer JSON-Datei (z. B. nach Migration).</p>
             <input type="file" id="backupFile" accept=".json" style="margin-bottom: 0.5rem; width: 100%;">
             <button class="btn btn-primary" onclick="BackupManager.importBackup()">Import</button>
         </div>
+    </div>
+
+    <div class="card" style="max-width:600px;margin-bottom:1rem;">
+        <div class="card-title" style="margin-bottom:1rem;">📤 Export für externe Tools</div>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Daten in offenen Formaten herunterladen.</p>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="BackupManager.exportAs('json')">📄 JSON</button>
+            <button class="btn btn-primary" onclick="BackupManager.exportAs('csv')">📊 CSV</button>
+            <button class="btn btn-warning" onclick="exportPDF()">📄 PDF</button>
+        </div>
+    </div>
+
+    <div class="card" style="max-width:600px;margin-bottom:1rem;border:1px solid var(--error,#dc2626);">
+        <div class="card-title" style="margin-bottom:1rem;color:var(--error,#dc2626);">⚠️ Gefahren-Zone</div>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Diese Aktion kann nicht rückgängig gemacht werden. Vorher unbedingt Backup erstellen / herunterladen.</p>
+        <button class="btn btn-danger" onclick="clearAllData()">🗑️ Alle Daten löschen</button>
     </div>
     </div><!-- /settings-section data -->
 
