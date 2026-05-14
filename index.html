@@ -3107,12 +3107,8 @@ async function loadLearnSettings() {
     const statsEl = document.getElementById('learnStats');
     if (!statsEl) return; // Section nicht im DOM
     try {
-        const resp = await Auth.fetch('/jobs/learn-profile', { method: 'GET' });
-        if (!resp.ok) {
-            statsEl.textContent = 'Stats konnten nicht geladen werden.';
-            return;
-        }
-        const s = await resp.json();
+        // Auth.fetch returnt bereits geparsten JSON-Body und wirft bei !ok.
+        const s = await Auth.fetch('/jobs/learn-profile', { method: 'GET' });
 
         const enabledEl = document.getElementById('learnEnabled');
         const minSamplesEl = document.getElementById('learnMinSamples');
@@ -3178,7 +3174,8 @@ function initLearnSettingsHandlers() {
             if (statusEl) statusEl.textContent = 'Speichere…';
 
             try {
-                const resp = await Auth.fetch('/providers/user/settings', {
+                // Auth.fetch returnt geparsten JSON-Body und wirft bei !ok.
+                await Auth.fetch('/providers/user/settings', {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -3187,23 +3184,11 @@ function initLearnSettingsHandlers() {
                         job_learn_weight_pct: weightPct,
                     }),
                 });
-                if (resp.ok) {
-                    if (typeof showToast === 'function') {
-                        showToast('✅ Match-Learning Settings gespeichert', 'success');
-                    }
-                    if (statusEl) statusEl.textContent = '✅ Gespeichert';
-                    loadLearnSettings();
-                } else {
-                    let errMsg = 'unbekannt';
-                    try {
-                        const err = await resp.json();
-                        errMsg = err.error || err.message || JSON.stringify(err);
-                    } catch (_) { errMsg = 'HTTP ' + resp.status; }
-                    if (typeof showToast === 'function') {
-                        showToast('❌ Fehler: ' + errMsg, 'error');
-                    }
-                    if (statusEl) statusEl.textContent = '❌ Fehler: ' + errMsg;
+                if (typeof showToast === 'function') {
+                    showToast('✅ Match-Learning Settings gespeichert', 'success');
                 }
+                if (statusEl) statusEl.textContent = '✅ Gespeichert';
+                loadLearnSettings();
             } catch (e) {
                 const msg = (e && e.message) ? e.message : 'unbekannt';
                 if (typeof showToast === 'function') {
