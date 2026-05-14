@@ -6255,31 +6255,26 @@ async function testSmtpConnection() {
         return;
     }
 
-    updateSmtpStatus('⏳ Teste Verbindung...');
+    updateSmtpStatus(`⏳ Teste SMTP-Login bei ${host}:${port}…`);
 
-    // Save config temporarily
-    await callEmailService('/api/config/save', { key: 'smtp_host', value: host });
-    await callEmailService('/api/config/save', { key: 'smtp_port', value: port });
-    await callEmailService('/api/config/save', { key: 'smtp_user', value: user });
-    await callEmailService('/api/config/save', { key: 'smtp_pass', value: pass });
+    // Echter SMTP-Login-Versuch via Email-Service (kein Mail-Versand, nur AUTH).
+    // /api/credentials/test macht server.login() + server.quit() — schlägt
+    // bei falschem Passwort sofort mit 535 fehl, statt das erst beim
+    // Test-Email-Senden sichtbar zu werden.
+    const result = await callEmailService('/api/credentials/test', {
+        service: 'smtp',
+        host, port, user,
+        password: pass,
+    });
 
-    // Wait a moment, then check service status
-    setTimeout(async () => {
-        try {
-            const response = await fetch(EMAIL_SERVICE_URL + '/api/status');
-            const status = await response.json();
-            if (status.smtp_configured) {
-                updateSmtpStatus('✅ SMTP verbunden und konfiguriert');
-                showToast('SMTP-Verbindung erfolgreich!', 'success');
-            } else {
-                updateSmtpStatus('❌ SMTP nicht konfiguriert');
-                showToast('SMTP-Konfiguration erforderlich', 'warning');
-            }
-        } catch (e) {
-            updateSmtpStatus('❌ Email Service nicht erreichbar');
-            showToast('Email Service läuft nicht', 'error');
-        }
-    }, 500);
+    if (result.status === 'ok') {
+        updateSmtpStatus('✅ SMTP-Login erfolgreich');
+        showToast('SMTP-Authentifizierung OK!', 'success');
+    } else {
+        const errMsg = result.message || 'Unbekannter Fehler';
+        updateSmtpStatus('❌ ' + errMsg);
+        showToast('SMTP-Test fehlgeschlagen: ' + errMsg, 'error');
+    }
 }
 
 async function sendTestEmail() {
