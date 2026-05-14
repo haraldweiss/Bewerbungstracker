@@ -399,6 +399,14 @@ def import_match(user, match_id: int):
     m.imported_application_id = application.id
     db.session.commit()
 
+    # Adaptive Learning: Centroid update nach commit (analog zum PATCH-Endpoint).
+    # Lässt den Lern-Mechanismus auch beim regulären Import-Flow greifen.
+    from services.job_matching.learner import update_centroid_for_feedback
+    try:
+        update_centroid_for_feedback(user, m)
+    except Exception as e:
+        current_app.logger.warning('Centroid update failed: %s', e)
+
     return jsonify({"application_id": application.id}), 201
 
 

@@ -64,17 +64,23 @@ def update_centroid_for_feedback(user, match) -> None:
 
     profile = _load_profile(user.id)
     if profile is None:
-        profile = UserLearnProfile(user_id=user.id)
+        # Frisches Profil: Defaults (default=0) werden erst beim flush angewendet,
+        # daher explizit setzen, sonst crasht das `+= 1` weiter unten auf None.
+        profile = UserLearnProfile(
+            user_id=user.id,
+            samples_imported=0,
+            samples_dismissed=0,
+        )
         db.session.add(profile)
 
     if match.status == 'imported':
-        new_centroid = _incremental_mean(profile.imported_centroid, profile.samples_imported, vec)
+        new_centroid = _incremental_mean(profile.imported_centroid, profile.samples_imported or 0, vec)
         profile.imported_centroid = vector_pack(new_centroid)
-        profile.samples_imported += 1
+        profile.samples_imported = (profile.samples_imported or 0) + 1
     else:
-        new_centroid = _incremental_mean(profile.dismissed_centroid, profile.samples_dismissed, vec)
+        new_centroid = _incremental_mean(profile.dismissed_centroid, profile.samples_dismissed or 0, vec)
         profile.dismissed_centroid = vector_pack(new_centroid)
-        profile.samples_dismissed += 1
+        profile.samples_dismissed = (profile.samples_dismissed or 0) + 1
 
     if match.feedback_reasons:
         try:
