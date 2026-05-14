@@ -298,8 +298,8 @@ def update_match(user, match_id: int):
         return jsonify({"error": "Forbidden"}), 403
     data = request.get_json() or {}
     new_status = data.get("status")
-    if new_status not in ('seen', 'dismissed', 'new'):
-        return jsonify({"error": "status muss 'seen'|'dismissed'|'new' sein"}), 400
+    if new_status not in ('unbewertet', 'dismissed', 'new'):
+        return jsonify({"error": "status muss 'unbewertet'|'dismissed'|'new' sein"}), 400
     m.status = new_status
     db.session.commit()
     return jsonify({"id": m.id, "status": m.status}), 200
@@ -512,8 +512,8 @@ def update_match_bulk(user):
 
     if not isinstance(ids, list) or not ids:
         return jsonify({"error": "match_ids muss nicht-leere Liste sein"}), 400
-    if new_status not in ('seen', 'dismissed'):
-        return jsonify({"error": "status muss 'seen' oder 'dismissed' sein"}), 400
+    if new_status not in ('unbewertet', 'dismissed'):
+        return jsonify({"error": "status muss 'unbewertet' oder 'dismissed' sein"}), 400
 
     matches = JobMatch.query.filter(JobMatch.id.in_(ids)).all()
     found_ids = {m.id for m in matches}

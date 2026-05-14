@@ -377,7 +377,7 @@ def test_update_match_other_user_forbidden(client, auth_header, user_factory):
     m = JobMatch(raw_job_id=raw.id, user_id=other_user.id, status='new')
     db.session.add(m); db.session.commit()
 
-    r = client.patch(f"/api/jobs/matches/{m.id}", json={"status": "seen"}, headers=headers)
+    r = client.patch(f"/api/jobs/matches/{m.id}", json={"status": "unbewertet"}, headers=headers)
     assert r.status_code == 403
 
 
@@ -751,7 +751,7 @@ def test_bulk_status_update_skips_other_users_matches(client, app, user_factory,
     db.session.add_all([m_mine, m_other]); db.session.commit()
 
     r = client.patch("/api/jobs/matches/bulk",
-                     json={"match_ids": [m_mine.id, m_other.id], "status": "seen"},
+                     json={"match_ids": [m_mine.id, m_other.id], "status": "unbewertet"},
                      headers=headers)
     assert r.status_code == 200
     body = r.get_json()
@@ -760,7 +760,7 @@ def test_bulk_status_update_skips_other_users_matches(client, app, user_factory,
 
     db.session.refresh(m_mine)
     db.session.refresh(m_other)
-    assert m_mine.status == "seen"
+    assert m_mine.status == "unbewertet"
     assert m_other.status == "new"
 
 
@@ -770,7 +770,7 @@ def test_bulk_status_validates_input(client, app, auth_header):
     assert r.status_code == 400
 
     r = client.patch("/api/jobs/matches/bulk",
-                     json={"match_ids": [], "status": "seen"}, headers=headers)
+                     json={"match_ids": [], "status": "unbewertet"}, headers=headers)
     assert r.status_code == 400
 
     r = client.patch("/api/jobs/matches/bulk",
