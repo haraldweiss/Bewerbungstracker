@@ -2558,17 +2558,13 @@ async function loadFromStorage() {
             throw new Error('No applications in API response');
         }
 
-        // Settings + CV aus DB laden – DB ist Source-of-Truth, localStorage
-        // wird mit den Werten aus der DB überschrieben (read-through Cache).
-        await loadProfileFromDB();
     } catch(e) {
-        console.error('❌ loadFromStorage() failed:', {
+        console.error('❌ loadFromStorage() applications-load failed:', {
             message: e.message,
             stack: e.stack,
             name: e.name
         });
-        console.warn('⚠️ Database unavailable, loading from localStorage...');
-        // Fallback to localStorage if Database is not available
+        console.warn('⚠️ Applications fallback to localStorage...');
         try {
             const saved = localStorage.getItem('bewerbungsTrackerV3');
             if (saved) {
@@ -2582,6 +2578,16 @@ async function loadFromStorage() {
         } catch(err) {
             console.error('❌ localStorage load error:', err);
         }
+    }
+
+    // Settings + CV aus DB laden – DB ist Source-of-Truth.
+    // Bewusst AUSSERHALB des Applications-try/catch: ein Failure im
+    // Applications-Endpoint darf nicht dazu führen, dass Settings nie
+    // geladen werden (führte zu "Settings nach Re-Login leer"-Bug).
+    try {
+        await loadProfileFromDB();
+    } catch (e) {
+        console.warn('⚠️ loadProfileFromDB failed:', e.message);
     }
 }
 
