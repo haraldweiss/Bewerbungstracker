@@ -2451,6 +2451,11 @@ async function init() {
     renderAppsScriptCode();
     updateConnectionStatus();
 
+    // SMTP- und Email-Monitoring-Status aus email_config.db laden, damit
+    // Checkbox + Felder den persistierten Stand zeigen (statt leer nach Login).
+    loadSMTPSettings();
+    loadEmailMonitoringSettings();
+
     // Benachrichtigungen initialisieren
     if (state.settings.pushNotificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
         console.log('Push-Benachrichtigungen aktiv');
@@ -6176,11 +6181,38 @@ async function loadSMTPSettings() {
             callEmailService('/api/config/get', { key: 'smtp_port' })
         ]);
 
-        if (userResult?.value) document.getElementById('smtpUser').value = userResult.value;
-        if (hostResult?.value) document.getElementById('smtpHost').value = hostResult.value;
-        if (portResult?.value) document.getElementById('smtpPort').value = portResult.value;
+        const userEl = document.getElementById('smtpUser');
+        const hostEl = document.getElementById('smtpHost');
+        const portEl = document.getElementById('smtpPort');
+        if (userResult?.value && userEl) userEl.value = userResult.value;
+        if (hostResult?.value && hostEl) hostEl.value = hostResult.value;
+        if (portResult?.value && portEl) portEl.value = portResult.value;
+
+        // Hat User SMTP konfiguriert? → Checkbox aktiv + Settings-Panel ausklappen.
+        // Vorher: Checkbox immer unchecked nach Login, SMTP-Felder hidden — User
+        // dachte "alles weg" obwohl die Werte serverseitig persistent waren.
+        const hasConfig = !!(userResult?.value && hostResult?.value && portResult?.value);
+        const checkbox = document.getElementById('smtpEnabled');
+        const settingsPanel = document.getElementById('smtpSettings');
+        if (hasConfig && checkbox && !checkbox.checked) {
+            checkbox.checked = true;
+            if (settingsPanel) settingsPanel.style.display = 'block';
+        }
     } catch (error) {
         console.error('Error loading SMTP settings:', error);
+    }
+}
+
+// Beim Login einmalig aufrufen, damit Checkbox + Felder den persistierten
+// SMTP-Status zeigen statt initialem "unchecked + leer".
+async function loadEmailMonitoringSettings() {
+    try {
+        const r = await callEmailService('/api/config/get', { key: 'email_monitoring_enabled' });
+        const enabled = (r?.value === 'true' || r?.value === true);
+        const cb = document.getElementById('emailMonitoringEnabled');
+        if (cb && enabled && !cb.checked) cb.checked = true;
+    } catch (e) {
+        console.error('Error loading email monitoring settings:', e);
     }
 }
 
@@ -6209,10 +6241,15 @@ async function saveSMTPSettings() {
         return;
     }
 
-    // Also save non-sensitive parts to Email Service for reference
+    // Save ALL parts to Email Service so /api/email/* endpoints können wirklich versenden.
+    // Vorher fehlte smtp_pass → Server hatte altes Passwort → 535 Auth failed.
+    // Hinweis: Passwort liegt plain in email_config.db (Legacy-Pfad). Server-side
+    // Encryption mit ENCRYPTION_KEY ist disabled. Defense-in-Depth: bewusst akzeptiert
+    // bis Refactor auf Envelope-Encryption.
     await callEmailService('/api/config/save', { key: 'smtp_host', value: host });
     await callEmailService('/api/config/save', { key: 'smtp_port', value: port });
     await callEmailService('/api/config/save', { key: 'smtp_user', value: user });
+    await callEmailService('/api/config/save', { key: 'smtp_pass', value: pass });
 
     // Save email summary settings
     await callEmailService('/api/config/save', { key: 'summary_enabled', value: 'true' });
