@@ -52,6 +52,12 @@ class User(db.Model):
     job_reject_filter_enabled = db.Column(db.Boolean, default=True, nullable=False)
     job_reject_window_days = db.Column(db.Integer, default=180, nullable=False)
 
+    # Adaptive-Learning Settings: pro User konfigurierbar.
+    # weight_pct als Int (0-100) um float-Migration zu vermeiden.
+    job_learn_enabled = db.Column(db.Boolean, default=True, nullable=False)
+    job_learn_min_samples = db.Column(db.Integer, default=3, nullable=False)
+    job_learn_weight_pct = db.Column(db.Integer, default=30, nullable=False)
+
     # AI Provider Settings (Phase B)
     ai_provider = db.Column(db.String(50), default='claude', nullable=False)  # 'claude', 'ollama', 'openai', etc.
     ai_provider_model = db.Column(db.String(255))  # Spezifisches Model für Job-Matching
@@ -385,6 +391,43 @@ class RawJob(db.Model):
         return f'<RawJob {self.id} {self.title[:30]}>'
 
 
+class JobEmbedding(db.Model):
+    """768-dim nomic-embed-text Vektor für RawJob (BLOB als float32-packed)."""
+    __tablename__ = 'job_embeddings'
+
+    raw_job_id = db.Column(db.Integer, db.ForeignKey('raw_jobs.id'), primary_key=True)
+    vector = db.Column(db.LargeBinary, nullable=False)
+    model = db.Column(db.String(64), default='nomic-embed-text', nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    raw_job = db.relationship('RawJob', backref=db.backref('embedding', uselist=False))
+
+    def __repr__(self):
+        return f'<JobEmbedding raw_job_id={self.raw_job_id}>'
+
+
+class UserLearnProfile(db.Model):
+    """Pro-User Lern-Profil: Centroids + Sample-Counts.
+
+    Centroids werden inkrementell aktualisiert beim Feedback-Event.
+    reason_counts: JSON-Dict {reason_key: count}.
+    """
+    __tablename__ = 'user_learn_profiles'
+
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), primary_key=True)
+    imported_centroid = db.Column(db.LargeBinary, nullable=True)
+    dismissed_centroid = db.Column(db.LargeBinary, nullable=True)
+    samples_imported = db.Column(db.Integer, default=0, nullable=False)
+    samples_dismissed = db.Column(db.Integer, default=0, nullable=False)
+    reason_counts = db.Column(db.Text, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('learn_profile', uselist=False))
+
+    def __repr__(self):
+        return f'<UserLearnProfile user_id={self.user_id} imp={self.samples_imported} dis={self.samples_dismissed}>'
+
+
 class JobMatch(db.Model):
     """Per-User-Bewertung eines RawJob.
 
@@ -414,6 +457,10 @@ class JobMatch(db.Model):
     # Heuristisches Flag für verdächtige Matches: comma-separierte Tags wie
     # "input_injection,score_jump". NULL = unauffällig.
     suspicious_reasons = db.Column(db.Text, nullable=True)
+    # User-Feedback beim dismiss/import: strukturierte Reasons (JSON-Array)
+    # und optionaler Freitext. Genutzt vom Adaptive-Learning-Modul.
+    feedback_reasons = db.Column(db.Text, nullable=True)
+    feedback_text = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -146,3 +146,28 @@ def test_api_call_has_key_owner_default(app, user_factory):
     )
     db.session.add(call); db.session.commit()
     assert call.key_owner == 'server'
+
+
+def test_jobmatch_feedback_fields_persist(app, user_factory):
+    """Adaptive-Learning: JobMatch persistiert strukturierte Feedback-Reasons
+    (JSON-Array) + optionalen Freitext. Wird vom Lern-Modul gelesen."""
+    from models import JobMatch
+    user = user_factory()
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="fb1", title="t",
+                 url="http://x", crawl_status="raw")
+    db.session.add(raw); db.session.flush()
+
+    m = JobMatch(
+        raw_job_id=raw.id,
+        user_id=user.id,
+        status='dismissed',
+        feedback_reasons='["salary_too_low","wrong_location"]',
+        feedback_text='Zu weit weg',
+    )
+    db.session.add(m)
+    db.session.commit()
+    db.session.refresh(m)
+    assert m.feedback_reasons == '["salary_too_low","wrong_location"]'
+    assert m.feedback_text == 'Zu weit weg'
