@@ -6942,8 +6942,9 @@ const BackupManager = {
 
     async loadBackups() {
         try {
-            const data = await this.backupClient.listBackups();
-            this.displayBackups(data.backups || []);
+            // listBackups() returnt bereits das Array (data.backups || [])
+            const backups = await this.backupClient.listBackups();
+            this.displayBackups(backups);
         } catch (error) {
             console.error('Failed to load backups:', error);
             const el = document.getElementById('backupList');

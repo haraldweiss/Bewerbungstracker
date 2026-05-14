@@ -15,10 +15,10 @@ class BackupClient {
      * @returns {Promise<Array>} Array of backup objects with version, created_at, type, summary
      */
     async listBackups() {
-        const data = await Auth.fetch(`${this.baseUrl}/list`, {
+        // Auth.fetch fügt /api selbst hinzu → endpoint ohne /api
+        const data = await Auth.fetch('/backup/list', {
             method: 'GET'
         });
-        // Auth.fetch already parses JSON and throws on errors
         return data.backups || [];
     }
 
