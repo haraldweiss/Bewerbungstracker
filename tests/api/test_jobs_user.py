@@ -988,3 +988,22 @@ def test_patch_match_feedback_text_too_long_rejected(client, auth_header):
         headers=headers,
     )
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# GET /api/jobs/learn-profile (Adaptive Learning Stats)
+# ---------------------------------------------------------------------------
+
+def test_get_learn_profile_empty_user(client, auth_header):
+    """Neuer User ohne Feedback → enabled=True, samples=0, active=False."""
+    headers, user = auth_header
+    resp = client.get('/api/jobs/learn-profile', headers=headers)
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['enabled'] is True
+    assert data['samples_imported'] == 0
+    assert data['samples_dismissed'] == 0
+    assert data['active'] is False
+    assert data['top_reasons'] == []
+    assert data['min_samples'] == 3
+    assert data['weight_pct'] == 30

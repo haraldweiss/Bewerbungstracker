@@ -336,6 +336,14 @@ def update_match(user, match_id: int):
     return jsonify({"id": m.id, "status": m.status}), 200
 
 
+@jobs_user_bp.get('/learn-profile')
+@token_required
+def get_learn_profile(user):
+    """Returns Adaptive-Learning Stats des User: samples, top reasons, active status."""
+    from services.job_matching.learner import get_learn_profile_stats
+    return jsonify(get_learn_profile_stats(user)), 200
+
+
 @jobs_user_bp.post('/matches/<int:match_id>/import')
 @token_required
 def import_match(user, match_id: int):
