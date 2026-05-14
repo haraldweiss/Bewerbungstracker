@@ -846,3 +846,73 @@ def test_import_skips_claude_when_budget_exhausted_but_creates_application(
     db.session.refresh(m)
     assert m.match_score is None  # nicht bewertet
     assert m.status == "imported"  # Import trotzdem erfolgreich
+
+
+# ---------------------------------------------------------------------------
+# 'unbewertet' Status Tests
+# ---------------------------------------------------------------------------
+
+def test_update_job_match_to_unbewertet(client, user_factory, auth_header):
+    """PATCH /matches/<id>: Update Match zu 'unbewertet' Status."""
+    headers, user = auth_header
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="ub1", title="Job", url="https://j/1", crawl_status='matched')
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    db.session.add(m); db.session.commit()
+
+    r = client.patch(f"/api/jobs/matches/{m.id}", json={"status": "unbewertet"}, headers=headers)
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["status"] == "unbewertet"
+
+    db.session.refresh(m)
+    assert m.status == "unbewertet"
+
+
+def test_reject_invalid_status(client, auth_header):
+    """PATCH /matches/<id>: 'seen' Status wird abgelehnt → 400."""
+    headers, user = auth_header
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="inv1", title="Job", url="https://j/1", crawl_status='matched')
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    db.session.add(m); db.session.commit()
+
+    r = client.patch(f"/api/jobs/matches/{m.id}", json={"status": "seen"}, headers=headers)
+    assert r.status_code == 400
+    error = r.get_json()
+    assert "error" in error
+    assert "status" in error["error"].lower()
+
+
+def test_default_filter_includes_unbewertet(client, auth_header):
+    """GET /matches: Default Filter ohne status-Parameter → ['new', 'unbewertet']."""
+    headers, user = auth_header
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+
+    # Create 3 matches: new, unbewertet, dismissed
+    raw_new = RawJob(source_id=src.id, external_id="dn1", title="New Job", url="https://j/1", crawl_status='matched')
+    raw_ub = RawJob(source_id=src.id, external_id="dn2", title="Unbewertet Job", url="https://j/2", crawl_status='matched')
+    raw_dis = RawJob(source_id=src.id, external_id="dn3", title="Dismissed Job", url="https://j/3", crawl_status='matched')
+    db.session.add_all([raw_new, raw_ub, raw_dis]); db.session.flush()
+
+    m_new = JobMatch(raw_job_id=raw_new.id, user_id=user.id, status='new', prefilter_score=70)
+    m_ub = JobMatch(raw_job_id=raw_ub.id, user_id=user.id, status='unbewertet', prefilter_score=70)
+    m_dis = JobMatch(raw_job_id=raw_dis.id, user_id=user.id, status='dismissed', prefilter_score=70)
+    db.session.add_all([m_new, m_ub, m_dis]); db.session.commit()
+
+    # GET without status parameter
+    r = client.get("/api/jobs/matches", headers=headers)
+    assert r.status_code == 200
+    body = r.get_json()
+    assert len(body["matches"]) == 2
+
+    # Verify both 'new' and 'unbewertet' are included
+    statuses = {m["status"] for m in body["matches"]}
+    assert 'new' in statuses
+    assert 'unbewertet' in statuses
+    assert 'dismissed' not in statuses
