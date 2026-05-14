@@ -1180,6 +1180,42 @@
         <div id="jdFiltersStatus" style="margin-top:0.5rem;font-size:0.85em;color:var(--text-muted)"></div>
     </div>
 
+    <!-- ═══ MATCH-LEARNING (Adaptive Job-Bewertung) ═══ -->
+    <div class="card" style="max-width:600px;margin-bottom:1rem;" id="learnSettings">
+        <div class="card-title" style="margin-bottom:0.75rem;">🧠 Match-Learning (Adaptiv)</div>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem">
+            Lernt aus deinen Importen und Dismiss-Aktionen und passt zukünftige Match-Scores entsprechend an.
+        </p>
+        <div class="form-group" style="margin-bottom:0.75rem">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+                <input type="checkbox" id="learnEnabled" style="width:18px;height:18px">
+                <span>Adaptives Lernen aktiviert</span>
+            </label>
+        </div>
+        <div class="form-group" style="margin-bottom:0.75rem">
+            <label>Min. Samples bis aktiv</label>
+            <input type="number" id="learnMinSamples" min="1" max="100" value="3" style="width:90px;padding:0.3rem 0.5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text)">
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem">
+                Erst ab dieser Anzahl bewerteter Jobs wird das Lernen aktiv (Cold-Start-Schutz).
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0.75rem">
+            <label>Lern-Gewichtung</label>
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.3rem">
+                <input type="range" id="learnWeightPct" min="0" max="100" step="5" value="30" style="vertical-align:middle;flex:1;max-width:300px">
+                <span id="learnWeightLabel" style="min-width:3em;font-weight:600;">30%</span>
+            </div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem">
+                Wie stark gelernte Präferenzen den Basis-Score beeinflussen (0 = nur Basis, 100 = nur gelernt).
+            </div>
+        </div>
+        <div id="learnStats" style="margin-top:0.75rem;margin-bottom:0.75rem;font-size:0.85rem;color:var(--text-muted);padding:0.6rem;background:var(--bg-card2);border-radius:6px;">
+            Lade Stats…
+        </div>
+        <button class="btn btn-primary" id="saveLearnSettings">💾 Match-Learning speichern</button>
+        <div id="learnSaveStatus" style="margin-top:0.5rem;font-size:0.85em;color:var(--text-muted)"></div>
+    </div>
+
     <div class="card" style="max-width:800px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:0.75rem;">📡 Job-Quellen</div>
         <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem">
@@ -2960,6 +2996,8 @@ function showView(name) {
         loadJobDiscoveryFilters();
         if (typeof JdSourcesUI !== 'undefined') JdSourcesUI.refresh();
         initSettingsSection();
+        if (typeof initLearnSettingsHandlers === 'function') initLearnSettingsHandlers();
+        if (typeof loadLearnSettings === 'function') loadLearnSettings();
     }
 }
 
@@ -3075,6 +3113,122 @@ async function saveJobDiscoveryFilters() {
         }
     } catch (e) {
         alert('❌ Fehler beim Speichern: ' + (e && e.message ? e.message : 'unbekannt'));
+    }
+}
+
+/* ═══════════════════════════════════════════════════════
+   MATCH-LEARNING (Adaptive Job-Bewertung)
+═══════════════════════════════════════════════════════ */
+async function loadLearnSettings() {
+    const statsEl = document.getElementById('learnStats');
+    if (!statsEl) return; // Section nicht im DOM
+    try {
+        const resp = await Auth.fetch('/jobs/learn-profile', { method: 'GET' });
+        if (!resp.ok) {
+            statsEl.textContent = 'Stats konnten nicht geladen werden.';
+            return;
+        }
+        const s = await resp.json();
+
+        const enabledEl = document.getElementById('learnEnabled');
+        const minSamplesEl = document.getElementById('learnMinSamples');
+        const weightEl = document.getElementById('learnWeightPct');
+        const weightLabel = document.getElementById('learnWeightLabel');
+
+        if (enabledEl) enabledEl.checked = s.enabled !== false;
+        if (minSamplesEl) minSamplesEl.value = (s.min_samples != null ? s.min_samples : 3);
+        const weight = (s.weight_pct != null ? s.weight_pct : 30);
+        if (weightEl) weightEl.value = weight;
+        if (weightLabel) weightLabel.textContent = weight + '%';
+
+        const imported = s.samples_imported != null ? s.samples_imported : 0;
+        const dismissed = s.samples_dismissed != null ? s.samples_dismissed : 0;
+        const reasonsText = Array.isArray(s.top_reasons) && s.top_reasons.length
+            ? s.top_reasons.map(r => `${r.label || r.reason} (${r.count}×)`).join(', ')
+            : 'keine';
+        const activeLabel = s.active
+            ? '✅ aktiv'
+            : `⏳ cold-start (zu wenig Samples, min. ${s.min_samples != null ? s.min_samples : 3})`;
+
+        // Sichere DOM-Konstruktion (kein innerHTML mit externen Daten)
+        statsEl.textContent = '';
+        const mkRow = (label, value) => {
+            const div = document.createElement('div');
+            const strong = document.createElement('strong');
+            strong.textContent = label + ' ';
+            div.appendChild(strong);
+            div.appendChild(document.createTextNode(value));
+            return div;
+        };
+        statsEl.appendChild(mkRow('Status:', activeLabel));
+        statsEl.appendChild(mkRow('Samples:', `${imported} imported, ${dismissed} dismissed`));
+        statsEl.appendChild(mkRow('Top-Gründe:', reasonsText));
+    } catch (e) {
+        console.error('loadLearnSettings failed', e);
+        statsEl.textContent = 'Stats konnten nicht geladen werden: ' + (e && e.message ? e.message : 'unbekannt');
+    }
+}
+
+function initLearnSettingsHandlers() {
+    const weightSlider = document.getElementById('learnWeightPct');
+    const weightLabel = document.getElementById('learnWeightLabel');
+    if (weightSlider && weightLabel && !weightSlider.dataset.bound) {
+        weightSlider.addEventListener('input', (e) => {
+            weightLabel.textContent = e.target.value + '%';
+        });
+        weightSlider.dataset.bound = '1';
+    }
+
+    const saveBtn = document.getElementById('saveLearnSettings');
+    if (saveBtn && !saveBtn.dataset.bound) {
+        saveBtn.addEventListener('click', async () => {
+            const enabled = document.getElementById('learnEnabled').checked;
+            let minSamples = parseInt(document.getElementById('learnMinSamples').value, 10);
+            let weightPct = parseInt(document.getElementById('learnWeightPct').value, 10);
+            if (!Number.isFinite(minSamples) || minSamples < 1) minSamples = 1;
+            if (minSamples > 100) minSamples = 100;
+            if (!Number.isFinite(weightPct) || weightPct < 0) weightPct = 0;
+            if (weightPct > 100) weightPct = 100;
+
+            const statusEl = document.getElementById('learnSaveStatus');
+            if (statusEl) statusEl.textContent = 'Speichere…';
+
+            try {
+                const resp = await Auth.fetch('/providers/user/settings', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        job_learn_enabled: enabled,
+                        job_learn_min_samples: minSamples,
+                        job_learn_weight_pct: weightPct,
+                    }),
+                });
+                if (resp.ok) {
+                    if (typeof showToast === 'function') {
+                        showToast('✅ Match-Learning Settings gespeichert', 'success');
+                    }
+                    if (statusEl) statusEl.textContent = '✅ Gespeichert';
+                    loadLearnSettings();
+                } else {
+                    let errMsg = 'unbekannt';
+                    try {
+                        const err = await resp.json();
+                        errMsg = err.error || err.message || JSON.stringify(err);
+                    } catch (_) { errMsg = 'HTTP ' + resp.status; }
+                    if (typeof showToast === 'function') {
+                        showToast('❌ Fehler: ' + errMsg, 'error');
+                    }
+                    if (statusEl) statusEl.textContent = '❌ Fehler: ' + errMsg;
+                }
+            } catch (e) {
+                const msg = (e && e.message) ? e.message : 'unbekannt';
+                if (typeof showToast === 'function') {
+                    showToast('❌ Fehler: ' + msg, 'error');
+                }
+                if (statusEl) statusEl.textContent = '❌ Fehler: ' + msg;
+            }
+        });
+        saveBtn.dataset.bound = '1';
     }
 }
 
@@ -7735,6 +7889,10 @@ function showSettingsSection(name) {
     if (name === 'ai') {
         loadFeatureOverrides();
         loadBackupSettings();
+    }
+    if (name === 'jobs') {
+        if (typeof initLearnSettingsHandlers === 'function') initLearnSettingsHandlers();
+        if (typeof loadLearnSettings === 'function') loadLearnSettings();
     }
 }
 
