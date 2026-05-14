@@ -24,18 +24,39 @@ def _safe_auto_backup(user) -> None:
 
     Blockiert den Request NICHT. Bei KeyCache-Miss wird Backup übersprungen
     (DEK wird beim nächsten Login neu geladen).
+
+    Wichtig: Flask's `current_app` und `db.session` sind an den Request-Context
+    gebunden. Im Background-Thread müssen wir die App-Referenz explizit kapseln
+    und einen eigenen `app.app_context()` öffnen — sonst wirft jeder DB-Query
+    oder Logger-Aufruf `RuntimeError: Working outside of application context`.
     """
+    app = current_app._get_current_object()
+
+    # Im Test-Modus den Thread überspringen — sonst stört die parallel laufende
+    # BackupService-Session die Test-Requests (ObjectDeletedError).
+    if app.config.get('TESTING'):
+        return
+
+    user_id = user.id
+
     def _do_backup():
-        try:
-            BackupService.create_backup(user, backup_type='automatic')
-        except BackupKeyUnavailable:
-            current_app.logger.warning(
-                "Auto-Backup übersprungen für user=%s – DEK nicht gecached", user.id
-            )
-        except Exception as e:
-            current_app.logger.error(
-                "Auto-Backup Fehler für user=%s: %s", user.id, str(e)
-            )
+        with app.app_context():
+            try:
+                # User im neuen Context frisch laden — der vom Request-Thread
+                # detached User wäre an die alte Session gebunden.
+                fresh_user = db.session.get(type(user), user_id)
+                if fresh_user is None:
+                    app.logger.warning("Auto-Backup: user=%s not found", user_id)
+                    return
+                BackupService.create_backup(fresh_user, backup_type='automatic')
+            except BackupKeyUnavailable:
+                app.logger.warning(
+                    "Auto-Backup übersprungen für user=%s – DEK nicht gecached", user_id
+                )
+            except Exception as e:
+                app.logger.error(
+                    "Auto-Backup Fehler für user=%s: %s", user_id, str(e)
+                )
 
     thread = threading.Thread(target=_do_backup, daemon=True)
     thread.start()
