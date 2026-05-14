@@ -163,6 +163,24 @@ def update_user_provider_settings(user):
         user.ai_provider = provider
         user.ai_provider_model = model
 
+    # Adaptive-Learning Settings (optional, unabhängig von provider/backup)
+    if 'job_learn_enabled' in data:
+        if not isinstance(data['job_learn_enabled'], bool):
+            return {'error': 'job_learn_enabled muss bool sein'}, 400
+        user.job_learn_enabled = data['job_learn_enabled']
+
+    if 'job_learn_min_samples' in data:
+        v = data['job_learn_min_samples']
+        if not isinstance(v, int) or isinstance(v, bool) or v < 1 or v > 100:
+            return {'error': 'job_learn_min_samples muss int 1-100 sein'}, 400
+        user.job_learn_min_samples = v
+
+    if 'job_learn_weight_pct' in data:
+        v = data['job_learn_weight_pct']
+        if not isinstance(v, int) or isinstance(v, bool) or v < 0 or v > 100:
+            return {'error': 'job_learn_weight_pct muss int 0-100 sein'}, 400
+        user.job_learn_weight_pct = v
+
     # Backup (optional, unabhängig vom primary update)
     if has_backup:
         backup_provider = data.get('backup_provider')

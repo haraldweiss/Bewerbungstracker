@@ -112,3 +112,48 @@ def test_patch_primary_only_does_not_touch_backup(client, user_factory):
     # Backup bleibt erhalten
     assert body['backup_provider'] == 'ollama'
     assert body['backup_model'] == 'qwen3-coder:30b'
+
+
+# --- Adaptive-Learning Settings (Task 9) -----------------------------------
+
+def test_patch_settings_updates_learn_fields(client, user_factory):
+    """Settings-PATCH speichert Adaptive-Learning Felder."""
+    headers, user = _auth(user_factory)
+    resp = client.patch(
+        '/api/providers/user/settings',
+        json={
+            "job_learn_enabled": False,
+            "job_learn_min_samples": 5,
+            "job_learn_weight_pct": 50,
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    from models import User
+    from database import db
+    updated = db.session.query(User).get(user.id)
+    assert updated.job_learn_enabled is False
+    assert updated.job_learn_min_samples == 5
+    assert updated.job_learn_weight_pct == 50
+
+
+def test_patch_settings_validates_weight_pct(client, user_factory):
+    """weight_pct > 100 → 400."""
+    headers, _ = _auth(user_factory)
+    resp = client.patch(
+        '/api/providers/user/settings',
+        json={"job_learn_weight_pct": 150},
+        headers=headers,
+    )
+    assert resp.status_code == 400
+
+
+def test_patch_settings_validates_min_samples(client, user_factory):
+    """min_samples = 0 → 400."""
+    headers, _ = _auth(user_factory)
+    resp = client.patch(
+        '/api/providers/user/settings',
+        json={"job_learn_min_samples": 0},
+        headers=headers,
+    )
+    assert resp.status_code == 400
