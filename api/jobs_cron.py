@@ -24,6 +24,7 @@ from services.job_matching.claude_matcher import (
 from services.job_matching.injection_detector import (
     detect_injection_patterns, has_suspicious_score_jump,
 )
+from services.job_matching.embedder import embed_raw_job
 from services.provider_service import ProviderFactory, ProviderConfig
 from services.job_matching.notifier import send_match_notification
 from services.encryption_service import EncryptionService
@@ -260,6 +261,11 @@ def prefilter():
             ctx_cache[match.user_id],
         )
         match.prefilter_score = score
+        # Best-Effort Embedding (Ollama up → JobEmbedding wird befüllt)
+        try:
+            embed_raw_job(raw)
+        except Exception:
+            pass  # Embedding ist optional, prefilter funktioniert auch ohne
         if score < PREFILTER_DISMISS_THRESHOLD:
             match.status = 'dismissed'
             dismissed += 1

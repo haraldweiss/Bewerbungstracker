@@ -129,6 +129,53 @@ def test_prefilter_dismisses_low_scores(app, client, user_factory):
     assert m.status == 'dismissed'
 
 
+def test_prefilter_calls_embed_raw_job(app, client, user_factory):
+    """Verifiziert dass prefilter best-effort embed_raw_job aufruft."""
+    user = user_factory(
+        job_discovery_enabled=True,
+        cv_data_json=json.dumps({"cv": {"skills": ["react"]}}),
+    )
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="1",
+                 title="React Developer", description="React, TS",
+                 url="https://example.com/1", crawl_status='raw')
+    db.session.add(raw); db.session.flush()
+    db.session.add(JobMatch(raw_job_id=raw.id, user_id=user.id, status='new'))
+    db.session.commit()
+
+    with patch('api.jobs_cron.embed_raw_job') as mock_embed:
+        mock_embed.return_value = True
+        r = client.post("/api/jobs/prefilter", headers={"X-Cron-Token": "test-token"})
+        assert r.status_code == 200
+        mock_embed.assert_called_once()
+
+
+def test_prefilter_resilient_to_embed_failure(app, client, user_factory):
+    """Verifiziert dass prefilter weiterläuft wenn embed_raw_job exception wirft."""
+    user = user_factory(
+        job_discovery_enabled=True,
+        cv_data_json=json.dumps({"cv": {"skills": ["react", "typescript"]}}),
+    )
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="1",
+                 title="Senior React Developer", description="React, TypeScript",
+                 url="https://example.com/1", crawl_status='raw')
+    db.session.add(raw); db.session.flush()
+    db.session.add(JobMatch(raw_job_id=raw.id, user_id=user.id, status='new'))
+    db.session.commit()
+
+    with patch('api.jobs_cron.embed_raw_job', side_effect=RuntimeError("ollama down")):
+        r = client.post("/api/jobs/prefilter", headers={"X-Cron-Token": "test-token"})
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["scored"] == 1
+
+    m = JobMatch.query.first()
+    assert m.prefilter_score is not None
+
+
 def test_claude_match_scores_top_n_per_user(app, client, user_factory):
     """Cron-Endpoint /claude-match bewertet die Top-N (per job_claude_budget_per_tick).
 
