@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass
 
 from services.job_matching.cv_tokenizer import CVTokens
+from services.job_matching.learner import compute_score_adjustment
 
 
 _TOKEN_RE = re.compile(r"[a-zA-ZäöüÄÖÜß0-9]+(?:[.\+#][a-zA-ZäöüÄÖÜß0-9]+)*")
@@ -56,7 +57,8 @@ def _detect_language(job: dict) -> str:
     return "en"  # default
 
 
-def score_job(cv: CVTokens, job: dict, ctx: PrefilterContext) -> float:
+def score_job(cv: CVTokens, job: dict, ctx: PrefilterContext,
+              user=None, raw_job_id: int | None = None) -> float:
     # Sprach-Filter
     lang = _detect_language(job)
     if lang not in (ctx.language_filter or []):
@@ -85,4 +87,10 @@ def score_job(cv: CVTokens, job: dict, ctx: PrefilterContext) -> float:
     raw_pool = len(cv.skills) * 3 + len(cv.titles) * 2 + len(cv.freetext)
     effective_pool = max(min(raw_pool, 50), 1)
     pct = min(raw_score / effective_pool, 1.0) * 100
-    return round(pct, 2)
+    score_value = round(pct, 2)
+
+    # Adaptive-Learning Adjustment (optional, backward-compat)
+    if user is not None and raw_job_id is not None:
+        score_value = compute_score_adjustment(user, raw_job_id, score_value)
+
+    return score_value
