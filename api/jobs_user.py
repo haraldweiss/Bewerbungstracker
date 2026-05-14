@@ -185,7 +185,7 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
 def list_matches(user):
     min_score = request.args.get('min_score', type=float, default=0)
     min_prefilter_score = request.args.get('min_prefilter_score', type=float, default=0)
-    status_filter = request.args.getlist('status') or ['new']
+    status_filter = request.args.getlist('status') or ['new', 'unbewertet']
     source_id = request.args.get('source_id', type=int)
     q_text = (request.args.get('q') or '').strip().lower()
     limit = min(request.args.get('limit', type=int, default=50), 200)
