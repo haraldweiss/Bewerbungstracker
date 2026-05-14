@@ -3762,6 +3762,14 @@ const JobsView = (() => {
             }
         },
         async dismissMatch(id) {
+            // Adaptive Learning: Statt direkt zu verwerfen, Modal mit
+            // Reasons/Freitext öffnen. Skip im Modal führt zum klassischen
+            // Dismiss ohne Feedback (Backward-compatible).
+            if (typeof openDismissModal === 'function') {
+                openDismissModal(id, () => fetchMatches());
+                return;
+            }
+            // Fallback (sollte nicht passieren — Modal-Skript ist eingebettet)
             try {
                 await Auth.fetch(`/jobs/matches/${id}`, {
                     method: 'PATCH',
@@ -9996,6 +10004,125 @@ function loadCoverLetterPage() {
     <span id="jobs-bulk-progress" style="display:none;align-items:center;gap:0.5rem;font-size:0.9rem;color:var(--text-muted)"></span>
     <button id="jobs-bulk-cancel-btn" class="btn btn-warning btn-sm" style="display:none" onclick="JobsView.cancelBulkScore()" title="Restliche Bewertungen abbrechen">⏹ Abbrechen</button>
 </div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     Adaptive Learning: Dismiss-Feedback Modal
+     User wählt optional Gründe + Freitext beim Verwerfen eines Jobs.
+     Backend lernt daraus (PATCH /api/jobs/matches/{id} mit
+     feedback_reasons + feedback_text). Skip = klassisches Dismiss
+     ohne Feedback. Cancel = nichts tun.
+     ──────────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="dismissFeedbackModal">
+    <div class="modal" style="max-width:520px;">
+        <div class="modal-header">
+            <div class="modal-title">🗑️ Job verwerfen — Warum?</div>
+            <button class="modal-close" onclick="closeModal('dismissFeedbackModal')">✕</button>
+        </div>
+        <form id="dismissFeedbackForm" style="padding:1.5rem;">
+            <p style="margin-top:0;color:var(--text-muted);font-size:0.9rem">
+                Optional: Hilf dem System zu lernen, welche Jobs nicht passen.
+            </p>
+            <fieldset style="border:1px solid var(--border);border-radius:6px;padding:0.75rem 1rem;margin:0 0 1rem;">
+                <legend style="padding:0 0.5rem;font-size:0.85rem;color:var(--text-muted)">Gründe (mehrere möglich)</legend>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem 1rem;">
+                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="wrong_location"> Falscher Ort</label>
+                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="salary_too_low"> Gehalt zu niedrig</label>
+                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="missing_skills"> Fehlende Skills</label>
+                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="wrong_industry"> Falsche Branche</label>
+                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="overqualified"> Überqualifiziert</label>
+                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="underqualified"> Unterqualifiziert</label>
+                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="wrong_seniority"> Falsches Level</label>
+                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="other"> Sonstiges</label>
+                </div>
+            </fieldset>
+            <label style="display:block;margin-bottom:1rem">
+                <span style="font-size:0.85rem;color:var(--text-muted)">Freitext (optional, max 500 Zeichen)</span>
+                <textarea name="feedback_text" maxlength="500" rows="3"
+                          style="width:100%;margin-top:0.25rem;padding:0.5rem;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:0.9rem;box-sizing:border-box"
+                          placeholder="z.B. Stellenanzeige zu vage, Remote-Anteil nicht klar, ..."></textarea>
+            </label>
+            <div class="modal-footer" style="margin:0 -1.5rem -1.5rem;">
+                <button type="button" class="btn btn-secondary" id="dismissCancelBtn" onclick="closeModal('dismissFeedbackModal')">Abbrechen</button>
+                <button type="button" class="btn btn-secondary" id="dismissSkipBtn">Skip (ohne Feedback)</button>
+                <button type="submit" class="btn btn-danger" id="dismissSubmitBtn">Verwerfen mit Feedback</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   Adaptive Learning: Dismiss-Feedback-Modal Handler
+   ──────────────────────────────────────────────────────────────── */
+(function () {
+    let pendingMatchId = null;
+    let onDoneCallback = null;
+
+    window.openDismissModal = function (matchId, onDone) {
+        pendingMatchId = matchId;
+        onDoneCallback = (typeof onDone === 'function') ? onDone : null;
+        const form = document.getElementById('dismissFeedbackForm');
+        if (form) {
+            form.querySelectorAll('input[name="reason"]').forEach(cb => { cb.checked = false; });
+            const ta = form.querySelector('textarea[name="feedback_text"]');
+            if (ta) ta.value = '';
+        }
+        if (typeof openModal === 'function') {
+            openModal('dismissFeedbackModal');
+        } else {
+            const m = document.getElementById('dismissFeedbackModal');
+            if (m) m.classList.add('open');
+        }
+    };
+
+    async function performDismiss(reasons, text) {
+        const id = pendingMatchId;
+        if (!id) return;
+        const body = { status: 'dismissed' };
+        if (Array.isArray(reasons) && reasons.length) body.feedback_reasons = reasons;
+        if (text) body.feedback_text = text;
+        try {
+            await Auth.fetch(`/jobs/matches/${id}`, {
+                method: 'PATCH',
+                body: JSON.stringify(body),
+            });
+            if (typeof showToast === 'function') {
+                showToast(body.feedback_reasons || body.feedback_text
+                    ? 'Verworfen — danke für das Feedback'
+                    : 'Verworfen', 'success');
+            }
+            const cb = onDoneCallback;
+            pendingMatchId = null;
+            onDoneCallback = null;
+            if (typeof closeModal === 'function') closeModal('dismissFeedbackModal');
+            if (cb) cb();
+            else if (typeof fetchMatches === 'function') fetchMatches();
+        } catch (e) {
+            if (typeof showToast === 'function') {
+                showToast('Verwerfen fehlgeschlagen: ' + (e && e.message ? e.message : 'unbekannt'), 'error');
+            } else {
+                alert('Fehler: ' + (e && e.message ? e.message : 'unbekannt'));
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const form = document.getElementById('dismissFeedbackForm');
+        const skipBtn = document.getElementById('dismissSkipBtn');
+        if (form) {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const reasons = Array.from(form.querySelectorAll('input[name="reason"]:checked')).map(cb => cb.value);
+                const text = (form.querySelector('textarea[name="feedback_text"]').value || '').trim();
+                performDismiss(reasons, text);
+            });
+        }
+        if (skipBtn) {
+            skipBtn.addEventListener('click', () => performDismiss([], ''));
+        }
+    });
+})();
+</script>
 
 </body>
 </html>
