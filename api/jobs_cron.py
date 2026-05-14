@@ -68,17 +68,18 @@ def _get_anthropic_client():
     return Anthropic(api_key=api_key)
 
 
-def _estimate_cost_cents(tokens_in: int, tokens_out: int) -> int:
-    """USD-Kosten in Cents — KEIN Min-Floor.
+def _estimate_cost_usd(tokens_in: int, tokens_out: int) -> float:
+    """Echte USD-Kosten als float — kein Rounding auf cents.
 
-    Vorher: max(1, round(...)) — bei Calls mit ~2500 in / 250 out tokens
-    sind die echten Kosten ~0.2¢, das wurde fälschlich auf 1¢ aufgerundet.
-    Bei 50 Calls/Tag → fälschlich 50¢ statt der realen ~10¢ → Tagesbudget
-    sprang in HTTP 402 obwohl noch viel Luft war.
+    Vorher returnte diese Funktion `int` cents via round() — bei Haiku-Pricing
+    (Input $1/M, Output $5/M) sind typische Match-Calls (~2500 in / 250 out)
+    nur ~0.4 cent wert und wurden fälschlich auf 0 gerundet. Über 100+ Calls
+    pro Tag verschwand der Kostenanteil komplett aus `api_calls.cost`, obwohl
+    Anthropic real berechnete. Float-USD löst das Reporting-Problem.
     """
     usd = (tokens_in / 1_000_000 * COST_USD_PER_1M_TOKENS_IN
            + tokens_out / 1_000_000 * COST_USD_PER_1M_TOKENS_OUT)
-    return max(0, round(usd * 100))
+    return max(0.0, usd)
 
 
 def _user_today_cost_cents(user_id: str) -> int:
@@ -617,16 +618,16 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
     # Mammouth, Custom-Endpoint) sind aus User-Sicht gratis — Cost mit Claude-
     # Preisen zu schätzen würde das Tagesbudget falsch verbrauchen.
     if response.via in ('ollama', 'mammouth', 'custom'):
-        cost_cents = 0
+        cost_usd = 0.0
         key_owner = 'user' if response.via == 'ollama' else 'custom_endpoint'
     else:
-        cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
+        cost_usd = _estimate_cost_usd(result.tokens_in, result.tokens_out)
         key_owner = 'server'
 
     db.session.add(ApiCall(
         user_id=user.id, endpoint='/api/jobs/match',
         model=model, tokens_in=result.tokens_in,
-        tokens_out=result.tokens_out, cost=cost_cents / 100.0,
+        tokens_out=result.tokens_out, cost=cost_usd,
         key_owner=key_owner,
     ))
     db.session.flush()
@@ -667,17 +668,19 @@ def _run_match_via_local_factory(user: User, match: JobMatch, raw: RawJob, cv_su
     match.missing_skills = result.missing_skills
     raw.crawl_status = 'matched'
 
-    cost_cents = _estimate_cost_cents(result.tokens_in, result.tokens_out)
+    cost_usd = _estimate_cost_usd(result.tokens_in, result.tokens_out)
     key_owner = 'server'
     if provider == ProviderConfig.OLLAMA:
         key_owner = 'user'
+        cost_usd = 0.0  # Lokaler Provider, kein API-Bill
     elif provider in [ProviderConfig.OPENAI, ProviderConfig.MAMMOUTH, ProviderConfig.CUSTOM]:
         key_owner = 'custom_endpoint'
+        cost_usd = 0.0  # User bezahlt direkt beim Provider, kein Server-Cost
 
     db.session.add(ApiCall(
         user_id=user.id, endpoint='/api/jobs/match',
         model=model, tokens_in=result.tokens_in,
-        tokens_out=result.tokens_out, cost=cost_cents / 100.0,
+        tokens_out=result.tokens_out, cost=cost_usd,
         key_owner=key_owner,
     ))
     db.session.flush()
