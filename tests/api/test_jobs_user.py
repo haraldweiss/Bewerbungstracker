@@ -916,3 +916,75 @@ def test_default_filter_includes_unbewertet(client, auth_header):
     assert 'new' in statuses
     assert 'unbewertet' in statuses
     assert 'dismissed' not in statuses
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/jobs/matches/<id> mit Feedback-Feldern (Adaptive Learning)
+# ---------------------------------------------------------------------------
+
+def test_patch_match_with_feedback_reasons(client, auth_header):
+    """PATCH speichert feedback_reasons als JSON-String und feedback_text."""
+    headers, user = auth_header
+    src = JobSource(name="Test", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="fb1", title="T", company="C",
+                 url="https://x/1", crawl_status='matched')
+    db.session.add(raw); db.session.flush()
+    match = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    db.session.add(match); db.session.commit()
+
+    resp = client.patch(
+        f'/api/jobs/matches/{match.id}',
+        json={
+            "status": "dismissed",
+            "feedback_reasons": ["salary_too_low", "wrong_location"],
+            "feedback_text": "Zu weit weg",
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    updated = db.session.get(JobMatch, match.id)
+    assert json.loads(updated.feedback_reasons) == ["salary_too_low", "wrong_location"]
+    assert updated.feedback_text == "Zu weit weg"
+
+
+def test_patch_match_invalid_reason_filtered(client, auth_header):
+    """Ungültige Reasons werden gefiltert, valide bleiben."""
+    headers, user = auth_header
+    src = JobSource(name="T2", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="fb2", title="T", company="C",
+                 url="https://x/2", crawl_status='matched')
+    db.session.add(raw); db.session.flush()
+    match = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    db.session.add(match); db.session.commit()
+
+    resp = client.patch(
+        f'/api/jobs/matches/{match.id}',
+        json={"status": "dismissed", "feedback_reasons": ["salary_too_low", "fake_reason"]},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    updated = db.session.get(JobMatch, match.id)
+    reasons = json.loads(updated.feedback_reasons)
+    assert "salary_too_low" in reasons
+    assert "fake_reason" not in reasons
+
+
+def test_patch_match_feedback_text_too_long_rejected(client, auth_header):
+    """feedback_text > 500 chars → 400."""
+    headers, user = auth_header
+    src = JobSource(name="T3", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="fb3", title="T", company="C",
+                 url="https://x/3", crawl_status='matched')
+    db.session.add(raw); db.session.flush()
+    match = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new')
+    db.session.add(match); db.session.commit()
+
+    resp = client.patch(
+        f'/api/jobs/matches/{match.id}',
+        json={"status": "dismissed", "feedback_text": "x" * 501},
+        headers=headers,
+    )
+    assert resp.status_code == 400

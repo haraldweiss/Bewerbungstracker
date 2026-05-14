@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 from datetime import datetime, timedelta
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 
 from database import db
 from models import JobSource, RawJob, JobMatch, Application
@@ -301,7 +301,38 @@ def update_match(user, match_id: int):
     if new_status not in ('unbewertet', 'dismissed', 'new'):
         return jsonify({"error": "status muss 'unbewertet'|'dismissed'|'new' sein"}), 400
     m.status = new_status
+
+    # Feedback-Felder (optional) — Adaptive Learning
+    from services.job_matching.feedback import (
+        validate_reasons, MAX_FEEDBACK_TEXT_CHARS
+    )
+    import json as _json
+
+    reasons_raw = data.get('feedback_reasons')
+    if reasons_raw is not None:
+        if not isinstance(reasons_raw, list):
+            return jsonify({"error": "feedback_reasons muss eine Liste sein"}), 400
+        valid = validate_reasons(reasons_raw)
+        m.feedback_reasons = _json.dumps(valid) if valid else None
+
+    text = data.get('feedback_text')
+    if text is not None:
+        if not isinstance(text, str):
+            return jsonify({"error": "feedback_text muss string sein"}), 400
+        if len(text) > MAX_FEEDBACK_TEXT_CHARS:
+            return jsonify({"error": f"feedback_text max {MAX_FEEDBACK_TEXT_CHARS} Zeichen"}), 400
+        m.feedback_text = text.strip() or None
+
     db.session.commit()
+
+    # Adaptive Learning: Centroid update nach commit
+    if new_status in ('dismissed', 'imported'):
+        from services.job_matching.learner import update_centroid_for_feedback
+        try:
+            update_centroid_for_feedback(user, m)
+        except Exception as e:
+            current_app.logger.warning('Centroid update failed: %s', e)
+
     return jsonify({"id": m.id, "status": m.status}), 200
 
 
