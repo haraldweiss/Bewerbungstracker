@@ -71,6 +71,7 @@ Setup-Anleitung im jeweiligen Repo.
 - **[Deployment](docs/DEPLOYMENT/)** - Installation & Hosting
   - [Generic Server](docs/DEPLOYMENT/DEPLOYMENT_GENERIC.md)
   - [IONOS Shared Hosting](docs/DEPLOYMENT/DEPLOYMENT_IONOS.md)
+  - [API-Key Rotation](docs/DEPLOYMENT/KEY_ROTATION.md) - Anthropic-Key auf VPS rotieren via `bewerbungen-rotate-anthropic-key`
   - **[Apache ProxyPass Deployment Rules](DEPLOYMENT.md)** - ⚠️ Safety-Checklist für Multi-Service VPS mit Safeguards gegen Config-Konflikte
 - **[Setup Guides](docs/GUIDES/)** - Provider-spezifische Konfiguration
   - [Gmail Setup](docs/GUIDES/SETUP_GMAIL.md)
@@ -174,6 +175,7 @@ instructions in the corresponding repo.
 - **[Deployment](docs/DEPLOYMENT/)** - Installation & hosting
   - [Generic Server](docs/DEPLOYMENT/DEPLOYMENT_GENERIC.md)
   - [IONOS Shared Hosting](docs/DEPLOYMENT/DEPLOYMENT_IONOS.md)
+  - [API key rotation](docs/DEPLOYMENT/KEY_ROTATION.md) - Rotate the Anthropic key on the VPS via `bewerbungen-rotate-anthropic-key`
 - **[Setup Guides](docs/GUIDES/)** - Provider-specific configuration
   - [Gmail Setup](docs/GUIDES/SETUP_GMAIL.md)
   - [Outlook Setup](docs/GUIDES/SETUP_OUTLOOK.md)
