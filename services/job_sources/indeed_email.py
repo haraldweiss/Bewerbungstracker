@@ -180,11 +180,17 @@ class IndeedEmailAdapter(JobSourceAdapter):
                 raise RuntimeError(f"IMAP-Folder nicht erreichbar: {folder}")
 
             # IMAP-SEARCH: nur Indeed-Mails (FROM-Filter) im Lookback-Window.
-            # Wichtig bei großen Foldern wie [Gmail]/All Mail — sonst zieht der
-            # Adapter tausende irrelevante Mails. IMAP-FROM macht substring-Match
-            # → matcht 'indeed.com', 'indeed.de', 'jobs@indeed.com', etc.
+            # Gmail's standard IMAP-FROM-Search ist eingeschränkt (nur Subset
+            # des Index) — daher zuerst X-GM-RAW versuchen (Gmail-eigener
+            # search-syntax, identisch zu GmailApp.search). Fallback auf
+            # Standard-IMAP wenn Server X-GM-RAW nicht unterstützt
+            # (z.B. IONOS/Outlook).
             since_date = (datetime.utcnow() - timedelta(days=lookback_days)).strftime('%d-%b-%Y')
-            typ, msgnums = conn.search(None, f'(SINCE {since_date} FROM "indeed")')
+            try:
+                gm_query = f'"from:indeed newer_than:{lookback_days}d"'
+                typ, msgnums = conn.search(None, 'X-GM-RAW', gm_query)
+            except imaplib.IMAP4.error:
+                typ, msgnums = conn.search(None, f'(SINCE {since_date} FROM "indeed")')
             if typ != 'OK':
                 return []
 
