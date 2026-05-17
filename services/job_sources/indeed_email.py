@@ -169,8 +169,13 @@ class IndeedEmailAdapter(JobSourceAdapter):
         conn = imaplib.IMAP4_SSL(host, 993, ssl_context=ssl.create_default_context())
         try:
             conn.login(imap_user, password)
-            # readonly=True: setzt \Seen-Flag NICHT (User-Inbox bleibt unverändert)
-            typ, _ = conn.select(folder, readonly=True)
+            # readonly=True: setzt \Seen-Flag NICHT (User-Inbox bleibt unverändert).
+            # Folder-Namen mit Leerzeichen oder Brackets (z.B. '[Gmail]/All Mail')
+            # MÜSSEN als quoted-string übergeben werden, sonst antwortet Gmail
+            # mit "EXAMINE command error: BAD Could not parse command".
+            # imaplib quotet das NICHT automatisch.
+            escaped = folder.replace('\\', '\\\\').replace('"', '\\"')
+            typ, _ = conn.select(f'"{escaped}"', readonly=True)
             if typ != 'OK':
                 raise RuntimeError(f"IMAP-Folder nicht erreichbar: {folder}")
 
