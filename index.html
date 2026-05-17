@@ -3492,9 +3492,29 @@ const JdSourcesUI = (() => {
             const scriptUrl = (state && state.settings && state.settings.indeedScriptUrl || '').trim();
             if (scriptUrl) {
                 if (btn) btn.innerHTML = '⏳ Hole Emails…';
-                const scriptResp = await fetch(scriptUrl, { method: 'GET', signal: AbortSignal.timeout(45000) });
+                let scriptResp;
+                try {
+                    scriptResp = await fetch(scriptUrl, { method: 'GET', signal: AbortSignal.timeout(45000) });
+                } catch (netErr) {
+                    throw new Error(`Apps-Script nicht erreichbar (${netErr.message || 'Netzwerk-Fehler'})`);
+                }
                 if (!scriptResp.ok) throw new Error(`Apps-Script HTTP ${scriptResp.status}`);
-                const scriptData = await scriptResp.json();
+                // Vor JSON-Parse: Content-Type prüfen — Apps Script returnt bei
+                // OAuth-Problem oder Script-Error eine HTML-Page (Login/Error).
+                const ctype = (scriptResp.headers.get('Content-Type') || '').toLowerCase();
+                const rawText = await scriptResp.text();
+                if (!ctype.includes('json') && !rawText.trim().startsWith('{')) {
+                    const looksLikeLogin = /<title>[^<]*sign in|account[s]?.google\.com/i.test(rawText);
+                    throw new Error(looksLikeLogin
+                        ? 'Apps-Script liefert Google-Login-Seite — bitte URL erneut deployen mit Zugriff "Jeder, der den Link hat" oder Test direkt im Browser öffnen.'
+                        : 'Apps-Script gibt HTML statt JSON zurück (Script-Fehler?). Prüfe das Script in script.google.com.');
+                }
+                let scriptData;
+                try {
+                    scriptData = JSON.parse(rawText);
+                } catch (parseErr) {
+                    throw new Error('Apps-Script-Response ist kein valides JSON: ' + rawText.slice(0, 100));
+                }
                 if (scriptData.status && scriptData.status !== 'ok') {
                     throw new Error(`Apps-Script: ${scriptData.error || scriptData.status}`);
                 }
