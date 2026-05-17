@@ -227,7 +227,13 @@ def fetch_imap(host: str, port: int, user: str, password: str,
     conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx)
     try:
         conn.login(user, password)
-        conn.select(folder or 'INBOX', readonly=True)
+        # Folder-Name muss double-quoted übergeben werden — Python imaplib
+        # quotet NICHT automatisch, und Gmail-Folder wie '[Gmail]/All Mail'
+        # oder '[Google Mail]/Alle Nachrichten' wären sonst eine ungültige
+        # IMAP-Command-Syntax → 'EXAMINE command error: BAD'.
+        folder_to_select = folder or 'INBOX'
+        escaped_folder = folder_to_select.replace('\\', '\\\\').replace('"', '\\"')
+        conn.select(f'"{escaped_folder}"', readonly=True)
 
         # ── Stage 1: server-side keyword search ──────────────────────────────
         all_uids: set[bytes] = set()
@@ -436,9 +442,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self._json({'error': 'Benutzername fehlt'}, 400); return
         if not password:
             self._json({'error': 'Passwort fehlt'}, 400); return
-        # IMAP folder name: only allow alphanumerics + a few safe separators.
-        # Prevents injection of IMAP control characters (CR/LF, quotes, backslashes).
-        if not re.match(r'^[A-Za-z0-9._\-/ ]{1,100}$', folder):
+        # IMAP folder name: erlaube alle druckbaren Zeichen inkl. Brackets
+        # (Gmail-Sonderfolder '[Gmail]/All Mail', '[Google Mail]/Alle Nachrichten').
+        # Blockt: control chars (CR/LF/NULL → IMAP-Injection-Schutz),
+        # doppelte Anführungszeichen und Backslashes.
+        if not re.match(r'^[^\x00-\x1f\x7f"\\]{1,100}$', folder):
             self._json({'error': 'Ungültiger Ordner-Name'}, 400); return
 
         try:
