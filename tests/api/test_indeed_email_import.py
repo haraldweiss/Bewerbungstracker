@@ -470,8 +470,11 @@ def test_import_apps_script_proxy_mode_fetches_via_backend(client, auth_header, 
         def json(self):
             return fake_response
 
-    with patch('api.jobs_user.requests.get', return_value=FakeResp()) if False else \
-         patch('requests.get', return_value=FakeResp()):
+    # Cache zwischen Tests leeren — wir wollen einen frischen Fetch sehen.
+    from api.jobs_user import _APPS_SCRIPT_CACHE
+    _APPS_SCRIPT_CACHE.clear()
+
+    with patch('requests.get', return_value=FakeResp()):
         r = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             json={'script_url': 'https://script.google.com/macros/s/ABCdef123_-/exec'},
@@ -482,6 +485,78 @@ def test_import_apps_script_proxy_mode_fetches_via_backend(client, auth_header, 
     assert data['fetch_mode'] == 'apps_script_proxy'
     assert data['imported'] == 1
     assert data['total_emails'] == 1
+    assert data['cache_hit'] is False
+
+
+def test_apps_script_cache_skips_second_fetch(client, auth_header, indeed_source):
+    """Zweiter Import mit gleicher URL innerhalb TTL → kein neuer HTTP-Call,
+    cache_hit=True. Schützt Gmail-Quota."""
+    headers, user = auth_header
+    fake_response = {
+        'status': 'ok', 'count': 1,
+        'emails': [{
+            'subject': 'Neue Stelle: Dev bei CacheCo',
+            'body': 'https://de.indeed.com/viewjob?jk=cache_test',
+            'from': 'jobs@indeed.com',
+        }],
+    }
+
+    class FakeResp:
+        status_code = 200
+        headers = {'Content-Type': 'application/json'}
+        text = '{"ok":1}'  # noqa
+        def json(self): return fake_response
+
+    from api.jobs_user import _APPS_SCRIPT_CACHE
+    _APPS_SCRIPT_CACHE.clear()
+
+    url = 'https://script.google.com/macros/s/CacheTest_-abc/exec'
+    with patch('requests.get', return_value=FakeResp()) as mock_get:
+        # 1. Call: Cache miss → fetcht
+        r1 = client.post(
+            f"/api/jobs/sources/{indeed_source.id}/import-from-email",
+            json={'script_url': url}, headers=headers,
+        )
+        # 2. Call: Cache hit → kein fetch, aber 0 new (URL bereits in DB als RawJob)
+        r2 = client.post(
+            f"/api/jobs/sources/{indeed_source.id}/import-from-email",
+            json={'script_url': url}, headers=headers,
+        )
+        assert mock_get.call_count == 1  # nur 1× ausgegangen!
+
+    assert r1.get_json()['cache_hit'] is False
+    assert r2.get_json()['cache_hit'] is True
+
+
+def test_apps_script_force_refresh_bypasses_cache(client, auth_header, indeed_source):
+    """force_refresh=true im Body → Cache wird ignoriert, fetcht nochmal."""
+    headers, _ = auth_header
+    fake_response = {'status': 'ok', 'count': 0, 'emails': []}
+
+    class FakeResp:
+        status_code = 200
+        headers = {'Content-Type': 'application/json'}
+        text = '{}'
+        def json(self): return fake_response
+
+    from api.jobs_user import _APPS_SCRIPT_CACHE
+    _APPS_SCRIPT_CACHE.clear()
+
+    url = 'https://script.google.com/macros/s/ForceTest_-xyz/exec'
+    with patch('requests.get', return_value=FakeResp()) as mock_get:
+        # 1. Call → cache miss
+        client.post(
+            f"/api/jobs/sources/{indeed_source.id}/import-from-email",
+            json={'script_url': url}, headers=headers,
+        )
+        # 2. Call mit force_refresh → cache bypass, neuer fetch
+        r2 = client.post(
+            f"/api/jobs/sources/{indeed_source.id}/import-from-email",
+            json={'script_url': url, 'force_refresh': True}, headers=headers,
+        )
+        assert mock_get.call_count == 2
+
+    assert r2.get_json()['cache_hit'] is False
 
 
 def test_import_apps_script_proxy_rejects_bad_url(client, auth_header, indeed_source):

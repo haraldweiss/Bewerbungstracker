@@ -606,18 +606,41 @@ _APPS_SCRIPT_URL_RE = re.compile(
     r'^https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/[a-z]+(?:\?[^\s]*)?$'
 )
 
+# Gmail-API hat ein hartes Tages-Limit (~250 search/Tag bei Consumer-Accounts).
+# Cache pro (user_id, url) für 1h, damit Mehrfach-Klicks / Retries die Quota
+# nicht killen. In-Memory pro Worker — bei Restart geleert (OK, Cache-Miss
+# kostet nur einen Apps-Script-Call).
+_APPS_SCRIPT_CACHE: dict[tuple[str, str], tuple[float, list[dict]]] = {}
+_APPS_SCRIPT_CACHE_TTL = 3600.0  # 1 Stunde
 
-def _fetch_apps_script_emails(url: str) -> list[dict]:
+
+def _fetch_apps_script_emails(url: str, user_id: str | None = None,
+                              use_cache: bool = True) -> tuple[list[dict], bool]:
     """Server-side GET eines Apps-Script-Web-Endpoints (umgeht Browser-CORS).
 
     URL-Validation gegen Whitelist (script.google.com/macros/s/…/exec) blockt
     SSRF gegen interne Dienste. Google macht 30x-redirects nach
     googleusercontent.com → wir folgen mit allow_redirects=True.
+
+    Cache: pro (user_id, url) für _APPS_SCRIPT_CACHE_TTL Sekunden. Spart
+    Gmail-API-Quota bei wiederholten Imports im selben Zeitfenster.
+    Setze use_cache=False für Force-Refresh.
+
+    Returns: (emails_list, cache_hit)
     """
     if not _APPS_SCRIPT_URL_RE.match(url or ''):
         raise ValueError(
             "Apps-Script-URL muss auf https://script.google.com/macros/s/.../exec passen"
         )
+
+    import time
+    cache_key = (user_id or '', url)
+    now = time.time()
+
+    if use_cache:
+        entry = _APPS_SCRIPT_CACHE.get(cache_key)
+        if entry and (now - entry[0]) < _APPS_SCRIPT_CACHE_TTL:
+            return entry[1], True
 
     import requests
     try:
@@ -645,8 +668,9 @@ def _fetch_apps_script_emails(url: str) -> list[dict]:
     if data.get('status') and data['status'] != 'ok':
         raise RuntimeError(f"Apps-Script-Error: {data.get('error') or data['status']}")
 
-    emails = data.get('emails')
-    return emails if isinstance(emails, list) else []
+    emails = data.get('emails') if isinstance(data.get('emails'), list) else []
+    _APPS_SCRIPT_CACHE[cache_key] = (now, emails)
+    return emails, False
 
 
 def _get_rejected_companies_lower(user_id: str, window_days: int) -> set[str]:
@@ -749,14 +773,20 @@ def import_from_email(user, source_id: int):
     payload = request.get_json(silent=True) or {}
     provided_emails = payload.get('emails')
     script_url = payload.get('script_url')
+    force_refresh = bool(payload.get('force_refresh'))
 
+    cache_hit = False
     try:
         adapter = get_adapter(src.type, src.config, user=user)
         if isinstance(provided_emails, list):
             fetched = adapter.parse_emails(provided_emails)
             fetch_mode = 'apps_script'
         elif isinstance(script_url, str) and script_url:
-            emails = _fetch_apps_script_emails(script_url)
+            emails, cache_hit = _fetch_apps_script_emails(
+                script_url,
+                user_id=user.id,
+                use_cache=not force_refresh,
+            )
             fetched = adapter.parse_emails(emails)
             fetch_mode = 'apps_script_proxy'
         else:
@@ -828,6 +858,7 @@ def import_from_email(user, source_id: int):
         "rejection_window_days": window_days,
         "reject_filter_enabled": reject_enabled,
         "fetch_mode": fetch_mode,
+        "cache_hit": cache_hit,
     }), 200
 
 

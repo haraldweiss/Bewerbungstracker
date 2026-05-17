@@ -287,3 +287,120 @@ def update_feature_models(user):
     user.feature_model_overrides = _profile_json.dumps(clean, ensure_ascii=False) if clean else None
     db.session.commit()
     return jsonify({'status': 'updated', 'overrides': clean}), 200
+
+
+# ─── IMAP-Credentials (für Server-side Indeed-Email-Import) ─────────────────
+#
+# Frontend-Email-Tracking nutzt eigene localStorage-Credentials gegen den
+# Mac-IMAP-Proxy (headers-only). DAVON UNABHÄNGIG: hier landen die Credentials
+# für Server-side IMAP-Connects (z.B. IndeedEmailAdapter mit full-body fetch).
+# Password wird Fernet-encrypted (encryption_service / IMAPCredentialManager).
+
+
+@profile_bp.get('/profile/imap')
+@token_required
+def get_imap_status(user):
+    """Returns ob IMAP-Credentials für den Server konfiguriert sind.
+
+    NEVER returnt das Passwort — nur ob es gesetzt ist.
+    """
+    return jsonify({
+        "host": user.imap_host or "",
+        "user": user.imap_user or "",
+        "configured": bool(user.imap_password_encrypted),
+    }), 200
+
+
+@profile_bp.post('/profile/imap')
+@token_required
+def set_imap_credentials(user):
+    """Speichert/aktualisiert IMAP-Credentials für den Server.
+
+    Body: { host, user, password }. Password wird encrypted in DB.
+    """
+    from auth_service import AuthService
+    data = request.get_json() or {}
+    host = (data.get('host') or '').strip()
+    imap_user = (data.get('user') or '').strip()
+    password = data.get('password') or ''
+
+    if not host or not imap_user or not password:
+        return jsonify({"error": "host, user, password sind Pflicht"}), 400
+
+    # Light-weight Validation gegen offensichtliche Tippfehler
+    if len(host) > 255 or len(imap_user) > 255 or len(password) > 1024:
+        return jsonify({"error": "host/user/password zu lang"}), 400
+
+    success, msg = AuthService.register_imap_credentials(user.id, host, imap_user, password)
+    if not success:
+        return jsonify({"error": msg}), 500
+
+    return jsonify({"status": "ok", "configured": True}), 200
+
+
+@profile_bp.delete('/profile/imap')
+@token_required
+def clear_imap_credentials(user):
+    """Entfernt IMAP-Credentials komplett (User möchte z.B. wieder Apps-Script)."""
+    user.imap_host = None
+    user.imap_user = None
+    user.imap_password_encrypted = None
+    db.session.commit()
+    return ('', 204)
+
+
+@profile_bp.post('/profile/imap/test')
+@token_required
+def test_imap_connection(user):
+    """Testet Login + listet erste Folder.
+
+    Bei Gmail: Foldernamen wie '[Gmail]/All Mail' oder lokalisiert
+    '[Google Mail]/Alle Nachrichten' sind nötig um auch archivierte Mails
+    zu erreichen. Folder-Liste hilft beim Setup.
+    """
+    if not user.imap_password_encrypted:
+        return jsonify({"ok": False, "error": "IMAP nicht konfiguriert"}), 200
+
+    import imaplib
+    import ssl
+    folders = []
+    try:
+        conn = imaplib.IMAP4_SSL(user.imap_host, 993, context=ssl.create_default_context())
+        try:
+            conn.login(user.imap_user, user.decrypted_imap_password)
+        except imaplib.IMAP4.error as e:
+            return jsonify({"ok": False, "error": f"Login fehlgeschlagen: {e}"}), 200
+
+        typ, raw_folders = conn.list()
+        if typ == 'OK' and raw_folders:
+            for entry in raw_folders[:80]:
+                if not entry:
+                    continue
+                line = entry.decode('utf-8', errors='ignore') if isinstance(entry, bytes) else str(entry)
+                # IMAP LIST format: (flags) "delimiter" "folder_name"
+                # Wir extrahieren nur den letzten quoted-token.
+                m = _imap_list_re.search(line)
+                if m:
+                    folders.append(m.group(1))
+                else:
+                    # Fallback: letzte Whitespace-separierte Token nehmen.
+                    parts = line.rsplit(' ', 1)
+                    if len(parts) == 2:
+                        folders.append(parts[1].strip().strip('"'))
+        try:
+            conn.logout()
+        except Exception:
+            pass
+
+        return jsonify({
+            "ok": True,
+            "folder_count": len(folders),
+            "folders_sample": folders[:60],
+        }), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 200
+
+
+# Regex für IMAP-LIST-Response: (flags) "delim" "name"  →  greift den Namen.
+import re as _imap_re
+_imap_list_re = _imap_re.compile(r'"([^"]*)"\s*$')

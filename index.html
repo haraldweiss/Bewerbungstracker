@@ -1239,6 +1239,27 @@
         </table>
 
         <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
+        <div style="font-weight:600;margin-bottom:0.5rem">🖥️ IMAP für Server-Imports</div>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;line-height:1.5">
+            Alternative zu Apps Script: VPS verbindet sich direkt mit deinem Mailserver
+            (Gmail braucht App-Password, Folder z.B. <code>[Gmail]/All Mail</code> für
+            archivierte Mails). Passwort wird Fernet-encrypted in der DB gespeichert.
+            Leer lassen wenn du nur Apps Script nutzt.
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
+            <input type="text" id="imapServerHost" placeholder="Host z.B. imap.gmail.com">
+            <input type="email" id="imapServerUser" placeholder="User (E-Mail-Adresse)">
+            <input type="password" id="imapServerPass" placeholder="Passwort / App-Password (Eingabe = neu setzen)">
+            <div id="imapServerStatus" style="font-size:0.85rem;align-self:center;color:var(--text-muted)">Status: lade…</div>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.3rem">
+            <button class="btn btn-primary btn-sm" onclick="JdSourcesUI.saveImapCreds()">💾 IMAP speichern</button>
+            <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.testImap()">🧪 Test + Folder listen</button>
+            <button class="btn btn-danger btn-sm" onclick="JdSourcesUI.clearImapCreds()">🗑️ Löschen</button>
+        </div>
+        <pre id="imapServerFolders" style="display:none;background:var(--bg-card2);padding:0.5rem;border-radius:6px;font-size:0.75rem;max-height:200px;overflow-y:auto;margin-top:0.3rem"></pre>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
         <div style="font-weight:600;margin-bottom:0.5rem">📧 Indeed-Email Import (Gmail Apps Script)</div>
         <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;line-height:1.5">
             Empfohlen für Gmail-User: Deploy ein kleines Google-Apps-Script
@@ -2970,6 +2991,11 @@ function loadSettingsForm() {
     const isu = document.getElementById('indeedScriptUrl');
     if (isu) isu.value = state.settings.indeedScriptUrl || '';
 
+    // IMAP-Status laden (asynchron, fire-and-forget)
+    if (typeof JdSourcesUI !== 'undefined' && JdSourcesUI.loadImapStatus) {
+        JdSourcesUI.loadImapStatus();
+    }
+
     // Apps Script Monitoring-Einstellungen
     const asme = document.getElementById('appsScriptMonitoringEnabled');
     const asmi = document.getElementById('appsScriptMonitoringInterval');
@@ -3644,6 +3670,84 @@ const JdSourcesUI = (() => {
             : '<span style="color:var(--text-muted)">URL geleert — Import fällt auf IMAP-Mode zurück.</span>';
     }
 
+    // ── IMAP-Server-Credentials (Server-side Indeed-Import) ────────────────
+
+    async function loadImapStatus() {
+        const statusEl = $('imapServerStatus');
+        const hostEl = $('imapServerHost');
+        const userEl = $('imapServerUser');
+        if (!statusEl) return;
+        try {
+            const r = await Auth.fetch('/profile/imap', { method: 'GET' });
+            if (hostEl) hostEl.value = (r && r.host) || '';
+            if (userEl) userEl.value = (r && r.user) || '';
+            statusEl.innerHTML = r && r.configured
+                ? '<span style="color:var(--success)">✅ IMAP konfiguriert</span>'
+                : '<span style="color:var(--text-muted)">⏸️ Nicht konfiguriert</span>';
+        } catch (e) {
+            statusEl.innerHTML = `<span style="color:var(--danger)">Fehler: ${escapeHtml(e.message || e)}</span>`;
+        }
+    }
+
+    async function saveImapCreds() {
+        const host = (($('imapServerHost') || {}).value || '').trim();
+        const user = (($('imapServerUser') || {}).value || '').trim();
+        const pass = (($('imapServerPass') || {}).value || '');
+        const statusEl = $('imapServerStatus');
+        if (!host || !user || !pass) {
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ Host, User, Passwort sind Pflicht</span>';
+            return;
+        }
+        try {
+            await Auth.fetch('/profile/imap', {
+                method: 'POST',
+                body: JSON.stringify({ host, user, password: pass }),
+            });
+            // Passwort-Feld leeren — bleibt nicht im Browser sichtbar.
+            const pwEl = $('imapServerPass');
+            if (pwEl) pwEl.value = '';
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--success)">✅ IMAP gespeichert</span>';
+        } catch (e) {
+            if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(e.message || e)}</span>`;
+        }
+    }
+
+    async function clearImapCreds() {
+        if (!confirm('IMAP-Credentials vom Server löschen?')) return;
+        const statusEl = $('imapServerStatus');
+        try {
+            await Auth.fetch('/profile/imap', { method: 'DELETE' });
+            const hostEl = $('imapServerHost'); if (hostEl) hostEl.value = '';
+            const userEl = $('imapServerUser'); if (userEl) userEl.value = '';
+            const passEl = $('imapServerPass'); if (passEl) passEl.value = '';
+            const foldersEl = $('imapServerFolders'); if (foldersEl) foldersEl.style.display = 'none';
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏸️ Nicht konfiguriert</span>';
+        } catch (e) {
+            if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(e.message || e)}</span>`;
+        }
+    }
+
+    async function testImap() {
+        const statusEl = $('imapServerStatus');
+        const foldersEl = $('imapServerFolders');
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Verbinde…</span>';
+        try {
+            const r = await Auth.fetch('/profile/imap/test', { method: 'POST' });
+            if (r && r.ok) {
+                if (statusEl) statusEl.innerHTML = `<span style="color:var(--success)">✅ Verbunden — ${r.folder_count} Folder gefunden</span>`;
+                if (foldersEl) {
+                    foldersEl.textContent = (r.folders_sample || []).join('\n');
+                    foldersEl.style.display = 'block';
+                }
+            } else {
+                if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml((r && r.error) || 'Test fehlgeschlagen')}</span>`;
+                if (foldersEl) foldersEl.style.display = 'none';
+            }
+        } catch (e) {
+            if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(e.message || e)}</span>`;
+        }
+    }
+
     function toggleIndeedScriptCode() {
         const box = $('indeedScriptCodeBox');
         if (!box) return;
@@ -3662,6 +3766,7 @@ const JdSourcesUI = (() => {
         testCrawl, toggle, del,
         importFromEmail, skipAllBlocked, submitApproval, closeApprovalDialog,
         saveIndeedScriptUrl, toggleIndeedScriptCode,
+        saveImapCreds, testImap, clearImapCreds, loadImapStatus,
     };
 })();
 
