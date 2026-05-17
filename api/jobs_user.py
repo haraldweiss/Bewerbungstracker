@@ -694,10 +694,21 @@ def import_from_email(user, source_id: int):
     if src.type != 'indeed_email':
         return jsonify({"error": "Source ist nicht vom Typ indeed_email"}), 400
 
-    # Adapter fetch
+    # Modus-Wahl: Apps-Script (Body {emails:[...]}) oder IMAP-Fetch (leerer Body)
+    # Apps-Script-Mode: Frontend hat Emails via google-apps-script bereits geholt
+    # (privacy: kein IMAP-Password auf VPS). IMAP-Mode: VPS verbindet direkt
+    # zum User-Mailserver mit DB-Credentials.
+    payload = request.get_json(silent=True) or {}
+    provided_emails = payload.get('emails')
+
     try:
         adapter = get_adapter(src.type, src.config, user=user)
-        fetched = adapter.fetch()
+        if isinstance(provided_emails, list):
+            fetched = adapter.parse_emails(provided_emails)
+            fetch_mode = 'apps_script'
+        else:
+            fetched = adapter.fetch()
+            fetch_mode = 'imap'
     except Exception as e:
         src.last_error = f"{type(e).__name__}: {str(e)[:500]}"
         src.consecutive_failures = (src.consecutive_failures or 0) + 1
@@ -763,6 +774,7 @@ def import_from_email(user, source_id: int):
         "total_emails": len(fetched),
         "rejection_window_days": window_days,
         "reject_filter_enabled": reject_enabled,
+        "fetch_mode": fetch_mode,
     }), 200
 
 

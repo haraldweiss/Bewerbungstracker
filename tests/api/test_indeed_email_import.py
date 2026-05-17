@@ -383,6 +383,86 @@ def test_approve_ignores_duplicate_urls(client, auth_header, indeed_source):
     assert body["ignored"] == 1
 
 
+# ── Apps-Script-Mode: Emails im Request-Body ─────────────────────────────
+
+
+def test_import_apps_script_mode_parses_provided_emails(client, auth_header, indeed_source):
+    """Wenn Frontend Emails als JSON-Body schickt, soll der Endpoint kein
+    IMAP machen sondern direkt parsen + dedupen + rejection-checken."""
+    headers, user = auth_header
+    body = {
+        "emails": [
+            {
+                "subject": "Neue Stelle: Senior Engineer bei GoodCo",
+                "body": "Job-Link: https://de.indeed.com/viewjob?jk=apps_x1",
+                "from": "noreply@indeed.com",
+                "date": "2026-05-15T08:00:00Z",
+            },
+            {
+                "subject": "Neue Stelle: Dev at OtherCo",
+                "body": "https://de.indeed.com/viewjob?jk=apps_x2",
+                "from": "jobs@indeed.com",
+            },
+        ]
+    }
+    # Patch ist absichtlich nicht da — wir wollen verifizieren dass kein
+    # IMAP-fetch ausgelöst wird (sonst würde der Test scheitern weil keine
+    # IMAP-Credentials gesetzt sind).
+    r = client.post(
+        f"/api/jobs/sources/{indeed_source.id}/import-from-email",
+        json=body, headers=headers,
+    )
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["imported"] == 2
+    assert data["blocked"] == []
+    assert data["fetch_mode"] == "apps_script"
+    assert data["total_emails"] == 2
+
+
+def test_import_apps_script_mode_applies_rejection_window(client, auth_header, indeed_source):
+    headers, user = auth_header
+    # Absage von ProblemCo, 30 Tage alt
+    app_rej = Application(
+        user_id=user.id, company='ProblemCo', position='Dev',
+        status='absage',
+        applied_date=(datetime.utcnow() - timedelta(days=30)).date(),
+    )
+    db.session.add(app_rej)
+    db.session.commit()
+
+    body = {
+        "emails": [
+            {"subject": "Neue Stelle: Dev bei ProblemCo",
+             "body": "https://de.indeed.com/viewjob?jk=block_apps"},
+            {"subject": "Neue Stelle: Dev bei FreshCo",
+             "body": "https://de.indeed.com/viewjob?jk=new_apps"},
+        ]
+    }
+    r = client.post(
+        f"/api/jobs/sources/{indeed_source.id}/import-from-email",
+        json=body, headers=headers,
+    )
+    data = r.get_json()
+    assert data["imported"] == 1
+    assert len(data["blocked"]) == 1
+    assert data["blocked"][0]["company"] == "ProblemCo"
+    assert data["fetch_mode"] == "apps_script"
+
+
+def test_import_empty_body_uses_imap_mode(client, auth_header, indeed_source):
+    """Leerer Body → IMAP-Mode (existing). Mocked weil keine echten Creds."""
+    headers, _ = auth_header
+    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+               return_value=[]):
+        r = client.post(
+            f"/api/jobs/sources/{indeed_source.id}/import-from-email",
+            headers=headers,
+        )
+    assert r.status_code == 200
+    assert r.get_json()["fetch_mode"] == "imap"
+
+
 def test_approve_ignores_malformed_decisions(client, auth_header, indeed_source):
     headers, _ = auth_header
     payload = {

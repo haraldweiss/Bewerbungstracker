@@ -1237,6 +1237,24 @@
             </thead>
             <tbody id="jdSourcesTableBody"><tr><td colspan="4" style="padding:0.6rem;color:var(--text-muted)">Lade…</td></tr></tbody>
         </table>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
+        <div style="font-weight:600;margin-bottom:0.5rem">📧 Indeed-Email Import (Gmail Apps Script)</div>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;line-height:1.5">
+            Empfohlen für Gmail-User: Deploy ein kleines Google-Apps-Script
+            (kein IMAP-Passwort auf dem VPS). Anleitung &amp; Code-Snippet unten,
+            dann die <code>/exec</code>-URL hier einfügen. Leer lassen, um stattdessen
+            VPS-IMAP-Mode zu nutzen (erfordert DB-Credentials).
+        </p>
+        <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap">
+            <input type="text" id="indeedScriptUrl"
+                placeholder="https://script.google.com/macros/s/XXXXX/exec"
+                style="flex:1;min-width:200px">
+            <button class="btn btn-primary btn-sm" onclick="JdSourcesUI.saveIndeedScriptUrl()">💾 URL speichern</button>
+            <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.toggleIndeedScriptCode()">📋 Code anzeigen</button>
+        </div>
+        <pre id="indeedScriptCodeBox" style="display:none;background:var(--bg-card2);padding:0.75rem;border-radius:6px;font-size:0.75rem;overflow-x:auto;max-height:300px;margin-top:0.5rem"></pre>
+        <div id="indeedScriptUrlStatus" style="font-size:0.85rem;margin-top:0.3rem"></div>
     </div>
 
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
@@ -1917,6 +1935,41 @@ function generateAppsScriptCode(keywords) {
 // Default Apps Script Code (with default keywords)
 const APPS_SCRIPT_CODE = generateAppsScriptCode('Bewerbung,Stelle,Stellenausschreibung,Application,Job,Position,Kandidat,Recruiting,Interview,Absage,Zusage');
 
+// Apps-Script Code für Indeed-Job-Import:
+// - Sucht in Gmail nach Mails von indeed.com/.de
+// - Returnt FULL body (nicht nur snippet) — Backend braucht das für sauberes Parsing
+// - Optional: ?days=30 (default 30) limitiert auf neue Mails
+const INDEED_APPS_SCRIPT_CODE = `function doGet(e) {
+  var days = parseInt((e && e.parameter && e.parameter.days) || '30', 10);
+  if (isNaN(days) || days < 1 || days > 365) days = 30;
+  var maxEmails = 100;
+
+  var query = 'from:(indeed.com OR indeed.de OR noreply@indeed.com) newer_than:' + days + 'd';
+  var threads = GmailApp.search(query, 0, maxEmails);
+  var results = [];
+
+  threads.forEach(function(thread) {
+    var msgs = thread.getMessages();
+    msgs.forEach(function(msg) {
+      results.push({
+        id:      msg.getId(),
+        subject: msg.getSubject(),
+        from:    msg.getFrom(),
+        date:    msg.getDate().toISOString(),
+        body:    msg.getPlainBody().substring(0, 8000)
+      });
+    });
+  });
+
+  var output = ContentService.createTextOutput(JSON.stringify({
+    status: 'ok',
+    count:  results.length,
+    emails: results
+  }));
+  output.setMimeType(ContentService.MimeType.JSON);
+  return output;
+}`;
+
 /* ═══════════════════════════════════════════════════════
    AUTHENTICATION FUNCTIONS
 ═══════════════════════════════════════════════════════ */
@@ -2196,6 +2249,9 @@ let state = {
         appsScriptUrl: '',
         appsScriptMonitoringEnabled: false,
         appsScriptMonitoringInterval: 30, // minutes
+        // Separate Apps-Script-URL für Indeed-Job-Import (eigener doGet,
+        // returnt full body — anders als das Bewerbungs-Script).
+        indeedScriptUrl: '',
         imapHost: '',
         imapPort: 993,
         imapProtocol: 'imap',
@@ -2894,6 +2950,10 @@ function loadSettingsForm() {
     if (ed) ed.value = state.settings.emailImportStartDate || '';
     if (su) su.value = state.settings.appsScriptUrl || '';
 
+    // Indeed-Script-URL (separates Apps Script für Job-Import)
+    const isu = document.getElementById('indeedScriptUrl');
+    if (isu) isu.value = state.settings.indeedScriptUrl || '';
+
     // Apps Script Monitoring-Einstellungen
     const asme = document.getElementById('appsScriptMonitoringEnabled');
     const asmi = document.getElementById('appsScriptMonitoringInterval');
@@ -3424,7 +3484,29 @@ const JdSourcesUI = (() => {
         if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Lade…'; }
 
         try {
-            const r = await Auth.fetch(`/jobs/sources/${id}/import-from-email`, { method: 'POST' });
+            // Privacy-by-design: Wenn indeedScriptUrl gesetzt, holt das Frontend
+            // die Emails via Google Apps Script (User-OAuth gegen Gmail). Der
+            // VPS sieht so nie IMAP-Credentials. Fallback: leerer Body → VPS
+            // versucht IMAP-Mode mit User.imap_* Feldern aus der DB.
+            let requestBody = null;
+            const scriptUrl = (state && state.settings && state.settings.indeedScriptUrl || '').trim();
+            if (scriptUrl) {
+                if (btn) btn.innerHTML = '⏳ Hole Emails…';
+                const scriptResp = await fetch(scriptUrl, { method: 'GET', signal: AbortSignal.timeout(45000) });
+                if (!scriptResp.ok) throw new Error(`Apps-Script HTTP ${scriptResp.status}`);
+                const scriptData = await scriptResp.json();
+                if (scriptData.status && scriptData.status !== 'ok') {
+                    throw new Error(`Apps-Script: ${scriptData.error || scriptData.status}`);
+                }
+                const emails = Array.isArray(scriptData.emails) ? scriptData.emails : [];
+                requestBody = JSON.stringify({ emails });
+                if (btn) btn.innerHTML = `⏳ Parse ${emails.length}…`;
+            }
+
+            const r = await Auth.fetch(`/jobs/sources/${id}/import-from-email`, {
+                method: 'POST',
+                body: requestBody,
+            });
             if (!r) throw new Error('Leere Antwort vom Server');
 
             const imported = r.imported || 0;
@@ -3531,10 +3613,42 @@ const JdSourcesUI = (() => {
         _blockedJobsState = [];
     }
 
+    // ── Indeed Apps-Script-URL Settings ─────────────────────────────────────
+
+    function saveIndeedScriptUrl() {
+        const input = $('indeedScriptUrl');
+        const statusEl = $('indeedScriptUrlStatus');
+        if (!input) return;
+        const url = (input.value || '').trim();
+        if (url && !/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec/.test(url)) {
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ URL muss auf https://script.google.com/macros/s/.../exec passen</span>';
+            return;
+        }
+        state.settings.indeedScriptUrl = url;
+        saveToStorage();
+        if (statusEl) statusEl.innerHTML = url
+            ? '<span style="color:var(--success)">✅ Gespeichert. Import nutzt jetzt Apps-Script-Mode.</span>'
+            : '<span style="color:var(--text-muted)">URL geleert — Import fällt auf IMAP-Mode zurück.</span>';
+    }
+
+    function toggleIndeedScriptCode() {
+        const box = $('indeedScriptCodeBox');
+        if (!box) return;
+        if (box.style.display === 'none' || !box.style.display) {
+            box.textContent = (typeof INDEED_APPS_SCRIPT_CODE !== 'undefined')
+                ? INDEED_APPS_SCRIPT_CODE
+                : '// Code nicht gefunden — bitte Seite neu laden';
+            box.style.display = 'block';
+        } else {
+            box.style.display = 'none';
+        }
+    }
+
     return {
         refresh, openCreate, closeCreate, renderTypeFields, create,
         testCrawl, toggle, del,
         importFromEmail, skipAllBlocked, submitApproval, closeApprovalDialog,
+        saveIndeedScriptUrl, toggleIndeedScriptCode,
     };
 })();
 

@@ -78,6 +78,39 @@ class IndeedEmailAdapter(JobSourceAdapter):
 
     # ── Public API ─────────────────────────────────────────────────────────
 
+    def parse_emails(self, emails: list[dict]) -> list[FetchedJob]:
+        """Parses einen Pre-Fetched Email-Batch (z.B. von Google Apps Script).
+
+        Erwartetes Email-Dict-Format:
+            {'subject': str, 'body': str, 'from': str, 'date': str (ISO),
+             'message_id': str (optional)}
+
+        Reused dieselbe Regex+AI-Logik wie fetch() — nur der Transport
+        unterscheidet sich (HTTP-Body statt IMAP-Connect).
+        """
+        if not isinstance(emails, list):
+            raise ValueError("emails muss eine Liste sein")
+
+        jobs: list[FetchedJob] = []
+        for em in emails:
+            if not isinstance(em, dict):
+                continue
+            normalized = {
+                'message_id': str(em.get('message_id') or em.get('id') or '')[:500],
+                'subject': str(em.get('subject') or ''),
+                'from': str(em.get('from') or ''),
+                'date': str(em.get('date') or ''),
+                'body': str(em.get('body') or em.get('snippet') or ''),
+            }
+            try:
+                job = self._parse_email(normalized)
+                if job:
+                    jobs.append(job)
+            except Exception as exc:
+                logger.warning("Indeed-Email-Parse fehlgeschlagen: %s", exc)
+                continue
+        return jobs
+
     def fetch(self) -> list[FetchedJob]:
         if self.user is None:
             raise RuntimeError("IndeedEmailAdapter benötigt User-Kontext (kwarg user=...)")

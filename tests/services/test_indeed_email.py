@@ -237,6 +237,77 @@ def test_ai_fallback_called_when_fields_missing(monkeypatch):
     assert 'ai_extracted' in job.url
 
 
+# ── parse_emails (Apps-Script-Mode) ────────────────────────────────────────
+
+
+def test_parse_emails_accepts_external_email_list():
+    adapter = _make_adapter_no_user()
+    emails = [
+        {
+            'subject': 'Neue Stelle: Backend Engineer bei DataCorp',
+            'body': 'Body text. https://de.indeed.com/viewjob?jk=apps_1',
+            'from': 'noreply@indeed.com',
+            'date': '2026-05-15T08:00:00Z',
+            'id': 'msg_apps_1',
+        },
+        {
+            'subject': 'Neue Stelle: Frontend Dev bei UICorp',
+            'body': 'Visit https://de.indeed.com/viewjob?jk=apps_2 to apply',
+            'from': 'jobs@indeed.com',
+            'date': '2026-05-16T08:00:00Z',
+        },
+    ]
+    jobs = adapter.parse_emails(emails)
+    assert len(jobs) == 2
+    assert jobs[0].title == 'Backend Engineer'
+    assert jobs[0].company == 'DataCorp'
+    assert 'apps_1' in jobs[0].url
+    assert jobs[1].title == 'Frontend Dev'
+    assert jobs[1].company == 'UICorp'
+
+
+def test_parse_emails_falls_back_to_snippet_field_if_no_body():
+    adapter = _make_adapter_no_user()
+    emails = [{
+        'subject': 'Neue Stelle: Test at TestCo',
+        'snippet': 'https://de.indeed.com/viewjob?jk=snip_only',
+        'from': 'x@indeed.com',
+    }]
+    jobs = adapter.parse_emails(emails)
+    assert len(jobs) == 1
+    assert 'snip_only' in jobs[0].url
+
+
+def test_parse_emails_skips_malformed_entries():
+    adapter = _make_adapter_no_user()
+    emails = [
+        "not a dict",
+        None,
+        {'subject': 'rubbish', 'body': 'no url no title'},  # parse fails → None
+        {'subject': 'Job: A at B', 'body': 'https://de.indeed.com/viewjob?jk=valid'},
+    ]
+    jobs = adapter.parse_emails(emails)
+    assert len(jobs) == 1
+    assert 'valid' in jobs[0].url
+
+
+def test_parse_emails_rejects_non_list_input():
+    adapter = _make_adapter_no_user()
+    with pytest.raises(ValueError, match="Liste"):
+        adapter.parse_emails("not a list")
+
+
+def test_parse_emails_works_without_user_context():
+    """parse_emails braucht keinen User (kein IMAP-Connect). AI-Fallback
+    wird nur bei user!=None aktiv."""
+    adapter = IndeedEmailAdapter(config={}, user=None)
+    jobs = adapter.parse_emails([{
+        'subject': 'Neue Stelle: Dev at Corp',
+        'body': 'https://de.indeed.com/viewjob?jk=nouser',
+    }])
+    assert len(jobs) == 1
+
+
 def test_ai_fallback_only_fills_missing_fields(monkeypatch):
     """Wenn Regex Title findet, soll AI nicht überschreiben."""
     class FakeUser:
