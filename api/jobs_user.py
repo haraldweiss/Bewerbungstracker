@@ -236,11 +236,30 @@ def list_matches(user):
         'rejection_window_days', user.job_reject_window_days or 180,
     ))
 
+    # 'unbewertet' ist ein Pseudo-Status, kein DB-Wert. Bedeutet:
+    # JobMatch ist 'new' aber Claude hat noch keinen match_score vergeben
+    # (Pre-Filter hat ggf. prefilter_score gesetzt, Claude-Bewertung steht aus).
+    # Echte DB-Statuses sind 'new', 'seen', 'imported', 'dismissed'.
+    real_status_filter = [s for s in status_filter if s != 'unbewertet']
+    unbewertet_requested = 'unbewertet' in status_filter
+
     query = (db.session.query(JobMatch, RawJob, JobSource)
              .join(RawJob, RawJob.id == JobMatch.raw_job_id)
              .join(JobSource, JobSource.id == RawJob.source_id)
-             .filter(JobMatch.user_id == user.id,
-                     JobMatch.status.in_(status_filter)))
+             .filter(JobMatch.user_id == user.id))
+
+    if unbewertet_requested and real_status_filter:
+        # Beide: 'unbewertet' OR andere echte Statuses
+        query = query.filter(db.or_(
+            JobMatch.status.in_(real_status_filter),
+            db.and_(JobMatch.status == 'new', JobMatch.match_score.is_(None)),
+        ))
+    elif unbewertet_requested:
+        # Nur 'unbewertet'
+        query = query.filter(JobMatch.status == 'new',
+                             JobMatch.match_score.is_(None))
+    else:
+        query = query.filter(JobMatch.status.in_(real_status_filter or ['new']))
 
     if min_score > 0:
         query = query.filter(JobMatch.match_score >= min_score)
