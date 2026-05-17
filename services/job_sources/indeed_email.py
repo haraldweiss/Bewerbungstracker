@@ -37,10 +37,12 @@ _SUBJECT_PATTERNS = [
     ),
 ]
 
-# Indeed-URL: deckt viewjob, cmp/firma/jobs und /jobs ab.
+# Indeed-URL: jede subdomain (cts.indeed.com, match.indeed.com, de.indeed.com,
+# www.indeed.com, ...) und jeder Pfad. Indeed nutzt vor allem cts.indeed.com/v3/
+# als Click-Tracker mit base64-codierter Ziel-URL — wir behalten den Tracker-Link
+# als external_id und folgen ihm nicht (kein Auto-Redirect).
 _INDEED_URL_RE = re.compile(
-    r'(https?://(?:[a-z]{2}\.)?indeed\.(?:de|com|co\.uk|fr|it|es)/'
-    r'(?:viewjob|cmp/[^/]+/jobs|rc/clk|jobs)[^\s\)<>"\']+)',
+    r'(https?://(?:[a-z0-9\-.]+\.)?indeed\.(?:de|com|co\.uk|fr|it|es)/[^\s\)<>"\'\\]+)',
     re.IGNORECASE,
 )
 
