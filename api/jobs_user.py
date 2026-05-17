@@ -600,6 +600,54 @@ def update_match_bulk(user):
 
 _INDEED_AUTO_DISABLE_THRESHOLD = 5
 
+# Apps-Script-Proxy: nur https://script.google.com/macros/s/{id}/(exec|dev) zulassen
+# (SSRF-Schutz — kein arbiträrer URL-Fetch durchs Backend).
+_APPS_SCRIPT_URL_RE = re.compile(
+    r'^https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/[a-z]+(?:\?[^\s]*)?$'
+)
+
+
+def _fetch_apps_script_emails(url: str) -> list[dict]:
+    """Server-side GET eines Apps-Script-Web-Endpoints (umgeht Browser-CORS).
+
+    URL-Validation gegen Whitelist (script.google.com/macros/s/…/exec) blockt
+    SSRF gegen interne Dienste. Google macht 30x-redirects nach
+    googleusercontent.com → wir folgen mit allow_redirects=True.
+    """
+    if not _APPS_SCRIPT_URL_RE.match(url or ''):
+        raise ValueError(
+            "Apps-Script-URL muss auf https://script.google.com/macros/s/.../exec passen"
+        )
+
+    import requests
+    try:
+        r = requests.get(url, timeout=60, allow_redirects=True)
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Apps-Script nicht erreichbar: {exc}") from exc
+
+    if r.status_code != 200:
+        raise RuntimeError(f"Apps-Script HTTP {r.status_code}")
+
+    ctype = (r.headers.get('Content-Type') or '').lower()
+    text = r.text
+    if 'json' not in ctype and not text.lstrip().startswith('{'):
+        snippet = text[:120].replace('\n', ' ')
+        raise RuntimeError(
+            f"Apps-Script gibt HTML statt JSON zurück — Deploy-Access falsch? "
+            f"(Beginn: {snippet!r})"
+        )
+
+    try:
+        data = r.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Apps-Script JSON-Parse-Fehler: {exc}") from exc
+
+    if data.get('status') and data['status'] != 'ok':
+        raise RuntimeError(f"Apps-Script-Error: {data.get('error') or data['status']}")
+
+    emails = data.get('emails')
+    return emails if isinstance(emails, list) else []
+
 
 def _get_rejected_companies_lower(user_id: str, window_days: int) -> set[str]:
     """Liefert lowercase company-Namen mit Status 'absage' im Reject-Fenster.
@@ -694,18 +742,23 @@ def import_from_email(user, source_id: int):
     if src.type != 'indeed_email':
         return jsonify({"error": "Source ist nicht vom Typ indeed_email"}), 400
 
-    # Modus-Wahl: Apps-Script (Body {emails:[...]}) oder IMAP-Fetch (leerer Body)
-    # Apps-Script-Mode: Frontend hat Emails via google-apps-script bereits geholt
-    # (privacy: kein IMAP-Password auf VPS). IMAP-Mode: VPS verbindet direkt
-    # zum User-Mailserver mit DB-Credentials.
+    # Modus-Wahl (3-fach):
+    #   1) Body {emails:[...]}     → Apps-Script-Mode (Browser hat schon gefetcht)
+    #   2) Body {script_url:"..."} → Apps-Script-Proxy-Mode (VPS fetcht, umgeht CORS)
+    #   3) Leerer Body             → IMAP-Mode (VPS verbindet direkt zu IMAP)
     payload = request.get_json(silent=True) or {}
     provided_emails = payload.get('emails')
+    script_url = payload.get('script_url')
 
     try:
         adapter = get_adapter(src.type, src.config, user=user)
         if isinstance(provided_emails, list):
             fetched = adapter.parse_emails(provided_emails)
             fetch_mode = 'apps_script'
+        elif isinstance(script_url, str) and script_url:
+            emails = _fetch_apps_script_emails(script_url)
+            fetched = adapter.parse_emails(emails)
+            fetch_mode = 'apps_script_proxy'
         else:
             fetched = adapter.fetch()
             fetch_mode = 'imap'

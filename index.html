@@ -3484,44 +3484,13 @@ const JdSourcesUI = (() => {
         if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Lade…'; }
 
         try {
-            // Privacy-by-design: Wenn indeedScriptUrl gesetzt, holt das Frontend
-            // die Emails via Google Apps Script (User-OAuth gegen Gmail). Der
-            // VPS sieht so nie IMAP-Credentials. Fallback: leerer Body → VPS
-            // versucht IMAP-Mode mit User.imap_* Feldern aus der DB.
-            let requestBody = null;
+            // Wenn indeedScriptUrl gesetzt: Backend macht serverseitigen Fetch
+            // (umgeht CORS — Browser kann nicht direkt zu script.google.com).
+            // Fallback ohne URL: leerer Body → VPS versucht IMAP-Mode mit
+            // User.imap_* Credentials aus der DB.
             const scriptUrl = (state && state.settings && state.settings.indeedScriptUrl || '').trim();
-            if (scriptUrl) {
-                if (btn) btn.innerHTML = '⏳ Hole Emails…';
-                let scriptResp;
-                try {
-                    scriptResp = await fetch(scriptUrl, { method: 'GET', signal: AbortSignal.timeout(45000) });
-                } catch (netErr) {
-                    throw new Error(`Apps-Script nicht erreichbar (${netErr.message || 'Netzwerk-Fehler'})`);
-                }
-                if (!scriptResp.ok) throw new Error(`Apps-Script HTTP ${scriptResp.status}`);
-                // Vor JSON-Parse: Content-Type prüfen — Apps Script returnt bei
-                // OAuth-Problem oder Script-Error eine HTML-Page (Login/Error).
-                const ctype = (scriptResp.headers.get('Content-Type') || '').toLowerCase();
-                const rawText = await scriptResp.text();
-                if (!ctype.includes('json') && !rawText.trim().startsWith('{')) {
-                    const looksLikeLogin = /<title>[^<]*sign in|account[s]?.google\.com/i.test(rawText);
-                    throw new Error(looksLikeLogin
-                        ? 'Apps-Script liefert Google-Login-Seite — bitte URL erneut deployen mit Zugriff "Jeder, der den Link hat" oder Test direkt im Browser öffnen.'
-                        : 'Apps-Script gibt HTML statt JSON zurück (Script-Fehler?). Prüfe das Script in script.google.com.');
-                }
-                let scriptData;
-                try {
-                    scriptData = JSON.parse(rawText);
-                } catch (parseErr) {
-                    throw new Error('Apps-Script-Response ist kein valides JSON: ' + rawText.slice(0, 100));
-                }
-                if (scriptData.status && scriptData.status !== 'ok') {
-                    throw new Error(`Apps-Script: ${scriptData.error || scriptData.status}`);
-                }
-                const emails = Array.isArray(scriptData.emails) ? scriptData.emails : [];
-                requestBody = JSON.stringify({ emails });
-                if (btn) btn.innerHTML = `⏳ Parse ${emails.length}…`;
-            }
+            const requestBody = scriptUrl ? JSON.stringify({ script_url: scriptUrl }) : null;
+            if (scriptUrl && btn) btn.innerHTML = '⏳ Hole + Parse Mails…';
 
             const r = await Auth.fetch(`/jobs/sources/${id}/import-from-email`, {
                 method: 'POST',

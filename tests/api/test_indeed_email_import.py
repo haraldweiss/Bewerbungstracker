@@ -450,6 +450,53 @@ def test_import_apps_script_mode_applies_rejection_window(client, auth_header, i
     assert data["fetch_mode"] == "apps_script"
 
 
+def test_import_apps_script_proxy_mode_fetches_via_backend(client, auth_header, indeed_source):
+    """Body {script_url:...} → Backend macht serverseitigen fetch (CORS-frei)."""
+    headers, user = auth_header
+    fake_response = {
+        'status': 'ok',
+        'count': 1,
+        'emails': [{
+            'subject': 'Neue Stelle: Backend Dev bei ProxyCo',
+            'body': 'https://de.indeed.com/viewjob?jk=proxy_test',
+            'from': 'jobs@indeed.com',
+        }],
+    }
+
+    class FakeResp:
+        status_code = 200
+        headers = {'Content-Type': 'application/json'}
+        text = '{"ok":1}'  # noqa
+        def json(self):
+            return fake_response
+
+    with patch('api.jobs_user.requests.get', return_value=FakeResp()) if False else \
+         patch('requests.get', return_value=FakeResp()):
+        r = client.post(
+            f"/api/jobs/sources/{indeed_source.id}/import-from-email",
+            json={'script_url': 'https://script.google.com/macros/s/ABCdef123_-/exec'},
+            headers=headers,
+        )
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data['fetch_mode'] == 'apps_script_proxy'
+    assert data['imported'] == 1
+    assert data['total_emails'] == 1
+
+
+def test_import_apps_script_proxy_rejects_bad_url(client, auth_header, indeed_source):
+    """SSRF-Schutz: nur script.google.com URLs sind erlaubt."""
+    headers, _ = auth_header
+    r = client.post(
+        f"/api/jobs/sources/{indeed_source.id}/import-from-email",
+        json={'script_url': 'https://evil.example.com/steal'},
+        headers=headers,
+    )
+    assert r.status_code in (502, 503)
+    err = r.get_json().get('error', '')
+    assert 'script.google.com' in err or 'ValueError' in err
+
+
 def test_import_empty_body_uses_imap_mode(client, auth_header, indeed_source):
     """Leerer Body → IMAP-Mode (existing). Mocked weil keine echten Creds."""
     headers, _ = auth_header
