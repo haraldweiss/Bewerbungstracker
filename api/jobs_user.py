@@ -170,6 +170,30 @@ def test_crawl_source(user, source_id: int):
 # Match-Endpoints
 # ---------------------------------------------------------------------------
 
+def _classify_match_origin(m: JobMatch) -> str:
+    """Bei dismissed Matches: 'auto' (KI/System) oder 'manual' (User).
+
+    Heuristik:
+      - feedback_text starts with 'auto_'  → auto  (z.B. auto_blocked_by_rejection)
+      - feedback_text/feedback_reasons set → manual (User hat begründet)
+      - prefilter_score < 5 AND kein Feedback → auto (Pre-Filter Score zu niedrig)
+      - sonst → manual (User klickte "Verwerfen" ohne Begründung)
+
+    Für status != 'dismissed' returnt '' (uninteressant).
+    """
+    if m.status != 'dismissed':
+        return ''
+    txt = (m.feedback_text or '').strip()
+    if txt.startswith('auto_'):
+        return 'auto'
+    has_feedback_reasons = m.feedback_reasons and m.feedback_reasons not in ('', '[]')
+    if txt or has_feedback_reasons:
+        return 'manual'
+    if m.prefilter_score is not None and m.prefilter_score < 5:
+        return 'auto'
+    return 'manual'
+
+
 def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
     # suspicious_reasons ist comma-separated im DB-Feld; Frontend bekommt Liste.
     suspicious_list = []
@@ -197,6 +221,7 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
         "suspicious_reasons": suspicious_list,
         "feedback_reasons": feedback_reasons_list,
         "feedback_text": m.feedback_text or None,
+        "origin": _classify_match_origin(m),  # '', 'manual', oder 'auto'
         "raw_job": {
             "id": raw.id, "title": raw.title, "company": raw.company,
             "location": raw.location, "url": raw.url, "description": raw.description,
@@ -220,6 +245,9 @@ def list_matches(user):
     # (feedback_text gesetzt ODER feedback_reasons-JSON ist nicht leer).
     # Nützlich beim Status='dismissed': sieht nur die mit erklärtem Grund.
     with_feedback = request.args.get('with_feedback', '').lower() in ('1', 'true', 'yes')
+    # ?origin=manual|auto: filtert dismissed Matches nach User-Entscheidung
+    # vs. System/KI. Heuristik in _classify_match_origin(). '' = alle.
+    origin_filter = request.args.get('origin', '').strip().lower()
     # Default: bereits beworbene Stellen (Treffer in Applications-Tabelle)
     # ausblenden. ?include_applied=true zeigt sie wieder an.
     include_applied = (request.args.get('include_applied', '').lower() in ('1', 'true', 'yes'))
@@ -280,6 +308,24 @@ def list_matches(user):
             db.and_(JobMatch.feedback_reasons.isnot(None), JobMatch.feedback_reasons != '',
                     JobMatch.feedback_reasons != '[]'),
         ))
+
+    if origin_filter in ('auto', 'manual'):
+        # 'auto'-Signal (SQL-Spiegel von _classify_match_origin):
+        #   feedback_text LIKE 'auto_%'  ODER
+        #   (kein Feedback UND prefilter_score < 5)
+        auto_signal = db.or_(
+            db.and_(JobMatch.feedback_text.isnot(None),
+                    JobMatch.feedback_text.like('auto_%')),
+            db.and_(
+                db.or_(JobMatch.feedback_text.is_(None), JobMatch.feedback_text == ''),
+                db.or_(JobMatch.feedback_reasons.is_(None),
+                       JobMatch.feedback_reasons == '',
+                       JobMatch.feedback_reasons == '[]'),
+                JobMatch.prefilter_score.isnot(None),
+                JobMatch.prefilter_score < 5,
+            ),
+        )
+        query = query.filter(auto_signal if origin_filter == 'auto' else db.not_(auto_signal))
 
     # Cross-Check gegen Applications: schon beworben?
     # Match-Heuristik (in dieser Reihenfolge):

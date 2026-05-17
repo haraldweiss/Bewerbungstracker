@@ -518,6 +518,15 @@
                 <input type="checkbox" id="jobs-with-feedback-filter" style="width:auto;cursor:pointer">
                 🏷️ Nur mit Grund
             </label>
+            <label style="font-size:0.85em;color:var(--text-muted)"
+                   title="Bei Verworfenen: manuell durch dich vs. automatisch (Pre-Filter / Rejection-Window-Cron)">
+                Origin:
+                <select id="jobs-origin-filter" style="padding:4px 8px;background:var(--bg-card2);color:var(--text);border:1px solid var(--border);border-radius:4px">
+                    <option value="" selected>Alle</option>
+                    <option value="manual">🤚 Manuell</option>
+                    <option value="auto">🤖 Auto (KI/System)</option>
+                </select>
+            </label>
             <label style="font-size:0.85em;color:var(--text-muted)">
                 Quelle:
                 <select id="jobs-source-filter" style="padding:4px 8px;background:var(--bg-card2);color:var(--text);border:1px solid var(--border);border-radius:4px">
@@ -3868,7 +3877,7 @@ const JobsView = (() => {
     const PAGE_SIZE = 25;
     const state = {
         initialized: false,
-        filters: { minScore: 0, minPrefilterScore: 0, status: 'new', sourceId: null, q: '', withFeedback: false },
+        filters: { minScore: 0, minPrefilterScore: 0, status: 'new', sourceId: null, q: '', withFeedback: false, origin: '' },
         offset: 0,
         total: 0,
         sourcesCache: [],
@@ -3957,6 +3966,11 @@ const JobsView = (() => {
         const missing = (m.missing_skills || []).slice(0, 5).map(s => escapeHtml(s));
         const suspiciousBadge = renderSuspiciousBadge(m.suspicious_reasons);
         const dismissReason = (m.status === 'dismissed') ? formatDismissReason(m) : '';
+        const originBadge = (m.status === 'dismissed' && m.origin) ? (
+            m.origin === 'auto'
+                ? `<span style="background:#a78bfa33;color:#a78bfa;padding:0.15rem 0.55rem;border-radius:6px;font-size:0.72rem;font-weight:600">🤖 Auto</span>`
+                : `<span style="background:#10b98133;color:#10b981;padding:0.15rem 0.55rem;border-radius:6px;font-size:0.72rem;font-weight:600">🤚 Manuell</span>`
+        ) : '';
 
         const evaluateBtn = hasClaudeScore ? '' : `
             <button class="btn btn-primary btn-sm" onclick="JobsView.requestSingleScore(${m.id})">
@@ -3980,9 +3994,10 @@ const JobsView = (() => {
                 <div style="color:var(--text-muted);font-size:0.85em;margin-top:0.5rem">
                     ${escapeHtml(r.company || '')}${r.location ? ' · ' + escapeHtml(r.location) : ''}${date ? ' · ' + date : ''}${r.source_name ? ' · ' + escapeHtml(r.source_name) : ''}
                 </div>
-                ${dismissReason ? `
-                    <p style="color:var(--text-muted);font-size:0.85em;margin:0.5rem 0;padding:0.4rem 0.6rem;background:var(--bg-card2);border-radius:6px;border-left:3px solid var(--danger,#ef4444)">
-                        <strong>Verworfen:</strong> ${escapeHtml(dismissReason)}
+                ${(dismissReason || originBadge) ? `
+                    <p style="color:var(--text-muted);font-size:0.85em;margin:0.5rem 0;padding:0.4rem 0.6rem;background:var(--bg-card2);border-radius:6px;border-left:3px solid var(--danger,#ef4444);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+                        ${originBadge}
+                        <span><strong>Verworfen${dismissReason ? ':' : ''}</strong>${dismissReason ? ' ' + escapeHtml(dismissReason) : ''}</span>
                     </p>
                 ` : ''}
                 ${m.match_reasoning ? `
@@ -4044,6 +4059,7 @@ const JobsView = (() => {
         if (state.filters.sourceId) params.set('source_id', state.filters.sourceId);
         if (state.filters.q) params.set('q', state.filters.q);
         if (state.filters.withFeedback) params.set('with_feedback', 'true');
+        if (state.filters.origin) params.set('origin', state.filters.origin);
         params.set('limit', PAGE_SIZE);
         params.set('offset', state.offset);
         try {
@@ -4316,6 +4332,16 @@ const JobsView = (() => {
                 state.selectedIds.clear();
                 renderBulkActionBar();
                 state.filters.withFeedback = e.target.checked;
+                state.offset = 0;
+                fetchMatches();
+            });
+        }
+        const originEl = document.getElementById('jobs-origin-filter');
+        if (originEl) {
+            originEl.addEventListener('change', e => {
+                state.selectedIds.clear();
+                renderBulkActionBar();
+                state.filters.origin = e.target.value || '';
                 state.offset = 0;
                 fetchMatches();
             });
