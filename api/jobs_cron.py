@@ -127,7 +127,12 @@ def _build_cv_summary(cv_data_json: str) -> str:
 
 
 def _select_due_source() -> JobSource | None:
-    candidates = JobSource.query.filter(JobSource.enabled == True).all()
+    # indeed_email-Sources werden NUR manuell importiert (kein Auto-Crawl),
+    # weil sie User-IMAP-Credentials brauchen und vom User-Action abhängen.
+    candidates = JobSource.query.filter(
+        JobSource.enabled == True,
+        JobSource.type != 'indeed_email',
+    ).all()
     now = datetime.utcnow()
     due = [
         s for s in candidates

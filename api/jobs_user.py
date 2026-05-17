@@ -3,6 +3,7 @@
 """User-facing Job-Discovery Endpoints (JWT-geschützt)."""
 
 from __future__ import annotations
+import re
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, current_app
 
@@ -31,7 +32,10 @@ def _get_anthropic_client():
     return Anthropic(api_key=api_key)
 
 
-_VALID_TYPES = {"rss", "adzuna", "bundesagentur", "arbeitnow"}
+_VALID_TYPES = {"rss", "adzuna", "bundesagentur", "arbeitnow", "indeed_email"}
+
+# Indeed-Email-Folder: ASCII + ein paar sichere Separator (Anti-Injection).
+_INDEED_FOLDER_RE = re.compile(r'^[A-Za-z0-9._\-/ ]{1,100}$')
 
 
 def _validate_config(source_type: str, config: dict) -> str | None:
@@ -51,6 +55,13 @@ def _validate_config(source_type: str, config: dict) -> str | None:
             return "Bundesagentur-Config benötigt mindestens 'was' oder 'wo'"
     elif source_type == "arbeitnow":
         pass
+    elif source_type == "indeed_email":
+        folder = (config or {}).get("folder", "Indeed")
+        if not isinstance(folder, str) or not _INDEED_FOLDER_RE.match(folder):
+            return "indeed_email-Config: 'folder' fehlt oder enthält ungültige Zeichen"
+        lookback = (config or {}).get("lookback_days", 30)
+        if not isinstance(lookback, int) or not (1 <= lookback <= 365):
+            return "indeed_email-Config: 'lookback_days' muss 1-365 sein"
     return None
 
 
@@ -144,7 +155,7 @@ def test_crawl_source(user, source_id: int):
         return jsonify({"error": "Forbidden"}), 403
 
     try:
-        adapter = get_adapter(src.type, src.config)
+        adapter = get_adapter(src.type, src.config, user=user)
         jobs = adapter.fetch()
         return jsonify({"ok": True, "found_jobs": len(jobs),
                         "sample_titles": [j.title for j in jobs[:5]]}), 200
@@ -580,4 +591,247 @@ def update_match_bulk(user):
         "updated": updated,
         "forbidden": forbidden,
         "not_found": not_found,
+    }), 200
+
+
+# ---------------------------------------------------------------------------
+# Indeed-Email Import (manueller User-Action)
+# ---------------------------------------------------------------------------
+
+_INDEED_AUTO_DISABLE_THRESHOLD = 5
+
+
+def _get_rejected_companies_lower(user_id: str, window_days: int) -> set[str]:
+    """Liefert lowercase company-Namen mit Status 'absage' im Reject-Fenster.
+
+    Spiegelt die Filter-Logik von list_matches (Zeile ~258), damit beim Import
+    dieselben Companies als "blocked" gekennzeichnet werden wie sie im
+    Vorschläge-Listing ausgeblendet wären.
+    """
+    cutoff_dt = datetime.utcnow() - timedelta(days=window_days)
+    cutoff_date = cutoff_dt.date()
+    q = (
+        db.session.query(db.func.lower(Application.company))
+        .filter(
+            Application.user_id == user_id,
+            Application.deleted == False,  # noqa: E712
+            Application.status.in_(['absage', 'rejected']),
+            Application.company.isnot(None),
+            db.or_(
+                Application.applied_date >= cutoff_date,
+                db.and_(Application.applied_date.is_(None),
+                        Application.created_at >= cutoff_dt),
+            ),
+        )
+        .distinct()
+    )
+    return {row[0] for row in q.all() if row[0]}
+
+
+def _create_raw_job_and_match(
+    src: JobSource,
+    user_id: str,
+    job_data: dict,
+    match_status: str,
+    feedback_text: str | None = None,
+) -> tuple[RawJob, JobMatch]:
+    """Erstellt RawJob + JobMatch in einer Transaktion. Caller commit()et."""
+    url = (job_data.get('url') or '').strip()
+    external_id = (job_data.get('external_id') or url or '')[:512]
+    raw = RawJob(
+        source_id=src.id,
+        external_id=external_id,
+        title=(job_data.get('title') or '')[:512],
+        company=(job_data.get('company') or '')[:255] or None,
+        location=(job_data.get('location') or '')[:255] or None,
+        url=url[:1024],
+        description=(job_data.get('description') or '')[:2000] or None,
+        crawl_status='raw',
+    )
+    raw.raw_payload = job_data.get('raw') or {}
+    db.session.add(raw)
+    db.session.flush()  # raw.id verfügbar machen
+
+    match = JobMatch(
+        raw_job_id=raw.id,
+        user_id=user_id,
+        status=match_status,
+        feedback_text=feedback_text,
+    )
+    db.session.add(match)
+    return raw, match
+
+
+@jobs_user_bp.post('/sources/<int:source_id>/import-from-email')
+@token_required
+def import_from_email(user, source_id: int):
+    """Fetcht neue Indeed-Job-Empfehlungen aus dem User-IMAP-Folder.
+
+    Ablauf:
+    1. Source laden, Ownership prüfen
+    2. Adapter fetch() → list[FetchedJob]
+    3. URL-Dedup gegen RawJob + Application
+    4. Rejection-Window: Companies mit Status='absage' werden als 'blocked'
+       markiert (nicht direkt importiert)
+    5. Non-blocked → RawJob + JobMatch(status='new') sofort
+    6. Blocked → temp zurück an Frontend (User entscheidet via /approve)
+
+    Returns:
+        {
+          "imported": int,        # direkt erstellte JobMatches
+          "blocked": [job_data],  # Companies mit aktiver Absage
+          "duplicates": int,      # bereits in DB
+          "total_emails": int,    # gefetchte Emails
+          "errors": [str]         # parse errors (best-effort)
+        }
+    """
+    from services.job_sources import get_adapter
+    from services.job_sources import dedup as _dedup
+
+    src = JobSource.query.get_or_404(source_id)
+    if src.user_id != user.id:
+        return jsonify({"error": "Forbidden"}), 403
+    if src.type != 'indeed_email':
+        return jsonify({"error": "Source ist nicht vom Typ indeed_email"}), 400
+
+    # Adapter fetch
+    try:
+        adapter = get_adapter(src.type, src.config, user=user)
+        fetched = adapter.fetch()
+    except Exception as e:
+        src.last_error = f"{type(e).__name__}: {str(e)[:500]}"
+        src.consecutive_failures = (src.consecutive_failures or 0) + 1
+        if src.consecutive_failures >= _INDEED_AUTO_DISABLE_THRESHOLD:
+            src.enabled = False
+        db.session.commit()
+        status_code = 503 if src.consecutive_failures < _INDEED_AUTO_DISABLE_THRESHOLD else 502
+        return jsonify({
+            "error": src.last_error,
+            "consecutive_failures": src.consecutive_failures,
+            "auto_disabled": not src.enabled,
+        }), status_code
+
+    # Erfolg: Counter zurücksetzen
+    src.consecutive_failures = 0
+    src.last_error = None
+
+    # URL-Dedup
+    existing_urls = _dedup.get_existing_job_urls()
+    fresh = _dedup.deduplicate(fetched, existing_urls)
+    duplicates_count = len(fetched) - len(fresh)
+
+    # Rejection-Window
+    window_days = int(user.job_reject_window_days or 180)
+    reject_enabled = bool(user.job_reject_filter_enabled)
+    rejected_companies = (
+        _get_rejected_companies_lower(user.id, window_days) if reject_enabled else set()
+    )
+
+    new_for_dialog: list[dict] = []
+    blocked_for_dialog: list[dict] = []
+
+    for fjob in fresh:
+        company_lower = (fjob.company or '').strip().lower()
+        is_blocked = bool(company_lower) and company_lower in rejected_companies
+        payload = {
+            'title': fjob.title,
+            'company': fjob.company,
+            'location': fjob.location,
+            'url': fjob.url,
+            'external_id': fjob.external_id,
+            'description': fjob.description,
+            'raw': fjob.raw or {},
+        }
+        if is_blocked:
+            blocked_for_dialog.append(payload)
+        else:
+            new_for_dialog.append(payload)
+
+    # Non-blocked: sofort als RawJob + JobMatch erstellen
+    imported_count = 0
+    for payload in new_for_dialog:
+        _create_raw_job_and_match(src, user.id, payload, match_status='new')
+        imported_count += 1
+
+    src.last_crawled_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({
+        "imported": imported_count,
+        "blocked": blocked_for_dialog,
+        "duplicates": duplicates_count,
+        "total_emails": len(fetched),
+        "rejection_window_days": window_days,
+        "reject_filter_enabled": reject_enabled,
+    }), 200
+
+
+@jobs_user_bp.post('/sources/<int:source_id>/import-from-email/approve')
+@token_required
+def approve_email_import(user, source_id: int):
+    """Verarbeitet User-Entscheidungen für blocked Jobs.
+
+    Body: { "decisions": [{ "action": "import_as_new"|"skip", "job": {...} }] }
+
+    - "import_as_new": RawJob + JobMatch(status='new') → erscheint in Vorschlägen
+    - "skip":          RawJob + JobMatch(status='dismissed',
+                       feedback_text='rejection_blocked_skip') → wird beim
+                       nächsten Import als URL-Duplicate erkannt und nicht
+                       erneut zur Entscheidung vorgelegt.
+
+    Returns: {"imported": N, "skipped": N, "ignored": N}
+    """
+    from services.job_sources import dedup as _dedup
+
+    src = JobSource.query.get_or_404(source_id)
+    if src.user_id != user.id:
+        return jsonify({"error": "Forbidden"}), 403
+    if src.type != 'indeed_email':
+        return jsonify({"error": "Source ist nicht vom Typ indeed_email"}), 400
+
+    data = request.get_json() or {}
+    decisions = data.get('decisions') or []
+    if not isinstance(decisions, list):
+        return jsonify({"error": "decisions muss eine Liste sein"}), 400
+
+    existing_urls = _dedup.get_existing_job_urls()
+
+    imported = 0
+    skipped = 0
+    ignored = 0  # malformed entries oder URL-Duplikate
+
+    for d in decisions:
+        if not isinstance(d, dict):
+            ignored += 1
+            continue
+        action = d.get('action')
+        job = d.get('job') or {}
+        url = (job.get('url') or '').strip()
+        if not url or not job.get('title'):
+            ignored += 1
+            continue
+        if url in existing_urls:
+            ignored += 1
+            continue
+
+        if action == 'import_as_new':
+            _create_raw_job_and_match(src, user.id, job, match_status='new')
+            imported += 1
+            existing_urls.add(url)
+        elif action == 'skip':
+            _create_raw_job_and_match(
+                src, user.id, job,
+                match_status='dismissed',
+                feedback_text='rejection_blocked_skip',
+            )
+            skipped += 1
+            existing_urls.add(url)
+        else:
+            ignored += 1
+
+    db.session.commit()
+    return jsonify({
+        "imported": imported,
+        "skipped": skipped,
+        "ignored": ignored,
     }), 200

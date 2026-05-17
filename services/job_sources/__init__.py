@@ -8,9 +8,16 @@ from services.job_sources.arbeitnow import ArbeitnowAdapter
 from services.job_sources.xing import XingAdapter
 from services.job_sources.linkedin import LinkedInAdapter
 from services.job_sources.stepstone import StepstoneAdapter
+from services.job_sources.indeed_email import IndeedEmailAdapter
 
 
-def get_adapter(source_type: str, config: dict) -> JobSourceAdapter:
+def get_adapter(source_type: str, config: dict, **kwargs) -> JobSourceAdapter:
+    """Instantiates a JobSource adapter for the given type.
+
+    kwargs sind optional und werden an Adapter weitergereicht, die zusätzlichen
+    Kontext brauchen (z.B. IndeedEmailAdapter braucht ``user=...`` für die
+    IMAP-Credentials).
+    """
     registry = {
         "rss": RssAdapter,
         "adzuna": AdzunaAdapter,
@@ -19,8 +26,11 @@ def get_adapter(source_type: str, config: dict) -> JobSourceAdapter:
         "xing": XingAdapter,
         "linkedin": LinkedInAdapter,
         "stepstone": StepstoneAdapter,
+        "indeed_email": IndeedEmailAdapter,
     }
     cls = registry.get(source_type)
     if not cls:
         raise ValueError(f"Unbekannter Source-Type: {source_type}")
+    if source_type == "indeed_email":
+        return cls(config, user=kwargs.get('user'))
     return cls(config)
