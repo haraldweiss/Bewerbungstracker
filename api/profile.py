@@ -404,3 +404,54 @@ def test_imap_connection(user):
 # Regex für IMAP-LIST-Response: (flags) "delim" "name"  →  greift den Namen.
 import re as _imap_re
 _imap_list_re = _imap_re.compile(r'"([^"]*)"\s*$')
+
+
+@profile_bp.post('/profile/imap/proxy-fetch')
+@token_required
+def proxy_fetch_via_db_credentials(user):
+    """Wrapper: nutzt DB-IMAP-Credentials, ruft intern den imap_proxy auf.
+
+    Erlaubt dem Frontend, Mails zu fetchen ohne dass das Passwort im
+    Browser-Form sein muss. Wenn der User die Credentials einmal via
+    Mail-Connector-Checkbox '🌐 Auch zum Server speichern' in die DB
+    gepusht hat, kann er beim nächsten Mal mit leerem Passwort-Feld
+    arbeiten — der Wrapper hier holt das Passwort aus der DB.
+
+    Body: { folder, limit, offset, listFolders }.
+    Antwort: Pass-Through der imap_proxy-Response.
+    """
+    if not user.imap_password_encrypted:
+        return jsonify({
+            'error': 'Keine IMAP-Credentials gespeichert. Bitte zuerst im Mail '
+                     'Connector mit Checkbox "🌐 Auch zum Server speichern" sichern.'
+        }), 400
+
+    data = request.get_json() or {}
+    folder = (data.get('folder') or 'INBOX').strip()
+    limit = max(5, min(200, int(data.get('limit', 50))))
+    offset = max(0, int(data.get('offset', 0)))
+    list_folders_only = bool(data.get('listFolders', False))
+
+    import requests as _requests
+    proxy_body = {
+        'host': user.imap_host,
+        'port': 993,
+        'protocol': 'imap',
+        'folder': folder,
+        'user': user.imap_user,
+        'pass': user.decrypted_imap_password,
+        'limit': limit,
+        'offset': offset,
+        'noVerify': False,
+        'listFolders': list_folders_only,
+    }
+    try:
+        r = _requests.post('http://127.0.0.1:8765/', json=proxy_body, timeout=35)
+    except _requests.RequestException as exc:
+        return jsonify({'error': f'IMAP-Proxy nicht erreichbar: {exc}'}), 502
+
+    # Pass-Through (Status-Code + JSON-Body)
+    try:
+        return jsonify(r.json()), r.status_code
+    except ValueError:
+        return jsonify({'error': 'IMAP-Proxy lieferte kein JSON'}), 502

@@ -299,8 +299,14 @@ def fetch_imap(host: str, port: int, user: str, password: str,
         gm_raw_used = False
 
         try:
-            # Gmail-Suche: "(subject:Bewerbung OR subject:Application OR ...)"
-            gm_query = '"(' + ' OR '.join(f'subject:{kw}' for kw in SEARCH_KEYWORDS) + ')"'
+            # Gmail-Suche: "(subject:Bewerbung OR subject:Application OR ...)
+            #               -in:sent -in:drafts -in:spam -in:trash"
+            # -in:sent schließt eigene Antwort-Mails aus (False-Positives bei
+            # [Google Mail]/Alle Nachrichten, da der Folder auch Sent enthält).
+            gm_query = (
+                '"(' + ' OR '.join(f'subject:{kw}' for kw in SEARCH_KEYWORDS) + ')'
+                ' -in:sent -in:drafts -in:spam -in:trash"'
+            )
             typ, data = conn.uid('SEARCH', 'X-GM-RAW', gm_query)
             if typ == 'OK' and data:
                 all_uids |= _collect_uids(data)

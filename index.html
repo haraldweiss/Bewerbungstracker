@@ -2996,9 +2996,17 @@ function loadSettingsForm() {
     const isu = document.getElementById('indeedScriptUrl');
     if (isu) isu.value = state.settings.indeedScriptUrl || '';
 
-    // Mail-Connector Server-Sync Checkbox
+    // Mail-Connector Server-Sync Checkbox + Passwort-Placeholder.
     const iss = document.getElementById('imapServerSync');
     if (iss) iss.checked = !!state.settings.imapServerSync;
+    // Wenn Server-Sync aktiv ist, signalisiert ein angepasster Placeholder
+    // dem User, dass das Passwort leer gelassen werden kann.
+    const ipw = document.getElementById('imapPass');
+    if (ipw) {
+        ipw.placeholder = state.settings.imapServerSync
+            ? 'Passwort (leer lassen, Server-stored)'
+            : 'Passwort';
+    }
 
     // IMAP-Status laden (asynchron, fire-and-forget)
     if (typeof JdSourcesUI !== 'undefined' && JdSourcesUI.loadImapStatus) {
@@ -7843,6 +7851,65 @@ async function checkImapProxy() {
     }
 }
 
+// Server-Credentials-Mode: ruft den Backend-Wrapper auf, der die in der DB
+// gespeicherten Credentials nutzt → Passwort muss nicht im Browser-Form sein.
+async function _fetchImapViaServerCredentials(folder, limit) {
+    const btn = document.getElementById('imapConnectBtn');
+    if (btn) { btn.innerHTML = '<span class="spinner"></span> Server-Credentials…'; btn.disabled = true; }
+    try {
+        const r = await Auth.fetch('/profile/imap/proxy-fetch', {
+            method: 'POST',
+            body: JSON.stringify({ folder, limit, offset: 0 }),
+        });
+        if (!r || r.error) throw new Error((r && r.error) || 'Leere Antwort');
+        updateProxyStatus(r);
+        state.imapEmails = r.emails || [];
+        renderImapResults(r.debug || '');
+        showToast(`${r.count} Email(s) via Server-Credentials geladen ✓`, 'success');
+    } catch (err) {
+        showToast('Server-Fetch fehlgeschlagen: ' + (err.message || ''), 'error');
+    } finally {
+        if (btn) { btn.innerHTML = '🔌 Verbinden & Abrufen'; btn.disabled = false; }
+    }
+}
+
+async function _listImapFoldersViaServerCredentials() {
+    const picker = document.getElementById('imapFolderPicker');
+    if (picker) {
+        picker.style.display = 'block';
+        picker.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">⏳ Lade Folder (Server-Credentials)…</span>';
+    }
+    try {
+        const r = await Auth.fetch('/profile/imap/proxy-fetch', {
+            method: 'POST',
+            body: JSON.stringify({ listFolders: true }),
+        });
+        if (!r || r.error) throw new Error((r && r.error) || 'Leere Antwort');
+        const folders = r.folders || [];
+        if (!picker) return;
+        if (folders.length === 0) {
+            picker.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">Keine Folder gefunden.</span>';
+            return;
+        }
+        picker.innerHTML = `<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.4rem">${folders.length} Folder gefunden — klick einen zum Übernehmen:</div>` +
+            folders.map((f, i) =>
+                `<button type="button" class="btn btn-sm" data-folder-idx="${i}" style="margin:0.15rem;font-family:monospace;font-size:0.78rem;text-align:left">${escHtml(f)}</button>`
+            ).join('');
+        picker.querySelectorAll('button[data-folder-idx]').forEach(b => {
+            b.addEventListener('click', () => {
+                const idx = parseInt(b.getAttribute('data-folder-idx'), 10);
+                const folder = folders[idx];
+                if (!folder) return;
+                document.getElementById('imapFolder').value = folder;
+                showToast('Ordner übernommen: ' + folder, 'success');
+            });
+        });
+    } catch (err) {
+        if (picker) picker.innerHTML = `<span style="color:var(--danger);font-size:0.85rem">❌ ${escHtml(err.message || 'Fehler')}</span>`;
+    }
+}
+
+
 async function listImapFolders() {
     // Wie fetchImapEmails, aber mit Body-Flag listFolders:true — der
     // imap_proxy macht dann nur LIST und gibt eine Folder-Liste zurück,
@@ -7854,6 +7921,11 @@ async function listImapFolders() {
     const pass     = document.getElementById('imapPass').value;
     const noVerify = document.getElementById('imapNoVerify').checked;
     const picker   = document.getElementById('imapFolderPicker');
+
+    // Server-Credentials-Mode: leeres Passwort + DB-stored
+    if (!pass && state.settings.imapServerSync) {
+        return _listImapFoldersViaServerCredentials();
+    }
 
     if (!host || !user || !pass) {
         showToast('Server-Adresse, E-Mail und Passwort sind erforderlich!', 'error');
@@ -7921,8 +7993,14 @@ async function fetchImapEmails() {
     const remember = document.getElementById('imapRemember').checked;
     const syncServer = (document.getElementById('imapServerSync') || {}).checked;
 
+    // Server-Credentials-Mode: Passwort-Feld leer, aber DB hat Creds gespeichert.
+    // Wir rufen den Wrapper-Endpoint auf statt direkt zum imap_proxy zu POSTen.
+    if (!pass && state.settings.imapServerSync) {
+        return _fetchImapViaServerCredentials(folder, limit);
+    }
+
     if (!host || !user || !pass) {
-        showToast('Server-Adresse, E-Mail und Passwort sind erforderlich!', 'error');
+        showToast('Server-Adresse, E-Mail und Passwort sind erforderlich! (Oder Passwort leer + zuvor Server-stored)', 'error');
         return;
     }
 
@@ -8265,6 +8343,22 @@ function filterImapResults() {
     renderImapResultsFiltered(imapFilteredEmails);
 }
 
+// Klassifiziert eine Mail per Subject-Heuristik in eine Bewerbungs-Status-Kategorie.
+// Returnt null wenn keine Kategorie passt — Render zeigt dann keinen Badge.
+function classifyEmailStatus(subject, fromAddr) {
+    const s = (subject || '').toLowerCase();
+    const userEmail = (state && state.settings && state.settings.imapUser || '').toLowerCase();
+    const fromLower = (fromAddr || '').toLowerCase();
+    const isFromMe = userEmail && fromLower.includes(userEmail);
+    if (isFromMe) return { label: '📤 Gesendet', bg: '#94a3b833', fg: '#94a3b8' };
+    if (/(zusage|stellenangebot|wir freuen uns,? ihnen|gratulier)/i.test(s)) return { label: '✅ Zusage', bg: '#10b98133', fg: '#10b981' };
+    if (/(absage|leider|bedauern|keine.{0,5}zusage|nicht.{0,5}weiter|nicht.{0,5}berücksichtigen|haben uns gegen)/i.test(s)) return { label: '❌ Absage', bg: '#ef444433', fg: '#ef4444' };
+    if (/(vorstellungs|interview|kennenlern|gespräch|video.?call|termin.{0,5}vereinbar)/i.test(s)) return { label: '🎤 Interview', bg: '#a78bfa33', fg: '#a78bfa' };
+    if (/(eingangsbest|ihre bewerbung.{0,15}(erhalten|eingegangen|angekommen)|vielen dank für ihre bewerbung)/i.test(s)) return { label: '📨 Eingang', bg: '#3b82f633', fg: '#3b82f6' };
+    if (/(im auswahlverfahren|prüfen|sichtung|in bearbeitung)/i.test(s)) return { label: '⏳ Prüfung', bg: '#f59e0b33', fg: '#f59e0b' };
+    return null;
+}
+
 function renderImapResultsFiltered(emailsToRender) {
     const list = document.getElementById('imapEmailList');
     if (!list) return;
@@ -8275,11 +8369,16 @@ function renderImapResultsFiltered(emailsToRender) {
     }
 
     // XSS-safe: escHtml für alle vom IMAP-Server kommenden Felder
-    list.innerHTML = emailsToRender.map((email, idx) => `
+    list.innerHTML = emailsToRender.map((email, idx) => {
+        const status = classifyEmailStatus(email.subject, email.from);
+        const badge = status
+            ? `<span style="background:${status.bg};color:${status.fg};padding:0.15rem 0.55rem;border-radius:6px;font-size:0.72rem;font-weight:600;margin-right:0.4rem;vertical-align:middle">${status.label}</span>`
+            : '';
+        return `
         <div class="email-item" style="margin-bottom:0.75rem;">
             <div class="email-item-header">
                 <div style="flex:1;">
-                    <div class="email-firma">${escHtml(email.firma || 'Unbekannt')}</div>
+                    <div class="email-firma">${badge}${escHtml(email.firma || 'Unbekannt')}</div>
                     <div style="font-size:0.82rem;color:var(--text-muted);">Von: ${escHtml(email.from || 'N/A')}</div>
                 </div>
                 <button class="btn btn-success btn-sm" onclick="importSingleImapEmail(${idx})">Importieren</button>
@@ -8290,8 +8389,8 @@ function renderImapResultsFiltered(emailsToRender) {
             <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">
                 ${escHtml(email.date || 'Kein Datum')}
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function importSingleImapEmail(idx) {
