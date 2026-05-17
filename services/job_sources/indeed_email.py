@@ -285,6 +285,15 @@ class IndeedEmailAdapter(JobSourceAdapter):
         if not title or not url:
             return None
 
+        # Tracker-URL (cts.indeed.com/v3/...) zu canonical Indeed-URL auflösen.
+        # Best-effort: bei Fehler bleibt die Tracker-URL erhalten (Browser kann
+        # ihr auch folgen, aber Dedup-Match gegen andere Sources wird besser
+        # mit canonical URL).
+        if 'cts.indeed.' in url.lower():
+            resolved = _resolve_indeed_tracker(url)
+            if resolved:
+                url = resolved
+
         return FetchedJob(
             external_id=url[:512],
             title=title[:512],
@@ -399,6 +408,29 @@ def _parse_date(date_str: str) -> Optional[datetime]:
         return dt
     except (TypeError, ValueError):
         return None
+
+
+def _resolve_indeed_tracker(tracker_url: str, timeout: float = 4.0) -> Optional[str]:
+    """Folgt einem cts.indeed.com Click-Tracker zur canonical Indeed-Job-URL.
+
+    HEAD-Request mit kurzem Timeout (Indeed-Tracker antworten in ms).
+    Cap auf ~3 Redirects. Bei Fehler/Timeout: None → Caller behält die
+    Tracker-URL (Browser-Klick funktioniert weiter).
+
+    SSRF-Schutz: Wir starten nur bei einer Tracker-URL die schon auf
+    cts.indeed.* zeigt — und akzeptieren nur Final-URLs auf indeed.*-Domains.
+    """
+    try:
+        import requests
+        r = requests.head(tracker_url, allow_redirects=True, timeout=timeout)
+    except Exception:
+        return None
+    final = (r.url or '').lower()
+    # Schutz: nur indeed.*-Final-URLs übernehmen (kein Open-Redirect-Hijack
+    # durch böse Tracker-Antworten).
+    if 'indeed.' not in final or 'cts.indeed.' in final:
+        return None
+    return r.url
 
 
 def _ai_extract(user, subject: str, body: str) -> Optional[dict]:

@@ -585,6 +585,79 @@ def test_import_empty_body_uses_imap_mode(client, auth_header, indeed_source):
     assert r.get_json()["fetch_mode"] == "imap"
 
 
+# ── Cron-Endpoint: Auto-Import alle eligible Sources ─────────────────────
+
+
+def test_cron_indeed_email_import_skips_source_without_credentials(client, auth_header, indeed_source, monkeypatch):
+    """Source ohne IMAP-Creds und ohne indeedScriptUrl → skipped_no_credentials."""
+    monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
+    r = client.post(
+        "/api/jobs/indeed-email-import-all",
+        headers={"X-Cron-Token": "test-token"},
+    )
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["total_sources"] == 1
+    assert any(run["status"] == "skipped_no_credentials" for run in data["runs"])
+
+
+def test_cron_indeed_email_import_runs_via_imap_when_credentials_present(
+    client, auth_header, indeed_source, monkeypatch
+):
+    headers, user = auth_header
+    # User mit IMAP-Creds versehen (Test-Modus: encryption_key gesetzt)
+    monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
+    monkeypatch.setenv("ENCRYPTION_KEY", "rYJrSGE_CPN0eL4Z5VYC0YMyhc4FU8X3uVlS8mPWyTw=")
+    from imap_service import IMAPCredentialManager
+    user.imap_host = "imap.example.com"
+    user.imap_user = "u@example.com"
+    user.imap_password_encrypted = IMAPCredentialManager.encrypt_password("pw")
+    db.session.commit()
+
+    fetched = [
+        FetchedJob(external_id="https://de.indeed.com/viewjob?jk=cron1",
+                   title="Cron Dev", url="https://de.indeed.com/viewjob?jk=cron1",
+                   company="CronCo", location="Berlin", description="..."),
+    ]
+    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+               return_value=fetched):
+        r = client.post(
+            "/api/jobs/indeed-email-import-all",
+            headers={"X-Cron-Token": "test-token"},
+        )
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["total_imported"] == 1
+    assert any(run.get("status") == "ok" and run.get("mode") == "imap"
+               for run in data["runs"])
+
+
+def test_cron_skips_not_due_sources(client, auth_header, indeed_source, monkeypatch):
+    """Source mit last_crawled_at < interval → skip (kein run-entry)."""
+    headers, user = auth_header
+    monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
+
+    # Source wurde gerade gecrawlt, Interval ist 60 Min → nicht due.
+    indeed_source.last_crawled_at = datetime.utcnow()
+    indeed_source.crawl_interval_min = 60
+    db.session.commit()
+
+    r = client.post(
+        "/api/jobs/indeed-email-import-all",
+        headers={"X-Cron-Token": "test-token"},
+    )
+    assert r.status_code == 200
+    data = r.get_json()
+    # Quelle existiert (total_sources=1) aber wurde nicht verarbeitet (kein run)
+    assert data["total_sources"] == 1
+    assert data["processed_runs"] == 0
+
+
+def test_cron_requires_token(client, indeed_source):
+    r = client.post("/api/jobs/indeed-email-import-all")
+    assert r.status_code in (401, 403)
+
+
 def test_approve_ignores_malformed_decisions(client, auth_header, indeed_source):
     headers, _ = auth_header
     payload = {

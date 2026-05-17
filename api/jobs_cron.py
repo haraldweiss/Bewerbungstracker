@@ -865,3 +865,150 @@ def cleanup():
     db.session.commit()
     return jsonify({"archived_raw_jobs": archived,
                     "reset_failure_counters": len(healthy_sources)}), 200
+
+
+# ---------------------------------------------------------------------------
+# Indeed-Email Auto-Import (Cron)
+# ---------------------------------------------------------------------------
+
+@jobs_cron_bp.post('/indeed-email-import-all')
+@require_cron_token
+def indeed_email_import_all():
+    """Auto-Import für ALLE eligible indeed_email-Sources.
+
+    Eligibility:
+    - enabled = True
+    - last_crawled_at NULL oder älter als crawl_interval_min
+    - Owner-User hat User.imap_password_encrypted ODER state.settings.indeedScriptUrl
+
+    Blocked Jobs (Firma im Reject-Window) werden NICHT als 'new' JobMatch
+    angelegt — sie kommen als 'dismissed' mit feedback_text='auto_blocked_by_rejection'
+    in die DB. So tauchen sie nicht in den Vorschlägen auf, sind aber als
+    Audit-Trail vorhanden (URL-Dedup verhindert auch erneutes Auto-Import).
+
+    Returns: Summary mit pro-Source-Counts und gesamt-imported/skipped.
+    """
+    from services.job_sources import get_adapter as _get_adapter
+    from services.job_sources import dedup as _dedup
+    from api.jobs_user import (
+        _get_rejected_companies_lower,
+        _create_raw_job_and_match,
+        _fetch_apps_script_emails,
+    )
+
+    now = datetime.utcnow()
+    eligible = JobSource.query.filter(
+        JobSource.type == 'indeed_email',
+        JobSource.enabled == True,  # noqa: E712
+    ).all()
+
+    runs = []
+    total_imported = 0
+    total_blocked_auto = 0
+
+    for src in eligible:
+        # Interval-Check
+        if src.last_crawled_at is not None:
+            next_due = src.last_crawled_at + timedelta(minutes=src.crawl_interval_min or 60)
+            if next_due > now:
+                continue  # noch nicht fällig
+
+        user = User.query.get(src.user_id) if src.user_id else None
+        if user is None:
+            runs.append({"source_id": src.id, "status": "skipped_no_owner"})
+            continue
+
+        # Modus bestimmen: indeedScriptUrl in user.settings oder IMAP-Creds?
+        settings = {}
+        if user.settings_json:
+            try:
+                settings = json.loads(user.settings_json) or {}
+            except (TypeError, ValueError):
+                settings = {}
+        script_url = (settings.get('indeedScriptUrl') or '').strip()
+        has_imap = bool(user.imap_password_encrypted)
+
+        try:
+            adapter = _get_adapter(src.type, src.config, user=user)
+            if script_url:
+                emails, _cache_hit = _fetch_apps_script_emails(
+                    script_url, user_id=user.id, use_cache=False,  # Cron: immer frisch
+                )
+                fetched = adapter.parse_emails(emails)
+                mode = 'apps_script_proxy'
+            elif has_imap:
+                fetched = adapter.fetch()
+                mode = 'imap'
+            else:
+                runs.append({"source_id": src.id, "status": "skipped_no_credentials"})
+                continue
+        except Exception as e:
+            src.last_error = f"{type(e).__name__}: {str(e)[:500]}"
+            src.consecutive_failures = (src.consecutive_failures or 0) + 1
+            if src.consecutive_failures >= 5:
+                src.enabled = False
+            db.session.commit()
+            runs.append({
+                "source_id": src.id, "status": "error",
+                "error": src.last_error,
+                "auto_disabled": not src.enabled,
+            })
+            continue
+
+        # Erfolg: counter reset
+        src.consecutive_failures = 0
+        src.last_error = None
+
+        # Dedup + Rejection
+        existing_urls = _dedup.get_existing_job_urls()
+        fresh = _dedup.deduplicate(fetched, existing_urls)
+        duplicates_count = len(fetched) - len(fresh)
+
+        window_days = int(user.job_reject_window_days or 180)
+        rejected_companies = (
+            _get_rejected_companies_lower(user.id, window_days)
+            if user.job_reject_filter_enabled else set()
+        )
+
+        imported_count = 0
+        blocked_auto_count = 0
+        for fjob in fresh:
+            company_lower = (fjob.company or '').strip().lower()
+            is_blocked = bool(company_lower) and company_lower in rejected_companies
+            payload = {
+                'title': fjob.title, 'company': fjob.company,
+                'location': fjob.location, 'url': fjob.url,
+                'external_id': fjob.external_id, 'description': fjob.description,
+                'raw': fjob.raw or {},
+            }
+            if is_blocked:
+                # Cron kann nicht interaktiv fragen → silent dismissed.
+                # User sieht nichts in der Liste, aber kein Re-Import durch URL-Dedup.
+                _create_raw_job_and_match(
+                    src, user.id, payload,
+                    match_status='dismissed',
+                    feedback_text='auto_blocked_by_rejection',
+                )
+                blocked_auto_count += 1
+            else:
+                _create_raw_job_and_match(src, user.id, payload, match_status='new')
+                imported_count += 1
+
+        src.last_crawled_at = now
+        total_imported += imported_count
+        total_blocked_auto += blocked_auto_count
+        runs.append({
+            "source_id": src.id, "status": "ok", "mode": mode,
+            "total_emails": len(fetched), "duplicates": duplicates_count,
+            "imported": imported_count, "blocked_auto": blocked_auto_count,
+        })
+
+    db.session.commit()
+    return jsonify({
+        "ran_at": now.isoformat(),
+        "total_sources": len(eligible),
+        "processed_runs": len(runs),
+        "total_imported": total_imported,
+        "total_blocked_auto": total_blocked_auto,
+        "runs": runs,
+    }), 200

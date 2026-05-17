@@ -3338,6 +3338,10 @@ const JdSourcesUI = (() => {
     // Wird beim Öffnen des Approval-Dialogs gesetzt und beim Schließen geleert.
     let _blockedJobsState = [];
 
+    // Wenn != null: openCreate-Modal ist im Edit-Modus für diese Source-ID.
+    // create() macht PATCH statt POST. closeCreate setzt zurück auf null.
+    let _editingSourceId = null;
+
     async function refresh() {
         const tbody = $('jdSourcesTableBody');
         if (!tbody) return;
@@ -3367,6 +3371,7 @@ const JdSourcesUI = (() => {
                                 ? `<button class="btn btn-sm btn-primary" onclick="JdSourcesUI.importFromEmail(${s.id})" title="Import aus IMAP-Folder">📧 Import</button>`
                                 : `<button class="btn btn-sm" onclick="JdSourcesUI.testCrawl(${s.id})" title="Test-Crawl">🧪</button>`}
                             ${s.is_own ? `
+                                <button class="btn btn-sm" onclick="JdSourcesUI.edit(${s.id})" title="Bearbeiten">✏️</button>
                                 <button class="btn btn-sm" onclick="JdSourcesUI.toggle(${s.id}, ${!s.enabled})" title="${s.enabled ? 'Deaktivieren' : 'Aktivieren'}">${s.enabled ? '⏸️' : '▶️'}</button>
                                 <button class="btn btn-sm btn-danger" onclick="JdSourcesUI.del(${s.id})" title="Löschen">🗑️</button>
                             ` : ''}
@@ -3497,14 +3502,24 @@ const JdSourcesUI = (() => {
 
     async function create() {
         try {
-            const r = await Auth.fetch('/jobs/sources', {
-                method: 'POST',
-                body: JSON.stringify({
-                    name: $('jdNewName').value,
-                    type: $('jdNewType').value,
-                    config: buildConfig(),
-                    crawl_interval_min: parseInt($('jdNewInterval').value, 10) || 60,
-                }),
+            const body = {
+                name: $('jdNewName').value,
+                config: buildConfig(),
+                crawl_interval_min: parseInt($('jdNewInterval').value, 10) || 60,
+            };
+            let endpoint, method;
+            if (_editingSourceId != null) {
+                // Edit-Modus: type bleibt unverändert (PATCH akzeptiert kein type)
+                endpoint = `/jobs/sources/${_editingSourceId}`;
+                method = 'PATCH';
+            } else {
+                endpoint = '/jobs/sources';
+                method = 'POST';
+                body.type = $('jdNewType').value;
+            }
+            const r = await Auth.fetch(endpoint, {
+                method,
+                body: JSON.stringify(body),
             });
             if (r && r.source) {
                 closeCreate();
@@ -3515,10 +3530,54 @@ const JdSourcesUI = (() => {
         }
     }
 
+    function edit(id) {
+        const src = (state && state.sourcesCache || []).find(s => s.id === id);
+        if (!src) { alert('Quelle nicht gefunden (refresh nötig)'); return; }
+        if (!src.is_own) { alert('Globale Quellen können nicht bearbeitet werden'); return; }
+        _editingSourceId = id;
+        openCreate();
+        // Type-Dropdown disabled (Type ist nicht änderbar) + auf den richtigen Wert setzen
+        const typeEl = $('jdNewType');
+        if (typeEl) {
+            typeEl.value = src.type;
+            typeEl.disabled = true;
+        }
+        // Name + Intervall
+        const nameEl = $('jdNewName'); if (nameEl) nameEl.value = src.name || '';
+        const intEl = $('jdNewInterval'); if (intEl) intEl.value = src.crawl_interval_min || 60;
+        // Type-spezifische Felder rendern und mit cfg pre-fillen
+        renderTypeFields();
+        const cfg = src.config || {};
+        if (src.type === 'indeed_email') {
+            if ($('jdCfgFolder')) $('jdCfgFolder').value = cfg.folder || 'Indeed';
+            if ($('jdCfgLookback')) $('jdCfgLookback').value = cfg.lookback_days || 30;
+        } else if (src.type === 'rss') {
+            if ($('jdCfgUrl')) $('jdCfgUrl').value = cfg.url || '';
+        } else if (src.type === 'adzuna') {
+            if ($('jdCfgAppId')) $('jdCfgAppId').value = cfg.app_id || '';
+            if ($('jdCfgAppKey')) $('jdCfgAppKey').value = cfg.app_key || '';
+            if ($('jdCfgCountry')) $('jdCfgCountry').value = cfg.country || 'de';
+            if ($('jdCfgWhat')) $('jdCfgWhat').value = cfg.what || '';
+            if ($('jdCfgWhere')) $('jdCfgWhere').value = cfg.where || '';
+        } else if (src.type === 'bundesagentur') {
+            if ($('jdCfgWas')) $('jdCfgWas').value = cfg.was || '';
+            if ($('jdCfgWo')) $('jdCfgWo').value = cfg.wo || '';
+            if ($('jdCfgUmkreis')) $('jdCfgUmkreis').value = cfg.umkreis || 25;
+        } else if (src.type === 'arbeitnow') {
+            if ($('jdCfgTags')) $('jdCfgTags').value = (cfg.tags || []).join(', ');
+        }
+        // Modal-Titel anpassen
+        const h3 = document.querySelector('#jdSourceModalWrap h3');
+        if (h3) h3.textContent = '✏️ Quelle bearbeiten';
+    }
+
     function closeCreate(event) {
         if (event && event.target.id !== 'jdSourceModalWrap') return;
         const m = $('jdSourceModalWrap');
         if (m) m.remove();
+        // Edit-Mode immer zurücksetzen — sonst würde 'Anlegen' beim
+        // nächsten Mal fälschlich PATCH machen.
+        _editingSourceId = null;
     }
 
     // ── Indeed-Email Import-Flow ────────────────────────────────────────────
@@ -3769,7 +3828,7 @@ const JdSourcesUI = (() => {
 
     return {
         refresh, openCreate, closeCreate, renderTypeFields, create,
-        testCrawl, toggle, del,
+        testCrawl, toggle, del, edit,
         importFromEmail, skipAllBlocked, submitApproval, closeApprovalDialog,
         saveIndeedScriptUrl, toggleIndeedScriptCode,
         testImap, clearImapCreds, loadImapStatus,
