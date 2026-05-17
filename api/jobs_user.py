@@ -216,6 +216,10 @@ def list_matches(user):
     q_text = (request.args.get('q') or '').strip().lower()
     limit = min(request.args.get('limit', type=int, default=50), 200)
     offset = request.args.get('offset', type=int, default=0)
+    # ?with_feedback=true → nur Matches die einen Grund/Begründung haben
+    # (feedback_text gesetzt ODER feedback_reasons-JSON ist nicht leer).
+    # Nützlich beim Status='dismissed': sieht nur die mit erklärtem Grund.
+    with_feedback = request.args.get('with_feedback', '').lower() in ('1', 'true', 'yes')
     # Default: bereits beworbene Stellen (Treffer in Applications-Tabelle)
     # ausblenden. ?include_applied=true zeigt sie wieder an.
     include_applied = (request.args.get('include_applied', '').lower() in ('1', 'true', 'yes'))
@@ -248,6 +252,14 @@ def list_matches(user):
         query = query.filter(db.or_(
             db.func.lower(RawJob.title).contains(q_text),
             db.func.lower(RawJob.company).contains(q_text),
+        ))
+    if with_feedback:
+        # Nur Matches mit hinterlegtem Grund — feedback_text oder
+        # feedback_reasons (JSON-Array, also nicht leer/null).
+        query = query.filter(db.or_(
+            db.and_(JobMatch.feedback_text.isnot(None), JobMatch.feedback_text != ''),
+            db.and_(JobMatch.feedback_reasons.isnot(None), JobMatch.feedback_reasons != '',
+                    JobMatch.feedback_reasons != '[]'),
         ))
 
     # Cross-Check gegen Applications: schon beworben?

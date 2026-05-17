@@ -513,6 +513,11 @@
                     <option value="dismissed">Verworfen</option>
                 </select>
             </label>
+            <label style="font-size:0.85em;color:var(--text-muted);display:flex;align-items:center;gap:0.35rem;cursor:pointer"
+                   title="Zeigt nur Matches, bei denen ein Grund (feedback_text oder feedback_reasons) hinterlegt ist">
+                <input type="checkbox" id="jobs-with-feedback-filter" style="width:auto;cursor:pointer">
+                🏷️ Nur mit Grund
+            </label>
             <label style="font-size:0.85em;color:var(--text-muted)">
                 Quelle:
                 <select id="jobs-source-filter" style="padding:4px 8px;background:var(--bg-card2);color:var(--text);border:1px solid var(--border);border-radius:4px">
@@ -3863,7 +3868,7 @@ const JobsView = (() => {
     const PAGE_SIZE = 25;
     const state = {
         initialized: false,
-        filters: { minScore: 0, minPrefilterScore: 0, status: 'new', sourceId: null, q: '' },
+        filters: { minScore: 0, minPrefilterScore: 0, status: 'new', sourceId: null, q: '', withFeedback: false },
         offset: 0,
         total: 0,
         sourcesCache: [],
@@ -4038,6 +4043,7 @@ const JobsView = (() => {
         params.set('status', state.filters.status);
         if (state.filters.sourceId) params.set('source_id', state.filters.sourceId);
         if (state.filters.q) params.set('q', state.filters.q);
+        if (state.filters.withFeedback) params.set('with_feedback', 'true');
         params.set('limit', PAGE_SIZE);
         params.set('offset', state.offset);
         try {
@@ -4304,6 +4310,16 @@ const JobsView = (() => {
             state.offset = 0;
             fetchMatches();
         });
+        const withFbEl = document.getElementById('jobs-with-feedback-filter');
+        if (withFbEl) {
+            withFbEl.addEventListener('change', e => {
+                state.selectedIds.clear();
+                renderBulkActionBar();
+                state.filters.withFeedback = e.target.checked;
+                state.offset = 0;
+                fetchMatches();
+            });
+        }
         $('jobs-source-filter').addEventListener('change', e => {
             state.selectedIds.clear();
             renderBulkActionBar();
