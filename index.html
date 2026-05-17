@@ -3918,6 +3918,25 @@ const JobsView = (() => {
         </span>`;
     }
 
+    // Wandelt feedback_text/feedback_reasons in eine menschenlesbare Begründung um.
+    // Wird beim Render von dismissed-Karten unter der Headline angezeigt.
+    function formatDismissReason(m) {
+        const txt = (m.feedback_text || '').trim();
+        const reasons = Array.isArray(m.feedback_reasons) ? m.feedback_reasons : [];
+        const knownCodes = {
+            'auto_blocked_by_rejection': '🚫 Auto: Firma hatte Absage im aktiven Fenster (Cron)',
+            'rejection_blocked_skip':    '🚫 Manuell ignoriert: Firma hatte Absage',
+        };
+        const parts = [];
+        if (txt) {
+            parts.push(knownCodes[txt] || ('📝 ' + txt));
+        }
+        if (reasons.length) {
+            parts.push('🏷️ ' + reasons.join(', '));
+        }
+        return parts.join(' · ');
+    }
+
     function renderCard(m) {
         const r = m.raw_job || {};
         const date = r.posted_at ? new Date(r.posted_at).toLocaleDateString('de-DE') : '';
@@ -3932,6 +3951,7 @@ const JobsView = (() => {
 
         const missing = (m.missing_skills || []).slice(0, 5).map(s => escapeHtml(s));
         const suspiciousBadge = renderSuspiciousBadge(m.suspicious_reasons);
+        const dismissReason = (m.status === 'dismissed') ? formatDismissReason(m) : '';
 
         const evaluateBtn = hasClaudeScore ? '' : `
             <button class="btn btn-primary btn-sm" onclick="JobsView.requestSingleScore(${m.id})">
@@ -3955,6 +3975,11 @@ const JobsView = (() => {
                 <div style="color:var(--text-muted);font-size:0.85em;margin-top:0.5rem">
                     ${escapeHtml(r.company || '')}${r.location ? ' · ' + escapeHtml(r.location) : ''}${date ? ' · ' + date : ''}${r.source_name ? ' · ' + escapeHtml(r.source_name) : ''}
                 </div>
+                ${dismissReason ? `
+                    <p style="color:var(--text-muted);font-size:0.85em;margin:0.5rem 0;padding:0.4rem 0.6rem;background:var(--bg-card2);border-radius:6px;border-left:3px solid var(--danger,#ef4444)">
+                        <strong>Verworfen:</strong> ${escapeHtml(dismissReason)}
+                    </p>
+                ` : ''}
                 ${m.match_reasoning ? `
                     <p style="margin:0.75rem 0;border-left:3px solid var(--primary);padding-left:0.75rem;font-style:italic">
                         ${escapeHtml(m.match_reasoning)}

@@ -175,6 +175,16 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
     suspicious_list = []
     if getattr(m, 'suspicious_reasons', None):
         suspicious_list = [r.strip() for r in m.suspicious_reasons.split(',') if r.strip()]
+    # feedback_reasons ist JSON-Array (Adaptive-Learning); Frontend bekommt Liste.
+    feedback_reasons_list = []
+    if getattr(m, 'feedback_reasons', None):
+        try:
+            import json as _json2
+            feedback_reasons_list = _json2.loads(m.feedback_reasons)
+            if not isinstance(feedback_reasons_list, list):
+                feedback_reasons_list = []
+        except (TypeError, ValueError):
+            feedback_reasons_list = []
     return {
         "id": m.id,
         "match_score": m.match_score,
@@ -185,6 +195,8 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
         "notified_at": m.notified_at.isoformat() if m.notified_at else None,
         "imported_application_id": m.imported_application_id,
         "suspicious_reasons": suspicious_list,
+        "feedback_reasons": feedback_reasons_list,
+        "feedback_text": m.feedback_text or None,
         "raw_job": {
             "id": raw.id, "title": raw.title, "company": raw.company,
             "location": raw.location, "url": raw.url, "description": raw.description,
