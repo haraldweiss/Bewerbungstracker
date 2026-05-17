@@ -461,7 +461,10 @@ def test_import_match_transfers_all_fields(client, auth_header):
     assert app_obj.company == "TechCorp"
     assert app_obj.position == "React Developer"
     assert app_obj.location == "Berlin, Germany"
-    assert app_obj.applied_date == posted_date.date()
+    # applied_date = HEUTE (Tag der Bewerbung), nicht raw.posted_at —
+    # User-Frust 2026-05-17: 'übernommene Indeed-Bewerbung hat kein Datum',
+    # weil Indeed-Email-Imports kein posted_at parsen.
+    assert app_obj.applied_date == datetime.utcnow().date()
     assert app_obj.source == "TestSource"
     assert app_obj.link == "https://example.com/job/123"
 

@@ -394,13 +394,16 @@ def import_match(user, match_id: int):
         f"Original-Link: {raw.url}"
     )
 
-    # Übertrage alle verfügbaren Felder vom RawJob
+    # Übertrage alle verfügbaren Felder vom RawJob.
+    # applied_date semantisch: Tag an dem der User sich BEWORBEN hat — also
+    # heute, wenn er den Vorschlag jetzt importiert. NICHT das Job-Posting-
+    # Datum (raw.posted_at), das verwirrt und fehlt bei Email-Imports eh oft.
     application = Application(
         user_id=user.id,
         company=raw.company or "Unbekannt",
         position=raw.title,
         status='beworben',
-        applied_date=raw.posted_at.date() if raw.posted_at else None,
+        applied_date=datetime.utcnow().date(),
         location=raw.location,
         source=src.name if src else None,
         link=raw.url,
