@@ -210,6 +210,46 @@ def _extract_all_headers_batch(data: list) -> dict[bytes, bytes]:
     return headers_dict
 
 
+# Regex zum Parsen einer IMAP-LIST-Zeile: `(flags) "delim" "name"` → Name.
+_IMAP_LIST_NAME_RE = re.compile(r'"([^"]*)"\s*$')
+
+
+def list_imap_folders(host: str, port: int, user: str, password: str,
+                      no_verify: bool) -> list[str]:
+    """Login + LIST + Logout. Returnt Folder-Namen sortiert.
+
+    Schnell genug für interaktiven UI-Use (1 Round-Trip). Kein Caching, weil
+    der User bei jedem Klick aktuelle Liste sehen will.
+    """
+    ctx = ssl.create_default_context()
+    if no_verify:
+        ctx.check_hostname = False
+        ctx.verify_mode    = ssl.CERT_NONE
+    conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx)
+    folders: list[str] = []
+    try:
+        conn.login(user, password)
+        typ, raw = conn.list()
+        if typ == 'OK' and raw:
+            for entry in raw[:200]:
+                if not entry:
+                    continue
+                line = entry.decode('utf-8', errors='ignore') if isinstance(entry, bytes) else str(entry)
+                m = _IMAP_LIST_NAME_RE.search(line)
+                if m:
+                    folders.append(m.group(1))
+                else:
+                    parts = line.rsplit(' ', 1)
+                    if len(parts) == 2:
+                        folders.append(parts[1].strip().strip('"'))
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+    return sorted(folders, key=str.lower)
+
+
 def fetch_imap(host: str, port: int, user: str, password: str,
                folder: str, limit: int, offset: int, no_verify: bool) -> tuple[list[dict], str, int, int]:
     """
@@ -455,6 +495,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         limit     = max(5, min(200, int(data.get('limit', 50))))
         offset    = max(0, int(data.get('offset', 0)))
         no_verify = bool(data.get('noVerify', False))
+        list_folders_only = bool(data.get('listFolders', False))
 
         if not host:
             self._json({'error': 'Server-Adresse fehlt oder ungültig'}, 400); return
@@ -470,6 +511,19 @@ class ProxyHandler(BaseHTTPRequestHandler):
         # doppelte Anführungszeichen und Backslashes.
         if not re.match(r'^[^\x00-\x1f\x7f"\\]{1,100}$', folder):
             self._json({'error': 'Ungültiger Ordner-Name'}, 400); return
+
+        # listFolders-Mode: nur IMAP-LIST machen, return Folder-Namen — kein Search.
+        # Wird vom Frontend für den Folder-Picker im Mail Connector genutzt.
+        if list_folders_only and protocol == 'imap':
+            try:
+                folders = list_imap_folders(host, port, user, password, no_verify)
+                self._json({'status': 'ok', 'count': len(folders), 'folders': folders})
+            except (imaplib.IMAP4.error, ConnectionError, ssl.SSLError) as e:
+                msg = str(e).replace(password, '***')
+                self._json({'error': f'IMAP-Fehler: {msg}'}, 502)
+            except Exception as e:
+                self._json({'error': f'Server-Fehler: {type(e).__name__}'}, 500)
+            return
 
         try:
             # ── Check cache (use cache key without password) ────────────────────────

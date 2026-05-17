@@ -772,10 +772,16 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Ordner <span style="color:var(--text-muted);font-size:0.75rem;">(nur IMAP)</span></label>
+                    <label>
+                        Ordner <span style="color:var(--text-muted);font-size:0.75rem;">(nur IMAP)</span>
+                        <button type="button" class="btn btn-sm" onclick="listImapFolders()"
+                                style="margin-left:0.5rem;font-size:0.7rem;padding:0.15rem 0.5rem"
+                                title="Listet alle Folder deines Mailservers auf">📋 Listen</button>
+                    </label>
                     <input type="text" id="imapFolder" value="INBOX" placeholder="INBOX">
                 </div>
             </div>
+            <div id="imapFolderPicker" style="display:none;background:var(--bg-card2);padding:0.5rem;border-radius:6px;max-height:200px;overflow-y:auto;margin-bottom:0.75rem;"></div>
             <div id="imapFolderHint" style="display:none;font-size:0.82rem;color:#FCD34D;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:rgba(245,158,11,0.08);border-radius:6px;border-left:3px solid #F59E0B;"></div>
 
             <div class="form-grid" style="margin-bottom:1rem;">
@@ -7836,6 +7842,72 @@ async function checkImapProxy() {
         statusEl.style.color = '#F87171';
     }
 }
+
+async function listImapFolders() {
+    // Wie fetchImapEmails, aber mit Body-Flag listFolders:true — der
+    // imap_proxy macht dann nur LIST und gibt eine Folder-Liste zurück,
+    // kein Search/Fetch.
+    const host     = document.getElementById('imapHost').value.trim();
+    const port     = parseInt(document.getElementById('imapPort').value) || 993;
+    const protocol = document.getElementById('imapProtocol').value;
+    const user     = document.getElementById('imapUser').value.trim();
+    const pass     = document.getElementById('imapPass').value;
+    const noVerify = document.getElementById('imapNoVerify').checked;
+    const picker   = document.getElementById('imapFolderPicker');
+
+    if (!host || !user || !pass) {
+        showToast('Server-Adresse, E-Mail und Passwort sind erforderlich!', 'error');
+        return;
+    }
+    if (protocol !== 'imap') {
+        showToast('Folder-Listing geht nur mit IMAP, nicht POP3', 'warning');
+        return;
+    }
+
+    if (picker) {
+        picker.style.display = 'block';
+        picker.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">⏳ Lade Folder…</span>';
+    }
+
+    try {
+        const res = await fetch(IMAP_PROXY + '/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host, port, protocol, user, pass, noVerify, listFolders: true }),
+            signal: AbortSignal.timeout(30000),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        const folders = data.folders || [];
+        if (!picker) return;
+        if (folders.length === 0) {
+            picker.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">Keine Folder gefunden.</span>';
+            return;
+        }
+        // Klickbare Buttons rendern (XSS-safe: data-folder-idx Attribute statt onclick-Inline)
+        picker.innerHTML = `<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.4rem">${folders.length} Folder gefunden — klick einen zum Übernehmen:</div>` +
+            folders.map((f, i) =>
+                `<button type="button" class="btn btn-sm" data-folder-idx="${i}" style="margin:0.15rem;font-family:monospace;font-size:0.78rem;text-align:left">${escHtml(f)}</button>`
+            ).join('');
+        picker.querySelectorAll('button[data-folder-idx]').forEach(b => {
+            b.addEventListener('click', () => {
+                const idx = parseInt(b.getAttribute('data-folder-idx'), 10);
+                const folder = folders[idx];
+                if (!folder) return;
+                document.getElementById('imapFolder').value = folder;
+                showToast('Ordner übernommen: ' + folder, 'success');
+                // Picker offen lassen, falls User nochmal wechseln will.
+            });
+        });
+    } catch (err) {
+        if (picker) {
+            picker.innerHTML = `<span style="color:var(--danger);font-size:0.85rem">❌ ${escHtml(err.message || 'Fehler')}</span>`;
+        }
+        showToast('Folder-Listing fehlgeschlagen: ' + (err.message || ''), 'error');
+    }
+}
+
 
 async function fetchImapEmails() {
     const host     = document.getElementById('imapHost').value.trim();
