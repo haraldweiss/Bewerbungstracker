@@ -72,9 +72,15 @@ class IndeedEmailAdapter(JobSourceAdapter):
     `user.decrypted_imap_password`).
     """
 
+    # Hard cap auf AI-Fallback-Calls pro Adapter-Lauf — verhindert dass
+    # ein großes Email-Batch (z.B. 171 Mails) den gunicorn-Worker (timeout
+    # 180s) durch Ollama/Claude-Latenz killt. Regex-only läuft sub-second.
+    AI_FALLBACK_BUDGET = 10
+
     def __init__(self, config: dict, user=None):
         super().__init__(config)
         self.user = user
+        self._ai_calls_used = 0
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -91,6 +97,7 @@ class IndeedEmailAdapter(JobSourceAdapter):
         if not isinstance(emails, list):
             raise ValueError("emails muss eine Liste sein")
 
+        self._ai_calls_used = 0  # AI-Budget pro Lauf zurücksetzen
         jobs: list[FetchedJob] = []
         for em in emails:
             if not isinstance(em, dict):
@@ -133,6 +140,7 @@ class IndeedEmailAdapter(JobSourceAdapter):
 
         emails = self._fetch_emails(host, imap_user, password, folder, lookback_days, limit)
 
+        self._ai_calls_used = 0  # AI-Budget pro Lauf zurücksetzen
         jobs: list[FetchedJob] = []
         for em in emails:
             try:
@@ -229,14 +237,30 @@ class IndeedEmailAdapter(JobSourceAdapter):
         if m:
             location = m.group(1).strip()
 
-        # AI-Fallback wenn Pflichtfelder fehlen
+        # AI-Fallback nur wenn:
+        #   1. Pflichtfelder fehlen UND
+        #   2. Mail sieht wie Job-Mail aus (URL bereits da ODER Indeed-Marker
+        #      im Subject/From) — sonst sind das random Newsletter und ein
+        #      AI-Call wäre Verschwendung UND
+        #   3. AI-Budget für diesen Lauf noch nicht ausgeschöpft (siehe
+        #      AI_FALLBACK_BUDGET).
+        # Kombi sorgt dafür dass 171 Random-Inbox-Mails nicht den Worker
+        # killen (gunicorn timeout 180s).
         if (not title or not company or not url) and self.user is not None:
-            ai_data = _ai_extract(self.user, subject, body)
-            if ai_data:
-                title = title or ai_data.get('title')
-                company = company or ai_data.get('company')
-                location = location or ai_data.get('location')
-                url = url or ai_data.get('url')
+            from_field = (em.get('from') or '').lower()
+            looks_like_indeed = (
+                url is not None
+                or 'indeed.' in from_field
+                or 'indeed' in subject.lower()
+            )
+            if looks_like_indeed and self._ai_calls_used < self.AI_FALLBACK_BUDGET:
+                self._ai_calls_used += 1
+                ai_data = _ai_extract(self.user, subject, body)
+                if ai_data:
+                    title = title or ai_data.get('title')
+                    company = company or ai_data.get('company')
+                    location = location or ai_data.get('location')
+                    url = url or ai_data.get('url')
 
         # Minimum: title + url
         if not title or not url:

@@ -222,12 +222,14 @@ def test_ai_fallback_called_when_fields_missing(monkeypatch):
         fake_ai_extract,
     )
 
+    # Subject ohne klares Pattern, ABER von indeed → looks_like_indeed=True
+    # → AI-Fallback wird getriggert (Pre-Filter passes)
     email_data = {
-        'subject': 'random newsletter',
-        'body': 'no obvious indeed link or fields here',
+        'subject': 'Indeed weekly digest',
+        'body': 'no obvious link or fields here',
         'message_id': '',
         'date': '',
-        'from': '',
+        'from': 'noreply@indeed.com',
     }
     job = adapter._parse_email(email_data)
     assert job is not None
@@ -306,6 +308,77 @@ def test_parse_emails_works_without_user_context():
         'body': 'https://de.indeed.com/viewjob?jk=nouser',
     }])
     assert len(jobs) == 1
+
+
+def test_ai_fallback_skipped_for_non_indeed_emails(monkeypatch):
+    """Random Newsletter ohne Indeed-Marker → kein AI-Call (Cost-Schutz)."""
+    class FakeUser:
+        id = 'u'
+        imap_host = 'x'; imap_user = 'x'; decrypted_imap_password = 'x'
+        def get_model_for(self, _): return ('ollama', 'llama2')
+        def get_backup_config(self): return None
+
+    adapter = IndeedEmailAdapter(config={}, user=FakeUser())
+    called = {'count': 0}
+
+    def fake_ai(user, subject, body):
+        called['count'] += 1
+        return {'title': 'X', 'company': 'Y', 'location': None, 'url': 'https://de.indeed.com/viewjob?jk=ai'}
+
+    monkeypatch.setattr('services.job_sources.indeed_email._ai_extract', fake_ai)
+
+    # Newsletter ohne Indeed-Bezug → kein AI-Call, return None
+    result = adapter._parse_email({
+        'subject': 'Newsletter vom April',
+        'body': 'Lots of text. No indeed link. No job marker.',
+        'from': 'newsletter@example.com',
+    })
+    assert result is None
+    assert called['count'] == 0
+
+
+def test_ai_fallback_budget_caps_calls(monkeypatch):
+    """Bei vielen Job-Mails ohne Regex-Match: maximal AI_FALLBACK_BUDGET
+    AI-Calls — verhindert Worker-Timeout bei großen Batches."""
+    class FakeUser:
+        id = 'u'
+        imap_host = 'x'; imap_user = 'x'; decrypted_imap_password = 'x'
+        def get_model_for(self, _): return ('ollama', 'llama2')
+        def get_backup_config(self): return None
+
+    adapter = IndeedEmailAdapter(config={}, user=FakeUser())
+    adapter.AI_FALLBACK_BUDGET = 3  # für Test runter
+
+    call_count = {'n': 0}
+    def fake_ai(user, subject, body):
+        call_count['n'] += 1
+        return {'title': 'T', 'company': 'C', 'location': None,
+                'url': 'https://de.indeed.com/viewjob?jk=ai' + str(call_count['n'])}
+    monkeypatch.setattr('services.job_sources.indeed_email._ai_extract', fake_ai)
+
+    # 10 Indeed-Mails ohne klares Subject → würden alle AI triggern
+    emails = [
+        {'subject': f'random subject {i}',
+         'body': 'irrelevant',
+         'from': 'jobs@indeed.com'}  # indeed im from → looks_like_indeed=True
+        for i in range(10)
+    ]
+    jobs = adapter.parse_emails(emails)
+    assert call_count['n'] == 3  # nur Budget-viele AI-Calls
+    assert len(jobs) == 3  # nur die ersten 3 bekommen AI → haben Title+URL
+
+
+def test_ai_budget_resets_between_runs():
+    class FakeUser:
+        id = 'u'
+        imap_host = 'x'; imap_user = 'x'; decrypted_imap_password = 'x'
+        def get_model_for(self, _): return ('ollama', 'llama2')
+        def get_backup_config(self): return None
+
+    adapter = IndeedEmailAdapter(config={}, user=FakeUser())
+    adapter._ai_calls_used = 999
+    adapter.parse_emails([])  # leerer Lauf
+    assert adapter._ai_calls_used == 0
 
 
 def test_ai_fallback_only_fills_missing_fields(monkeypatch):
