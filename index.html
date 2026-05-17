@@ -3226,7 +3226,12 @@ const JdSourcesUI = (() => {
     const TYPE_LABELS = {
         rss: '📰 RSS', adzuna: '🔎 Adzuna',
         bundesagentur: '🇩🇪 Bundesagentur', arbeitnow: '🌍 Arbeitnow',
+        indeed_email: '📧 Indeed-Email',
     };
+
+    // Per-Approval-Dialog-State: blocked Jobs aus dem letzten Import.
+    // Wird beim Öffnen des Approval-Dialogs gesetzt und beim Schließen geleert.
+    let _blockedJobsState = [];
 
     async function refresh() {
         const tbody = $('jdSourcesTableBody');
@@ -3253,7 +3258,9 @@ const JdSourcesUI = (() => {
                         <td style="padding:0.4rem">${TYPE_LABELS[s.type] || s.type}</td>
                         <td style="padding:0.4rem">${status}</td>
                         <td style="padding:0.4rem;white-space:nowrap">
-                            <button class="btn btn-sm" onclick="JdSourcesUI.testCrawl(${s.id})" title="Test-Crawl">🧪</button>
+                            ${s.type === 'indeed_email'
+                                ? `<button class="btn btn-sm btn-primary" onclick="JdSourcesUI.importFromEmail(${s.id})" title="Import aus IMAP-Folder">📧 Import</button>`
+                                : `<button class="btn btn-sm" onclick="JdSourcesUI.testCrawl(${s.id})" title="Test-Crawl">🧪</button>`}
                             ${s.is_own ? `
                                 <button class="btn btn-sm" onclick="JdSourcesUI.toggle(${s.id}, ${!s.enabled})" title="${s.enabled ? 'Deaktivieren' : 'Aktivieren'}">${s.enabled ? '⏸️' : '▶️'}</button>
                                 <button class="btn btn-sm btn-danger" onclick="JdSourcesUI.del(${s.id})" title="Löschen">🗑️</button>
@@ -3305,6 +3312,7 @@ const JdSourcesUI = (() => {
                         <option value="bundesagentur">🇩🇪 Bundesagentur Jobsuche</option>
                         <option value="adzuna">🔎 Adzuna</option>
                         <option value="arbeitnow">🌍 Arbeitnow (Remote)</option>
+                        <option value="indeed_email">📧 Indeed Email-Folder (manuell)</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -3349,6 +3357,13 @@ const JdSourcesUI = (() => {
         } else if (t === 'arbeitnow') {
             c.innerHTML = `<div class="form-group"><label>Tags (kommagetrennt):</label>
                 <input type="text" id="jdCfgTags" placeholder="javascript, remote" style="width:100%"></div>`;
+        } else if (t === 'indeed_email') {
+            c.innerHTML = `
+                <div class="form-group"><label>IMAP-Folder:</label>
+                    <input type="text" id="jdCfgFolder" value="Indeed" placeholder="Indeed" style="width:100%"></div>
+                <div class="form-group"><label>Lookback (Tage):</label>
+                    <input type="number" id="jdCfgLookback" value="30" min="1" max="365" style="width:120px"></div>
+                <div class="form-group" style="font-size:0.8rem;color:var(--text-muted)">Nur manueller Import via 📧 Button. User-IMAP-Credentials müssen gesetzt sein.</div>`;
         }
     }
 
@@ -3367,6 +3382,10 @@ const JdSourcesUI = (() => {
         };
         if (t === 'arbeitnow') return {
             tags: ($('jdCfgTags').value || '').split(',').map(s => s.trim()).filter(Boolean),
+        };
+        if (t === 'indeed_email') return {
+            folder: ($('jdCfgFolder').value || 'Indeed').trim(),
+            lookback_days: parseInt($('jdCfgLookback').value, 10) || 30,
         };
         return {};
     }
@@ -3397,7 +3416,126 @@ const JdSourcesUI = (() => {
         if (m) m.remove();
     }
 
-    return { refresh, openCreate, closeCreate, renderTypeFields, create, testCrawl, toggle, del };
+    // ── Indeed-Email Import-Flow ────────────────────────────────────────────
+
+    async function importFromEmail(id) {
+        const btn = document.querySelector(`button[onclick="JdSourcesUI.importFromEmail(${id})"]`);
+        const originalText = btn ? btn.innerHTML : '';
+        if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Lade…'; }
+
+        try {
+            const r = await Auth.fetch(`/jobs/sources/${id}/import-from-email`, { method: 'POST' });
+            if (!r) throw new Error('Leere Antwort vom Server');
+
+            const imported = r.imported || 0;
+            const blocked = r.blocked || [];
+            const dup = r.duplicates || 0;
+            const total = r.total_emails || 0;
+
+            // Kein Approval nötig → einfache Erfolgsmeldung
+            if (blocked.length === 0) {
+                alert(`✅ Import abgeschlossen.\n\n${total} Email(s) geprüft\n${imported} neue(r) Job-Vorschlag(e) importiert${dup ? `\n${dup} Duplikat(e) übersprungen` : ''}.`);
+                refresh();
+                return;
+            }
+
+            // Blocked Jobs → Approval-Dialog
+            openImportApprovalDialog(id, r);
+        } catch (e) {
+            const msg = (e && e.message) ? e.message : String(e);
+            alert(`❌ Import fehlgeschlagen: ${msg}`);
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
+        }
+    }
+
+    function openImportApprovalDialog(sourceId, importResult) {
+        if ($('jdImportApprovalWrap')) return;
+
+        _blockedJobsState = (importResult.blocked || []).slice();
+        const imported = importResult.imported || 0;
+        const dup = importResult.duplicates || 0;
+        const windowDays = importResult.rejection_window_days || 180;
+
+        const rowsHtml = _blockedJobsState.map((j, idx) => `
+            <div data-blocked-idx="${idx}" style="margin-bottom:0.75rem;padding:0.75rem;background:var(--bg-card2);border-radius:6px;border-left:3px solid var(--warning)">
+                <div style="font-weight:600">${escapeHtml(j.title || '')}</div>
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-top:0.2rem">
+                    ${escapeHtml(j.company || '—')}${j.location ? ' · ' + escapeHtml(j.location) : ''}
+                </div>
+                ${j.url ? `<div style="margin-top:0.3rem;font-size:0.8rem;word-break:break-all"><a href="${escapeHtml(j.url)}" target="_blank" rel="noopener">🔗 Job ansehen</a></div>` : ''}
+                <div style="margin-top:0.6rem;display:flex;gap:1rem;flex-wrap:wrap;font-size:0.9rem">
+                    <label style="cursor:pointer"><input type="radio" name="jdDecision_${idx}" value="import_as_new"> ✅ Neue Stelle (importieren)</label>
+                    <label style="cursor:pointer"><input type="radio" name="jdDecision_${idx}" value="skip" checked> ❌ Ignorieren</label>
+                </div>
+            </div>`).join('');
+
+        const html = `
+        <div id="jdImportApprovalWrap" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000">
+            <div style="background:var(--bg-card);border-radius:8px;padding:1.5rem;max-width:700px;width:92%;max-height:88vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+                <h3 style="margin-top:0;margin-bottom:0.5rem">📧 Indeed Import — Entscheidung nötig</h3>
+                <div style="font-size:0.9rem;margin-bottom:1rem;line-height:1.5">
+                    ${imported} Job(s) automatisch importiert${dup ? `, ${dup} Duplikat(e) übersprungen` : ''}.<br>
+                    <strong>${_blockedJobsState.length} Job(s) sind von Firmen mit Absage in den letzten ${windowDays} Tagen.</strong>
+                    Bitte für jeden entscheiden:
+                </div>
+                <div style="overflow-y:auto;flex:1;margin-bottom:1rem">${rowsHtml}</div>
+                <div style="display:flex;gap:0.5rem;justify-content:space-between;border-top:1px solid var(--border);padding-top:1rem">
+                    <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.skipAllBlocked()">⏭️ Alle ignorieren</button>
+                    <div style="display:flex;gap:0.5rem">
+                        <button class="btn btn-secondary" onclick="JdSourcesUI.closeApprovalDialog()">Abbrechen</button>
+                        <button class="btn btn-primary" onclick="JdSourcesUI.submitApproval(${sourceId})">💾 Speichern</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        const el = document.createElement('div');
+        el.innerHTML = html;
+        document.body.appendChild(el.firstElementChild);
+    }
+
+    function skipAllBlocked() {
+        _blockedJobsState.forEach((_, idx) => {
+            const r = document.querySelector(`input[name="jdDecision_${idx}"][value="skip"]`);
+            if (r) r.checked = true;
+        });
+    }
+
+    async function submitApproval(sourceId) {
+        const decisions = _blockedJobsState.map((job, idx) => {
+            const radio = document.querySelector(`input[name="jdDecision_${idx}"]:checked`);
+            const action = radio ? radio.value : 'skip';
+            return { action, job };
+        });
+
+        try {
+            const r = await Auth.fetch(`/jobs/sources/${sourceId}/import-from-email/approve`, {
+                method: 'POST',
+                body: JSON.stringify({ decisions }),
+            });
+            closeApprovalDialog();
+            const imp = (r && r.imported) || 0;
+            const skp = (r && r.skipped) || 0;
+            const ign = (r && r.ignored) || 0;
+            alert(`✅ Entscheidungen gespeichert.\n\n${imp} importiert\n${skp} dauerhaft ignoriert${ign ? `\n${ign} übersprungen (z.B. Duplikate)` : ''}.`);
+            refresh();
+        } catch (e) {
+            const msg = (e && e.message) ? e.message : String(e);
+            alert(`❌ Fehler beim Speichern: ${msg}`);
+        }
+    }
+
+    function closeApprovalDialog() {
+        const m = $('jdImportApprovalWrap');
+        if (m) m.remove();
+        _blockedJobsState = [];
+    }
+
+    return {
+        refresh, openCreate, closeCreate, renderTypeFields, create,
+        testCrawl, toggle, del,
+        importFromEmail, skipAllBlocked, submitApproval, closeApprovalDialog,
+    };
 })();
 
 function switchTab(el, tabId) {
