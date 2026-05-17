@@ -1935,39 +1935,55 @@ function generateAppsScriptCode(keywords) {
 // Default Apps Script Code (with default keywords)
 const APPS_SCRIPT_CODE = generateAppsScriptCode('Bewerbung,Stelle,Stellenausschreibung,Application,Job,Position,Kandidat,Recruiting,Interview,Absage,Zusage');
 
-// Apps-Script Code für Indeed-Job-Import:
-// - Sucht in Gmail nach Mails von indeed.com/.de
-// - Returnt FULL body (nicht nur snippet) — Backend braucht das für sauberes Parsing
-// - Optional: ?days=30 (default 30) limitiert auf neue Mails
+// Apps-Script Code für Indeed-Job-Import.
+// Quota-optimiert (Gmail hat tägliche API-Limits, vor allem auf Consumer-
+// Accounts: ~250 search-queries/Tag):
+//  - Default-Limit niedriger (50 statt 100) — pro Run weniger Quota.
+//  - GmailApp.getMessagesForThreads([threads]) BATCH-Read statt N×
+//    thread.getMessages() — spart einen Faktor 5-10 an API-Calls.
+//  - Optional ?days=N (1-365, default 30) und ?limit=N (1-200) als
+//    Query-Parameter — bei 'Quota exceeded' temporär kleiner stellen.
 const INDEED_APPS_SCRIPT_CODE = `function doGet(e) {
-  var days = parseInt((e && e.parameter && e.parameter.days) || '30', 10);
-  if (isNaN(days) || days < 1 || days > 365) days = 30;
-  var maxEmails = 100;
+  var p = (e && e.parameter) || {};
+  var days  = parseInt(p.days  || '30', 10);
+  var limit = parseInt(p.limit || '50', 10);
+  if (isNaN(days)  || days  < 1 || days  > 365) days  = 30;
+  if (isNaN(limit) || limit < 1 || limit > 200) limit = 50;
 
-  var query = 'from:(indeed.com OR indeed.de OR noreply@indeed.com) newer_than:' + days + 'd';
-  var threads = GmailApp.search(query, 0, maxEmails);
-  var results = [];
-
-  threads.forEach(function(thread) {
-    var msgs = thread.getMessages();
-    msgs.forEach(function(msg) {
-      results.push({
-        id:      msg.getId(),
-        subject: msg.getSubject(),
-        from:    msg.getFrom(),
-        date:    msg.getDate().toISOString(),
-        body:    msg.getPlainBody().substring(0, 8000)
-      });
-    });
-  });
-
-  var output = ContentService.createTextOutput(JSON.stringify({
-    status: 'ok',
-    count:  results.length,
-    emails: results
-  }));
-  output.setMimeType(ContentService.MimeType.JSON);
-  return output;
+  try {
+    var query = 'from:(indeed.com OR indeed.de OR noreply@indeed.com) newer_than:' + days + 'd';
+    var threads = GmailApp.search(query, 0, limit);
+    // BATCH-Read: ein API-Call holt alle Messages aller Threads.
+    var msgsByThread = GmailApp.getMessagesForThreads(threads);
+    var results = [];
+    for (var i = 0; i < msgsByThread.length; i++) {
+      var msgs = msgsByThread[i];
+      for (var j = 0; j < msgs.length; j++) {
+        var msg = msgs[j];
+        results.push({
+          id:      msg.getId(),
+          subject: msg.getSubject(),
+          from:    msg.getFrom(),
+          date:    msg.getDate().toISOString(),
+          body:    msg.getPlainBody().substring(0, 8000)
+        });
+      }
+    }
+    var output = ContentService.createTextOutput(JSON.stringify({
+      status: 'ok',
+      count:  results.length,
+      emails: results
+    }));
+    output.setMimeType(ContentService.MimeType.JSON);
+    return output;
+  } catch (err) {
+    var errOutput = ContentService.createTextOutput(JSON.stringify({
+      status: 'error',
+      error:  String(err && err.message ? err.message : err)
+    }));
+    errOutput.setMimeType(ContentService.MimeType.JSON);
+    return errOutput;
+  }
 }`;
 
 /* ═══════════════════════════════════════════════════════
