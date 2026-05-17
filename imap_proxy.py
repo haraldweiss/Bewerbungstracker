@@ -236,16 +236,33 @@ def fetch_imap(host: str, port: int, user: str, password: str,
         conn.select(f'"{escaped_folder}"', readonly=True)
 
         # ── Stage 1: server-side keyword search ──────────────────────────────
+        # Versucht zuerst Gmail's X-GM-RAW Extension (greift auf vollen
+        # Gmail-Search-Index zu, 1 Call statt N — und findet zuverlässig
+        # Mails die Standard-IMAP-SUBJECT-SEARCH übersieht). Bei Non-Gmail-
+        # Servern fällt es auf den N-Call-Loop zurück.
         all_uids: set[bytes] = set()
         search_errors: list[str] = []
+        gm_raw_used = False
 
-        for kw in SEARCH_KEYWORDS:
-            try:
-                typ, data = conn.uid('SEARCH', 'SUBJECT', f'"{kw}"')
-                if typ == 'OK' and data:
-                    all_uids |= _collect_uids(data)
-            except Exception as e:
-                search_errors.append(f'"{kw}": {type(e).__name__}')
+        try:
+            # Gmail-Suche: "(subject:Bewerbung OR subject:Application OR ...)"
+            gm_query = '"(' + ' OR '.join(f'subject:{kw}' for kw in SEARCH_KEYWORDS) + ')"'
+            typ, data = conn.uid('SEARCH', 'X-GM-RAW', gm_query)
+            if typ == 'OK' and data:
+                all_uids |= _collect_uids(data)
+                gm_raw_used = True
+        except imaplib.IMAP4.error:
+            # Server kennt X-GM-RAW nicht → Standard-Loop
+            pass
+
+        if not gm_raw_used:
+            for kw in SEARCH_KEYWORDS:
+                try:
+                    typ, data = conn.uid('SEARCH', 'SUBJECT', f'"{kw}"')
+                    if typ == 'OK' and data:
+                        all_uids |= _collect_uids(data)
+                except Exception as e:
+                    search_errors.append(f'"{kw}": {type(e).__name__}')
 
         kw_search_hits = len(all_uids)
         use_fallback   = (kw_search_hits == 0)
@@ -318,7 +335,12 @@ def fetch_imap(host: str, port: int, user: str, password: str,
         has_more = (offset + limit) < total_uids
         next_offset = offset + limit if has_more else offset
 
-        mode = 'Betreff-Suche' if not use_fallback else 'Zeitraum-Fallback (90 Tage)'
+        if use_fallback:
+            mode = 'Zeitraum-Fallback (90 Tage)'
+        elif gm_raw_used:
+            mode = 'Betreff-Suche (X-GM-RAW)'
+        else:
+            mode = 'Betreff-Suche (Standard-IMAP)'
         info = (f'Modus: {mode} | Ordner: {folder} | '
                 f'UIDs: {total_uids} | Emails zurückgegeben: {len(emails)} | '
                 f'Offset: {offset}, Limit: {limit}')
