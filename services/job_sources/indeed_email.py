@@ -172,8 +172,12 @@ class IndeedEmailAdapter(JobSourceAdapter):
             if typ != 'OK':
                 raise RuntimeError(f"IMAP-Folder nicht erreichbar: {folder}")
 
+            # IMAP-SEARCH: nur Indeed-Mails (FROM-Filter) im Lookback-Window.
+            # Wichtig bei großen Foldern wie [Gmail]/All Mail — sonst zieht der
+            # Adapter tausende irrelevante Mails. IMAP-FROM macht substring-Match
+            # → matcht 'indeed.com', 'indeed.de', 'jobs@indeed.com', etc.
             since_date = (datetime.utcnow() - timedelta(days=lookback_days)).strftime('%d-%b-%Y')
-            typ, msgnums = conn.search(None, f'(SINCE {since_date})')
+            typ, msgnums = conn.search(None, f'(SINCE {since_date} FROM "indeed")')
             if typ != 'OK':
                 return []
 
