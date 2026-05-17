@@ -3514,12 +3514,13 @@ const JdSourcesUI = (() => {
             openImportApprovalDialog(id, r);
         } catch (e) {
             let msg = (e && e.message) ? e.message : String(e);
-            // JSON.parse-Fehler von HTML-Response → klarerer Hinweis.
-            // Tritt auf wenn Apache/Gunicorn vor JSON-Antwort einen Error
-            // serviert (Timeout, Worker-Crash o.ä.).
-            if (/unexpected token|not valid json|<html|<!doctype/i.test(msg)) {
-                msg = 'Server-Timeout oder -Fehler (HTML statt JSON). '
-                    + 'Bitte später nochmal versuchen oder Apps-Script-URL prüfen.';
+            // Browser-JSON.parse-Fehler von HTML-Response (Server-Crash, Apache 5xx) abfangen.
+            // ABER: Backend-Errors die das Wort 'HTML' im Text enthalten (z.B. unsere
+            // eigene Diagnose 'Apps-Script gibt HTML statt JSON zurück') NICHT ersetzen.
+            const isBrowserJsonParseError = /unexpected token .* is not valid json/i.test(msg);
+            if (isBrowserJsonParseError) {
+                msg = 'Server-Timeout oder -Crash (HTML-Antwort). '
+                    + 'Bitte später nochmal versuchen.';
             }
             alert(`❌ Import fehlgeschlagen: ${msg}`);
         } finally {
