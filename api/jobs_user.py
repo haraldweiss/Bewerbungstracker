@@ -34,8 +34,11 @@ def _get_anthropic_client():
 
 _VALID_TYPES = {"rss", "adzuna", "bundesagentur", "arbeitnow", "indeed_email"}
 
-# Indeed-Email-Folder: ASCII + ein paar sichere Separator (Anti-Injection).
-_INDEED_FOLDER_RE = re.compile(r'^[A-Za-z0-9._\-/ ]{1,100}$')
+# Indeed-Email-Folder-Validation: erlaubt alle druckbaren ASCII-Zeichen
+# inkl. Brackets [...] (Gmail-Sonderfolder wie '[Google Mail]/Alle Nachrichten').
+# Verbietet: Control-Chars (CR/LF/NULL → IMAP-Injection-Schutz),
+# doppelte Anführungszeichen und Backslashes.
+_INDEED_FOLDER_RE = re.compile(r'^[^\x00-\x1f\x7f"\\]{1,100}$')
 
 
 def _validate_config(source_type: str, config: dict) -> str | None:

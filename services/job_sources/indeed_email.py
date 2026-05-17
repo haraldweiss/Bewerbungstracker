@@ -135,7 +135,9 @@ class IndeedEmailAdapter(JobSourceAdapter):
         limit = int((self.config or {}).get('limit', 100))
 
         # IMAP-Folder-Name Whitelisting (gegen Injection).
-        if not re.match(r'^[A-Za-z0-9._\-/ ]{1,100}$', folder):
+        # Erlaubt Brackets (Gmail-Sonderfolder), blockt nur Control-Chars und
+        # Quoting-Sonderzeichen die IMAP-Injection ermöglichen würden.
+        if not re.match(r'^[^\x00-\x1f\x7f"\\]{1,100}$', folder):
             raise ValueError(f"Ungültiger Ordner-Name: {folder!r}")
 
         emails = self._fetch_emails(host, imap_user, password, folder, lookback_days, limit)
