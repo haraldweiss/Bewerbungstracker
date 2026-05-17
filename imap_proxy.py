@@ -191,22 +191,36 @@ def _extract_raw_headers(data: list) -> Optional[bytes]:
     return None
 
 
+_UID_IN_FETCH_RE = re.compile(rb'\bUID\s+(\d+)\b')
+
+
 def _extract_all_headers_batch(data: list) -> dict[bytes, bytes]:
-    """Extract all headers from a batch FETCH response. Returns {uid: raw_headers}."""
+    """Extract all headers from a batch FETCH response. Returns {uid: raw_headers}.
+
+    IMAP-Format bei conn.uid('fetch', ...) sieht so aus:
+        (b'1 (UID 12345 RFC822.HEADER {1234}', <header bytes>)
+    Das erste Token (b'1') ist die Message-Sequence-Number, NICHT die UID.
+    Frühere Version parste das fälschlich als Key → Lookup gegen das per
+    UID indizierte uid_list scheiterte → 0 emails trotz Search-Treffer.
+    Jetzt extrahieren wir die UID aus dem 'UID <num>'-Subpattern.
+    """
     headers_dict = {}
-    i = 0
-    while i < len(data):
-        item = data[i]
-        # IMAP batch response format: (b'1 (RFC822.HEADER {size}', raw_bytes), (b'2 (RFC822.HEADER {size}', raw_bytes), ...
-        if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], bytes):
-            # Extract UID from the response tuple
-            if isinstance(item[0], bytes):
-                try:
-                    uid_part = item[0].decode('ascii', errors='ignore').split()[0]
-                    headers_dict[uid_part.encode()] = item[1]
-                except (ValueError, IndexError):
-                    pass
-        i += 1
+    for item in data:
+        if not (isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], bytes)):
+            continue
+        if not isinstance(item[0], bytes):
+            continue
+        m = _UID_IN_FETCH_RE.search(item[0])
+        if m:
+            headers_dict[m.group(1)] = item[1]
+        else:
+            # Fallback (Server liefert keine UID in der Header-Zeile, sehr selten):
+            # erste Token nutzen. Dann passt der Lookup mit Sequence-Number-Keys.
+            try:
+                first = item[0].split()[0]
+                headers_dict[first] = item[1]
+            except (ValueError, IndexError):
+                pass
     return headers_dict
 
 
