@@ -105,9 +105,10 @@ class IMAPConnection:
         """Establish IMAP connection with SSL/TLS support"""
         try:
             if self.port == 993:
+                # NB: Python 3.12 imaplib erwartet 'ssl_context=', nicht 'context='.
                 self.connection = imaplib.IMAP4_SSL(
                     self.host, self.port,
-                    context=ssl.create_default_context()
+                    ssl_context=ssl.create_default_context()
                 )
             else:
                 self.connection = imaplib.IMAP4(self.host, self.port)

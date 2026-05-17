@@ -164,7 +164,7 @@ class IndeedEmailAdapter(JobSourceAdapter):
         lookback_days: int,
         limit: int,
     ) -> list[dict]:
-        conn = imaplib.IMAP4_SSL(host, 993, context=ssl.create_default_context())
+        conn = imaplib.IMAP4_SSL(host, 993, ssl_context=ssl.create_default_context())
         try:
             conn.login(imap_user, password)
             # readonly=True: setzt \Seen-Flag NICHT (User-Inbox bleibt unverändert)

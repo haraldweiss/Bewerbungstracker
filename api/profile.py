@@ -365,7 +365,7 @@ def test_imap_connection(user):
     import ssl
     folders = []
     try:
-        conn = imaplib.IMAP4_SSL(user.imap_host, 993, context=ssl.create_default_context())
+        conn = imaplib.IMAP4_SSL(user.imap_host, 993, ssl_context=ssl.create_default_context())
         try:
             conn.login(user.imap_user, user.decrypted_imap_password)
         except imaplib.IMAP4.error as e:
