@@ -1257,7 +1257,7 @@
             <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.testImap()">🧪 Test + Folder listen</button>
             <button class="btn btn-danger btn-sm" onclick="JdSourcesUI.clearImapCreds()">🗑️ Löschen</button>
         </div>
-        <pre id="imapServerFolders" style="display:none;background:var(--bg-card2);padding:0.5rem;border-radius:6px;font-size:0.75rem;max-height:200px;overflow-y:auto;margin-top:0.3rem"></pre>
+        <div id="imapServerFolders" style="display:none;background:var(--bg-card2);padding:0.5rem;border-radius:6px;max-height:240px;overflow-y:auto;margin-top:0.3rem;display:none"></div>
 
         <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
         <div style="font-weight:600;margin-bottom:0.5rem">📧 Indeed-Email Import (Gmail Apps Script)</div>
@@ -3727,6 +3727,10 @@ const JdSourcesUI = (() => {
         }
     }
 
+    // Letzte erfolgreich getestete Folder-Liste — wird verwendet wenn der
+    // User auf einen Folder klickt um damit eine neue Indeed-Quelle anzulegen.
+    let _lastTestFolders = [];
+
     async function testImap() {
         const statusEl = $('imapServerStatus');
         const foldersEl = $('imapServerFolders');
@@ -3734,18 +3738,44 @@ const JdSourcesUI = (() => {
         try {
             const r = await Auth.fetch('/profile/imap/test', { method: 'POST' });
             if (r && r.ok) {
-                if (statusEl) statusEl.innerHTML = `<span style="color:var(--success)">✅ Verbunden — ${r.folder_count} Folder gefunden</span>`;
+                if (statusEl) statusEl.innerHTML = `<span style="color:var(--success)">✅ Verbunden — ${r.folder_count} Folder gefunden. Klick einen Folder unten um damit eine Indeed-Quelle anzulegen.</span>`;
+                _lastTestFolders = r.folders_sample || [];
                 if (foldersEl) {
-                    foldersEl.textContent = (r.folders_sample || []).join('\n');
+                    foldersEl.innerHTML = _lastTestFolders.map((f, idx) =>
+                        `<button type="button" class="btn btn-sm" data-folder-idx="${idx}" style="margin:0.15rem;font-family:monospace;font-size:0.78rem;text-align:left">${escapeHtml(f)}</button>`
+                    ).join('');
                     foldersEl.style.display = 'block';
+                    // Event-Listener (kein onclick-Inline → XSS-sicher)
+                    foldersEl.querySelectorAll('button[data-folder-idx]').forEach(b => {
+                        b.addEventListener('click', () => {
+                            const idx = parseInt(b.getAttribute('data-folder-idx'), 10);
+                            const folder = _lastTestFolders[idx];
+                            if (folder) useFolderForNewSource(folder);
+                        });
+                    });
                 }
             } else {
                 if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml((r && r.error) || 'Test fehlgeschlagen')}</span>`;
                 if (foldersEl) foldersEl.style.display = 'none';
+                _lastTestFolders = [];
             }
         } catch (e) {
             if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(e.message || e)}</span>`;
         }
+    }
+
+    function useFolderForNewSource(folder) {
+        openCreate();
+        const typeSelect = $('jdNewType');
+        if (typeSelect) {
+            typeSelect.value = 'indeed_email';
+            renderTypeFields();
+        }
+        // renderTypeFields ist synchron → die Felder existieren jetzt
+        const folderInput = $('jdCfgFolder');
+        if (folderInput) folderInput.value = folder;
+        const nameInput = $('jdNewName');
+        if (nameInput && !nameInput.value) nameInput.value = 'Indeed (' + folder + ')';
     }
 
     function toggleIndeedScriptCode() {
