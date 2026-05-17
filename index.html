@@ -811,6 +811,10 @@
                     <input type="checkbox" id="imapRemember" checked style="width:auto;">
                     Server-Einstellungen merken (kein Passwort)
                 </label>
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.85rem;color:var(--text-muted);" title="Speichert Host+User+Passwort encrypted in der DB — nötig für Server-side Indeed-Email-Import">
+                    <input type="checkbox" id="imapServerSync" style="width:auto;">
+                    🌐 Auch zum Server speichern (für Indeed-Server-Import)
+                </label>
             </div>
         </div>
 
@@ -1239,25 +1243,18 @@
         </table>
 
         <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
-        <div style="font-weight:600;margin-bottom:0.5rem">🖥️ IMAP für Server-Imports</div>
+        <div style="font-weight:600;margin-bottom:0.5rem">🖥️ Server-IMAP (für Indeed-Import)</div>
         <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;line-height:1.5">
-            Alternative zu Apps Script: VPS verbindet sich direkt mit deinem Mailserver
-            (Gmail braucht App-Password, Folder z.B. <code>[Gmail]/All Mail</code> für
-            archivierte Mails). Passwort wird Fernet-encrypted in der DB gespeichert.
-            Leer lassen wenn du nur Apps Script nutzt.
+            Credentials werden im Tab <b>📧 Mail Connector</b> eingegeben — dort Checkbox
+            <code>🌐 Auch zum Server speichern</code> aktivieren und Verbinden. Hier nur
+            Status-Anzeige + Folder-Listing zum Anlegen einer Indeed-Quelle.
         </p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem">
-            <input type="text" id="imapServerHost" placeholder="Host z.B. imap.gmail.com">
-            <input type="email" id="imapServerUser" placeholder="User (E-Mail-Adresse)">
-            <input type="password" id="imapServerPass" placeholder="Passwort / App-Password (Eingabe = neu setzen)">
-            <div id="imapServerStatus" style="font-size:0.85rem;align-self:center;color:var(--text-muted)">Status: lade…</div>
-        </div>
-        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.3rem">
-            <button class="btn btn-primary btn-sm" onclick="JdSourcesUI.saveImapCreds()">💾 IMAP speichern</button>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.3rem">
+            <div id="imapServerStatus" style="font-size:0.85rem;color:var(--text-muted);flex:1;min-width:200px">Status: lade…</div>
             <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.testImap()">🧪 Test + Folder listen</button>
-            <button class="btn btn-danger btn-sm" onclick="JdSourcesUI.clearImapCreds()">🗑️ Löschen</button>
+            <button class="btn btn-danger btn-sm" onclick="JdSourcesUI.clearImapCreds()">🗑️ Server-Credentials löschen</button>
         </div>
-        <div id="imapServerFolders" style="display:none;background:var(--bg-card2);padding:0.5rem;border-radius:6px;max-height:240px;overflow-y:auto;margin-top:0.3rem;display:none"></div>
+        <div id="imapServerFolders" style="display:none;background:var(--bg-card2);padding:0.5rem;border-radius:6px;max-height:240px;overflow-y:auto;margin-top:0.3rem"></div>
 
         <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
         <div style="font-weight:600;margin-bottom:0.5rem">📧 Indeed-Email Import (Gmail Apps Script)</div>
@@ -2289,6 +2286,8 @@ let state = {
         // Separate Apps-Script-URL für Indeed-Job-Import (eigener doGet,
         // returnt full body — anders als das Bewerbungs-Script).
         indeedScriptUrl: '',
+        // Mail-Connector Checkbox: bei Connect auch zum VPS pushen?
+        imapServerSync: false,
         imapHost: '',
         imapPort: 993,
         imapProtocol: 'imap',
@@ -2991,6 +2990,10 @@ function loadSettingsForm() {
     const isu = document.getElementById('indeedScriptUrl');
     if (isu) isu.value = state.settings.indeedScriptUrl || '';
 
+    // Mail-Connector Server-Sync Checkbox
+    const iss = document.getElementById('imapServerSync');
+    if (iss) iss.checked = !!state.settings.imapServerSync;
+
     // IMAP-Status laden (asynchron, fire-and-forget)
     if (typeof JdSourcesUI !== 'undefined' && JdSourcesUI.loadImapStatus) {
         JdSourcesUI.loadImapStatus();
@@ -3670,58 +3673,31 @@ const JdSourcesUI = (() => {
             : '<span style="color:var(--text-muted)">URL geleert — Import fällt auf IMAP-Mode zurück.</span>';
     }
 
-    // ── IMAP-Server-Credentials (Server-side Indeed-Import) ────────────────
+    // ── Server-IMAP Status & Folder-Picker ─────────────────────────────────
+    // Credentials werden im Mail-Connector eingegeben (siehe fetchImapEmails),
+    // hier nur Status-Anzeige + Folder-Listing zum Anlegen einer Indeed-Quelle.
 
     async function loadImapStatus() {
         const statusEl = $('imapServerStatus');
-        const hostEl = $('imapServerHost');
-        const userEl = $('imapServerUser');
         if (!statusEl) return;
         try {
             const r = await Auth.fetch('/profile/imap', { method: 'GET' });
-            if (hostEl) hostEl.value = (r && r.host) || '';
-            if (userEl) userEl.value = (r && r.user) || '';
             statusEl.innerHTML = r && r.configured
-                ? '<span style="color:var(--success)">✅ IMAP konfiguriert</span>'
-                : '<span style="color:var(--text-muted)">⏸️ Nicht konfiguriert</span>';
+                ? `<span style="color:var(--success)">✅ Konfiguriert (${escapeHtml(r.host || '')} / ${escapeHtml(r.user || '')})</span>`
+                : '<span style="color:var(--text-muted)">⏸️ Nicht konfiguriert — Setup im 📧 Mail Connector</span>';
         } catch (e) {
             statusEl.innerHTML = `<span style="color:var(--danger)">Fehler: ${escapeHtml(e.message || e)}</span>`;
         }
     }
 
-    async function saveImapCreds() {
-        const host = (($('imapServerHost') || {}).value || '').trim();
-        const user = (($('imapServerUser') || {}).value || '').trim();
-        const pass = (($('imapServerPass') || {}).value || '');
-        const statusEl = $('imapServerStatus');
-        if (!host || !user || !pass) {
-            if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ Host, User, Passwort sind Pflicht</span>';
-            return;
-        }
-        try {
-            await Auth.fetch('/profile/imap', {
-                method: 'POST',
-                body: JSON.stringify({ host, user, password: pass }),
-            });
-            // Passwort-Feld leeren — bleibt nicht im Browser sichtbar.
-            const pwEl = $('imapServerPass');
-            if (pwEl) pwEl.value = '';
-            if (statusEl) statusEl.innerHTML = '<span style="color:var(--success)">✅ IMAP gespeichert</span>';
-        } catch (e) {
-            if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(e.message || e)}</span>`;
-        }
-    }
-
     async function clearImapCreds() {
-        if (!confirm('IMAP-Credentials vom Server löschen?')) return;
+        if (!confirm('Server-IMAP-Credentials löschen?\n\nDanach nicht mehr per Server-IMAP importieren möglich, bis du sie im Mail Connector wieder pusht.')) return;
         const statusEl = $('imapServerStatus');
         try {
             await Auth.fetch('/profile/imap', { method: 'DELETE' });
-            const hostEl = $('imapServerHost'); if (hostEl) hostEl.value = '';
-            const userEl = $('imapServerUser'); if (userEl) userEl.value = '';
-            const passEl = $('imapServerPass'); if (passEl) passEl.value = '';
-            const foldersEl = $('imapServerFolders'); if (foldersEl) foldersEl.style.display = 'none';
-            if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏸️ Nicht konfiguriert</span>';
+            const foldersEl = $('imapServerFolders');
+            if (foldersEl) foldersEl.style.display = 'none';
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏸️ Nicht konfiguriert — Setup im 📧 Mail Connector</span>';
         } catch (e) {
             if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(e.message || e)}</span>`;
         }
@@ -3796,7 +3772,7 @@ const JdSourcesUI = (() => {
         testCrawl, toggle, del,
         importFromEmail, skipAllBlocked, submitApproval, closeApprovalDialog,
         saveIndeedScriptUrl, toggleIndeedScriptCode,
-        saveImapCreds, testImap, clearImapCreds, loadImapStatus,
+        testImap, clearImapCreds, loadImapStatus,
     };
 })();
 
@@ -7812,6 +7788,7 @@ async function fetchImapEmails() {
     const limit    = parseInt(document.getElementById('imapLimit').value)  || 50;
     const noVerify = document.getElementById('imapNoVerify').checked;
     const remember = document.getElementById('imapRemember').checked;
+    const syncServer = (document.getElementById('imapServerSync') || {}).checked;
 
     if (!host || !user || !pass) {
         showToast('Server-Adresse, E-Mail und Passwort sind erforderlich!', 'error');
@@ -7824,7 +7801,27 @@ async function fetchImapEmails() {
         state.settings.imapPort     = port;
         state.settings.imapProtocol = protocol;
         state.settings.imapUser     = user;
+        state.settings.imapServerSync = syncServer;
         saveToStorage();
+    }
+
+    // VPS-Sync: einmaliger Push der Credentials zum Server, damit der
+    // Indeed-Email-Import (Backend-IMAP) damit arbeiten kann. Nur sinnvoll
+    // bei IMAP-SSL (Port 993) — POP3 unterstützt das Backend nicht.
+    if (syncServer) {
+        if (protocol !== 'imap' || port !== 993) {
+            showToast('Server-Sync erfordert IMAP auf Port 993 — Push übersprungen', 'warning');
+        } else {
+            try {
+                await Auth.fetch('/profile/imap', {
+                    method: 'POST',
+                    body: JSON.stringify({ host, user, password: pass }),
+                });
+                showToast('🌐 Credentials zum Server gepusht ✓', 'success');
+            } catch (e) {
+                showToast('⚠️ Server-Push fehlgeschlagen: ' + (e.message || e), 'warning');
+            }
+        }
     }
 
     const btn = document.getElementById('imapConnectBtn');
