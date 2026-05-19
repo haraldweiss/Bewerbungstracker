@@ -164,3 +164,50 @@ def validate_pattern_schema(pattern: dict) -> list[str]:
         f"{'/'.join(str(p) for p in e.absolute_path) or '<root>'}: {e.message}"
         for e in validator.iter_errors(pattern)
     ]
+
+
+def validate_pattern(
+    compiled: CompiledPattern, samples: list[dict]
+) -> tuple[float, list[dict]]:
+    """Wendet compiled.body_card_re auf jede Sample-Mail an, zählt Hits
+    nach Anwendung der Title-Blacklist + Company-Separator-Filter.
+
+    Returns:
+        (hit_rate, diagnostics)
+        - hit_rate ∈ [0.0, 1.0]
+        - diagnostics: liste mit {subject, matched: bool, card_count: int}
+          pro Sample-Mail
+    """
+    if not samples:
+        return 0.0, []
+
+    diagnostics: list[dict] = []
+    matched_count = 0
+    for em in samples:
+        body = em.get("body") or ""
+        cards = list(compiled.body_card_re.finditer(body))
+        valid_cards = []
+        for m in cards:
+            t = (m.group("title") or "").strip()
+            c = (
+                (m.group("company") or "").strip()
+                if "company" in m.groupdict() else ""
+            )
+            if compiled.title_blacklist_re and compiled.title_blacklist_re.search(t):
+                continue
+            if (
+                compiled.company_blacklist_separator_re
+                and c
+                and compiled.company_blacklist_separator_re.match(c)
+            ):
+                continue
+            valid_cards.append(m)
+        is_match = len(valid_cards) > 0
+        if is_match:
+            matched_count += 1
+        diagnostics.append({
+            "subject": (em.get("subject") or "")[:80],
+            "matched": is_match,
+            "card_count": len(valid_cards),
+        })
+    return matched_count / len(samples), diagnostics

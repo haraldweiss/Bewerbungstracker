@@ -125,3 +125,55 @@ def test_compile_title_blacklist():
     assert cp.title_blacklist_re.search("Ihre Jobbenachrichtigung")
     assert cp.title_blacklist_re.search("Top-Jobs für Sie")
     assert not cp.title_blacklist_re.search("Senior Engineer")
+
+
+from services.job_sources.pattern_learner import validate_pattern
+
+
+def _sample_mails():
+    body_match = (
+        "Senior Engineer\r\nAcme GmbH\r\nBerlin\r\n"
+        "Jobangebot ansehen: https://www.linkedin.com/comm/jobs/view/123"
+    )
+    body_nojob = "Random newsletter content with no job structure."
+    return [
+        {"subject": "Senior Engineer bei Acme GmbH", "body": body_match},
+        {"subject": "DevOps bei Bcorp", "body": body_match.replace("Acme", "Bcorp")},
+        {"subject": "Frontend bei Ccorp", "body": body_match.replace("Acme", "Ccorp")},
+        {"subject": "Random Newsletter", "body": body_nojob},
+    ]
+
+
+def test_validate_counts_hits():
+    cp = compile_pattern(_valid_pattern_dict())
+    hit_rate, diags = validate_pattern(cp, _sample_mails())
+    assert hit_rate == 0.75   # 3 of 4 match
+    assert sum(1 for d in diags if d["matched"]) == 3
+
+
+def test_validate_empty():
+    cp = compile_pattern(_valid_pattern_dict())
+    hit_rate, diags = validate_pattern(cp, [])
+    assert hit_rate == 0.0 and diags == []
+
+
+def test_validate_missing_body():
+    cp = compile_pattern(_valid_pattern_dict())
+    hit_rate, _ = validate_pattern(cp, [
+        {"subject": "Test", "body": None},
+        {"subject": "Test", "body": ""},
+    ])
+    assert hit_rate == 0.0
+
+
+def test_validate_respects_title_blacklist():
+    """Card that matches body_card_re but title is on blacklist → not counted."""
+    cp = compile_pattern(_valid_pattern_dict())
+    bad_body = (
+        "Ihre Jobbenachrichtigung fuer X\r\n"
+        "SomeCompany\r\nBerlin\r\n"
+        "Jobangebot ansehen: https://linkedin.com/comm/jobs/view/99"
+    )
+    hit_rate, diags = validate_pattern(cp, [{"subject": "Test", "body": bad_body}])
+    assert hit_rate == 0.0
+    assert diags[0]["matched"] is False
