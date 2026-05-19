@@ -249,13 +249,29 @@ def test_crawl_source(user, source_id: int):
 # Match-Endpoints
 # ---------------------------------------------------------------------------
 
+# Bekannte System-/KI-feedback_text-Codes — alle Auto-Dismisses landen hier.
+# Wird sowohl von _classify_match_origin() als auch vom SQL-Origin-Filter
+# weiter unten genutzt. Wenn neue Auto-Codes hinzukommen → hier ergänzen.
+AUTO_FEEDBACK_CODES = frozenset({
+    'auto_blocked_by_rejection',
+    'rejection_blocked_skip',
+    'prefilter_low_score',
+    'claude_low_score',
+    'learned',
+    'duplicate_of_other',
+    'title_blacklisted',
+    'url_pattern_mismatch',
+})
+
+
 def _classify_match_origin(m: JobMatch) -> str:
     """Bei dismissed Matches: 'auto' (KI/System) oder 'manual' (User).
 
     Heuristik:
-      - feedback_text starts with 'auto_'  → auto  (z.B. auto_blocked_by_rejection)
-      - feedback_text/feedback_reasons set → manual (User hat begründet)
-      - prefilter_score < 5 AND kein Feedback → auto (Pre-Filter Score zu niedrig)
+      - feedback_text in AUTO_FEEDBACK_CODES   → auto (System-Marker)
+      - feedback_text starts with 'auto_'      → auto (legacy + zukünftige)
+      - feedback_text/feedback_reasons sonst   → manual (User hat begründet)
+      - prefilter_score < 5 AND kein Feedback  → auto (Pre-Filter Score zu niedrig)
       - sonst → manual (User klickte "Verwerfen" ohne Begründung)
 
     Für status != 'dismissed' returnt '' (uninteressant).
@@ -263,7 +279,7 @@ def _classify_match_origin(m: JobMatch) -> str:
     if m.status != 'dismissed':
         return ''
     txt = (m.feedback_text or '').strip()
-    if txt.startswith('auto_'):
+    if txt in AUTO_FEEDBACK_CODES or txt.startswith('auto_'):
         return 'auto'
     has_feedback_reasons = m.feedback_reasons and m.feedback_reasons not in ('', '[]')
     if txt or has_feedback_reasons:
@@ -401,9 +417,11 @@ def list_matches(user):
 
     if origin_filter in ('auto', 'manual'):
         # 'auto'-Signal (SQL-Spiegel von _classify_match_origin):
-        #   feedback_text LIKE 'auto_%'  ODER
+        #   feedback_text in AUTO_FEEDBACK_CODES ODER
+        #   feedback_text LIKE 'auto_%' (legacy/future) ODER
         #   (kein Feedback UND prefilter_score < 5)
         auto_signal = db.or_(
+            JobMatch.feedback_text.in_(AUTO_FEEDBACK_CODES),
             db.and_(JobMatch.feedback_text.isnot(None),
                     JobMatch.feedback_text.like('auto_%')),
             db.and_(
