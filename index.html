@@ -4292,6 +4292,22 @@ const JobsView = (() => {
                 ? `<span style="background:#a78bfa33;color:#a78bfa;padding:0.15rem 0.55rem;border-radius:6px;font-size:0.72rem;font-weight:600">🤖 Auto</span>`
                 : `<span style="background:#10b98133;color:#10b981;padding:0.15rem 0.55rem;border-radius:6px;font-size:0.72rem;font-weight:600">🤚 Manuell</span>`
         ) : '';
+        // Application-Status-Badge fuer uebernommene Matches (status='imported').
+        // Zeigt klar: Bewerbung laeuft / Antwort / Absage / Interview / Zusage.
+        const appStatusBadges = {
+            'beworben':   { txt: '📤 Beworben',   bg: '#3b82f633', fg: '#3b82f6' },
+            'antwort':    { txt: '📨 Antwort',    bg: '#f59e0b33', fg: '#f59e0b' },
+            'interview':  { txt: '🎤 Interview',  bg: '#8b5cf633', fg: '#8b5cf6' },
+            'zusage':     { txt: '🎉 Zusage',     bg: '#10b98133', fg: '#10b981' },
+            'absage':     { txt: '❌ Absage',     bg: '#ef444433', fg: '#ef4444' },
+            'ghosting':   { txt: '👻 Ghosting',   bg: '#6b728033', fg: '#9ca3af' },
+        };
+        const appCfg = (m.status === 'imported' && m.application_status)
+            ? appStatusBadges[m.application_status]
+            : null;
+        const applicationStatusBadge = appCfg
+            ? `<span style="background:${appCfg.bg};color:${appCfg.fg};padding:0.15rem 0.55rem;border-radius:6px;font-size:0.72rem;font-weight:600">${appCfg.txt}</span>`
+            : '';
 
         const evaluateBtn = hasClaudeScore ? '' : `
             <button class="btn btn-primary btn-sm" onclick="JobsView.requestSingleScore(${m.id})">
@@ -4310,6 +4326,7 @@ const JobsView = (() => {
                         ${scoreEmoji} ${scoreLabel}${score}
                     </span>
                     ${suspiciousBadge}
+                    ${applicationStatusBadge}
                     <h3 style="margin:0;flex:1;min-width:240px;font-size:1.1em">${escapeHtml(r.title)}</h3>
                 </div>
                 <div style="color:var(--text-muted);font-size:0.85em;margin-top:0.5rem">

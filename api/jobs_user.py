@@ -288,6 +288,16 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
                 feedback_reasons_list = []
         except (TypeError, ValueError):
             feedback_reasons_list = []
+    # Application-Status auflösen wenn JobMatch übernommen wurde — sonst
+    # weiss das Frontend nicht ob die Bewerbung laeuft / Antwort / Absage.
+    application_status = None
+    if m.imported_application_id:
+        try:
+            app_row = Application.query.get(m.imported_application_id)
+            if app_row and not app_row.deleted:
+                application_status = app_row.status
+        except Exception:
+            application_status = None
     return {
         "id": m.id,
         "match_score": m.match_score,
@@ -297,6 +307,7 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
         "status": m.status,
         "notified_at": m.notified_at.isoformat() if m.notified_at else None,
         "imported_application_id": m.imported_application_id,
+        "application_status": application_status,
         "suspicious_reasons": suspicious_list,
         "feedback_reasons": feedback_reasons_list,
         "feedback_text": m.feedback_text or None,
