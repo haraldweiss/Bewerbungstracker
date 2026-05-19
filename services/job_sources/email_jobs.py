@@ -181,13 +181,18 @@ PROFILES: dict[str, PlatformProfile] = {
 }
 
 
-class IndeedEmailAdapter(JobSourceAdapter):
-    """Liest Indeed-Job-Empfehlungen aus einem IMAP-Folder des Users.
+class EmailJobsAdapter(JobSourceAdapter):
+    """Liest Job-Empfehlungs-Emails (Indeed, LinkedIn, XING, …) aus einem
+    IMAP-Folder des Users.
 
     Config:
         folder         (str)  — IMAP-Ordnername, Default 'Indeed'
         lookback_days  (int)  — Wie weit zurück fetchen, Default 30
         limit          (int)  — Max Emails pro Fetch, Default 100
+
+    `platform_profile` (PlatformProfile) — Plattform-spezifische Regexe,
+    From-Whitelist, AI-Hint. Default `PROFILES["indeed"]` für Rückwärts-
+    kompatibilität mit dem alten `IndeedEmailAdapter`.
 
     Erfordert User-Kontext (im Adapter via Constructor-kwarg) für
     IMAP-Credentials (`user.imap_host`, `user.imap_user`,
@@ -199,9 +204,10 @@ class IndeedEmailAdapter(JobSourceAdapter):
     # 180s) durch Ollama/Claude-Latenz killt. Regex-only läuft sub-second.
     AI_FALLBACK_BUDGET = 10
 
-    def __init__(self, config: dict, user=None):
+    def __init__(self, config: dict, user=None, platform_profile: PlatformProfile | None = None):
         super().__init__(config)
         self.user = user
+        self.profile = platform_profile if platform_profile is not None else PROFILES["indeed"]
         self._ai_calls_used = 0
 
     # ── Public API ─────────────────────────────────────────────────────────
@@ -232,17 +238,21 @@ class IndeedEmailAdapter(JobSourceAdapter):
                 'body': str(em.get('body') or em.get('snippet') or ''),
             }
             try:
-                job = self._parse_email(normalized)
-                if job:
-                    jobs.append(job)
+                result = self._parse_email(normalized)
+                if result is None:
+                    continue
+                if isinstance(result, list):
+                    jobs.extend(result)
+                else:
+                    jobs.append(result)
             except Exception as exc:
-                logger.warning("Indeed-Email-Parse fehlgeschlagen: %s", exc)
+                logger.warning("Email-Jobs-Parse fehlgeschlagen: %s", exc)
                 continue
         return jobs
 
     def fetch(self) -> list[FetchedJob]:
         if self.user is None:
-            raise RuntimeError("IndeedEmailAdapter benötigt User-Kontext (kwarg user=...)")
+            raise RuntimeError("EmailJobsAdapter benötigt User-Kontext (kwarg user=...)")
 
         host = self.user.imap_host
         imap_user = self.user.imap_user
@@ -268,11 +278,15 @@ class IndeedEmailAdapter(JobSourceAdapter):
         jobs: list[FetchedJob] = []
         for em in emails:
             try:
-                job = self._parse_email(em)
-                if job:
-                    jobs.append(job)
+                result = self._parse_email(em)
+                if result is None:
+                    continue
+                if isinstance(result, list):
+                    jobs.extend(result)
+                else:
+                    jobs.append(result)
             except Exception as exc:
-                logger.warning("Indeed-Email-Parse fehlgeschlagen: %s", exc)
+                logger.warning("Email-Jobs-Parse fehlgeschlagen: %s", exc)
                 continue
 
         return jobs
@@ -308,11 +322,17 @@ class IndeedEmailAdapter(JobSourceAdapter):
             # Standard-IMAP wenn Server X-GM-RAW nicht unterstützt
             # (z.B. IONOS/Outlook).
             since_date = (datetime.utcnow() - timedelta(days=lookback_days)).strftime('%d-%b-%Y')
+            # Pro Plattform: Gmail-spezifischer X-GM-RAW-Filter zuerst, sonst
+            # IMAP-Standard-FROM-Search. `from:` aus dem Profile (z.B.
+            # 'from:indeed', 'from:linkedin.com', 'from:xing.com').
+            gm_filter = self.profile.from_filter
+            # IMAP-FROM-Search braucht nur den Domain-Teil ohne 'from:'-Prefix.
+            imap_from = gm_filter.split(':', 1)[1] if ':' in gm_filter else gm_filter
             try:
-                gm_query = f'"from:indeed newer_than:{lookback_days}d"'
+                gm_query = f'"{gm_filter} newer_than:{lookback_days}d"'
                 typ, msgnums = conn.search(None, 'X-GM-RAW', gm_query)
             except imaplib.IMAP4.error:
-                typ, msgnums = conn.search(None, f'(SINCE {since_date} FROM "indeed")')
+                typ, msgnums = conn.search(None, f'(SINCE {since_date} FROM "{imap_from}")')
             if typ != 'OK':
                 return []
 
@@ -347,38 +367,66 @@ class IndeedEmailAdapter(JobSourceAdapter):
 
     # ── Parsing ────────────────────────────────────────────────────────────
 
-    def _parse_email(self, em: dict) -> Optional[FetchedJob]:
-        """Regex-Parse zuerst, AI-Fallback falls Pflichtfelder fehlen."""
+    def _parse_email(self, em: dict):
+        """Regex-Parse zuerst, AI-Fallback falls Pflichtfelder fehlen.
+
+        Returns `None`, ein einzelnes `FetchedJob` ODER eine Liste von
+        `FetchedJob`s (Multi-URL-Digest-Fall).
+        """
         subject = em.get('subject', '') or ''
         body = em.get('body', '') or ''
 
-        title, company = _parse_subject(subject)
+        # From-Whitelist-Check: blockiert Mails von fremden Domains direkt.
+        # Wichtig wenn mehrere Plattform-Adapter parallel laufen oder ein
+        # User die Mail in den falschen Ordner verschoben hat. Wird nur
+        # angewendet, wenn `from` überhaupt gesetzt ist — leeres From-Feld
+        # darf nicht blockieren (Pre-Fetched Test-Inputs ohne Header sind
+        # legitim und der IMAP-SEARCH FROM-Filter hat bereits gefiltert).
+        from_addr = (em.get('from') or '').lower()
+        if from_addr and self.profile.from_whitelist:
+            if not any(re.search(pat, from_addr) for pat in self.profile.from_whitelist):
+                return None
+
+        # Multi-URL-Digest-Erkennung: ≥ digest_threshold plattform-spezifische
+        # Job-URLs im Body → Digest-Mail (z.B. LinkedIn "Jobs you may be
+        # interested in"). Sofort AI-Fallback weil Subject-Regex hier
+        # nutzlos ist (Subject zeigt nicht einen Job).
+        urls_in_body = set(self.profile.url_pattern.findall(body))
+        if len(urls_in_body) >= self.profile.digest_threshold:
+            return self._ai_fallback_digest(em)
+
+        title, company = self._parse_subject(subject)
         location = None
         url = None
 
         # URL aus Body (oder Subject, falls vorhanden)
-        url_match = _INDEED_URL_RE.search(body) or _INDEED_URL_RE.search(subject)
+        url_match = self.profile.url_pattern.search(body) or self.profile.url_pattern.search(subject)
         if url_match:
-            url = url_match.group(1)
+            # `.group(1)` falls die Pattern eine capture-group hat,
+            # sonst `.group(0)` (gesamter Match).
+            try:
+                url = url_match.group(1)
+            except IndexError:
+                url = url_match.group(0)
 
         # Body-Fallback für Title/Company
         if not title:
-            m = _BODY_TITLE_RE.search(body)
+            m = self.profile.body_title_re.search(body)
             if m:
                 title = m.group(1).strip()
         if not company:
-            m = _BODY_COMPANY_RE.search(body)
+            m = self.profile.body_company_re.search(body)
             if m:
                 company = m.group(1).strip()
 
         # Location
-        m = _BODY_LOCATION_RE.search(body)
+        m = self.profile.body_location_re.search(body)
         if m:
             location = m.group(1).strip()
 
         # AI-Fallback nur wenn:
         #   1. Pflichtfelder fehlen UND
-        #   2. Mail sieht wie Job-Mail aus (URL bereits da ODER Indeed-Marker
+        #   2. Mail sieht wie Job-Mail aus (URL bereits da ODER Plattform-Marker
         #      im Subject/From) — sonst sind das random Newsletter und ein
         #      AI-Call wäre Verschwendung UND
         #   3. AI-Budget für diesen Lauf noch nicht ausgeschöpft (siehe
@@ -386,13 +434,13 @@ class IndeedEmailAdapter(JobSourceAdapter):
         # Kombi sorgt dafür dass 171 Random-Inbox-Mails nicht den Worker
         # killen (gunicorn timeout 180s).
         if (not title or not company or not url) and self.user is not None:
-            from_field = (em.get('from') or '').lower()
-            looks_like_indeed = (
+            platform_name = self.profile.name.lower()
+            looks_like_platform = (
                 url is not None
-                or 'indeed.' in from_field
-                or 'indeed' in subject.lower()
+                or platform_name in from_addr
+                or platform_name in subject.lower()
             )
-            if looks_like_indeed and self._ai_calls_used < self.AI_FALLBACK_BUDGET:
+            if looks_like_platform and self._ai_calls_used < self.AI_FALLBACK_BUDGET:
                 self._ai_calls_used += 1
                 ai_data = _ai_extract(self.user, subject, body)
                 if ai_data:
@@ -408,8 +456,8 @@ class IndeedEmailAdapter(JobSourceAdapter):
         # Tracker-URL (cts.indeed.com/v3/...) zu canonical Indeed-URL auflösen.
         # Best-effort: bei Fehler bleibt die Tracker-URL erhalten (Browser kann
         # ihr auch folgen, aber Dedup-Match gegen andere Sources wird besser
-        # mit canonical URL).
-        if 'cts.indeed.' in url.lower():
+        # mit canonical URL). Nur für Indeed relevant.
+        if self.profile.name == 'indeed' and 'cts.indeed.' in url.lower():
             resolved = _resolve_indeed_tracker(url)
             if resolved:
                 url = resolved
@@ -428,6 +476,64 @@ class IndeedEmailAdapter(JobSourceAdapter):
                 'from': em.get('from', ''),
             },
         )
+
+    def _parse_subject(self, subject: str) -> tuple[Optional[str], Optional[str]]:
+        """Versucht (title, company) aus dem Email-Subject zu extrahieren
+        mittels der subject_patterns des aktiven Profils."""
+        if not subject:
+            return None, None
+        for pat in self.profile.subject_patterns:
+            m = pat.search(subject.strip())
+            if m:
+                return m.group('title').strip(), m.group('company').strip()
+        return None, None
+
+    def _ai_fallback_digest(self, em: dict) -> list[FetchedJob]:
+        """AI-Fallback für Multi-URL-Digest-Mails (z.B. LinkedIn/XING).
+
+        Erwartet vom Modell eine JSON-Liste von Objekten mit Keys
+        title/company/location/url. Gibt eine Liste FetchedJob zurück
+        (kann leer sein bei Fehler/Budget-Exhaustion).
+        """
+        if self.user is None:
+            return []
+        if self._ai_calls_used >= self.AI_FALLBACK_BUDGET:
+            return []
+        self._ai_calls_used += 1
+
+        subject = em.get('subject', '') or ''
+        body = em.get('body', '') or ''
+
+        items = _ai_extract_digest(self.user, subject, body, self.profile)
+        if not items:
+            return []
+
+        out: list[FetchedJob] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = (item.get('title') or '').strip()
+            url = (item.get('url') or '').strip()
+            if not title or not url:
+                continue
+            company = item.get('company') or None
+            location = item.get('location') or None
+            out.append(FetchedJob(
+                external_id=url[:512],
+                title=title[:512],
+                url=url[:1024],
+                company=(company[:255] if company else None),
+                location=(location[:255] if location else None),
+                description=body[:2000] if body else None,
+                posted_at=_parse_date(em.get('date')),
+                raw={
+                    'message_id': em.get('message_id', ''),
+                    'subject': subject,
+                    'from': em.get('from', ''),
+                    'digest': True,
+                },
+            ))
+        return out
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -615,3 +721,71 @@ def _ai_extract(user, subject: str, body: str) -> Optional[dict]:
         'location': (data.get('location') or None),
         'url': (data.get('url') or None),
     }
+
+
+def _ai_extract_digest(
+    user, subject: str, body: str, profile: PlatformProfile,
+) -> Optional[list[dict]]:
+    """AI-Fallback für Digest-Mails: erwartet JSON-Array von Job-Dicts.
+
+    Returns list[dict] mit Keys title/company/location/url, oder None bei
+    Fehler. Profile-spezifischer Hint wird in den Prompt eingebettet.
+    """
+    try:
+        from services import ai_provider_client
+    except ImportError:
+        return None
+
+    if not ai_provider_client.is_enabled():
+        return None
+    client = ai_provider_client.get_client()
+    if not client:
+        return None
+
+    provider, model = user.get_model_for('email_parse')
+    if not provider:
+        return None
+
+    fallback_kwargs = ai_provider_client.build_fallback_kwargs(user)
+
+    prompt = (
+        f"Extract ALL job postings from this {profile.source_label} digest email. "
+        "Return ONLY a single valid JSON ARRAY (no wrapping object), where each "
+        'element is an object with keys "title", "company", "location", "url". '
+        "If a field is unknown for an item, use null. "
+        "No prose, no markdown — only the JSON array.\n\n"
+        f"Hinweis: {profile.ai_hint}\n\n"
+        f"Subject: {subject[:200]}\n\n"
+        f"Body:\n{body[:4000]}"
+    )
+
+    try:
+        response = client.chat(
+            user_id=user.id,
+            provider=provider,
+            model=model or '',
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+            **fallback_kwargs,
+        )
+        text = response.content[0].text if response.content else ''
+    except Exception as exc:
+        logger.warning("AI-Extract-Digest fehlgeschlagen: %s", exc)
+        return None
+
+    m = re.search(r'\[.*\]', text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list):
+        return None
+    return data
+
+
+# Backward-compat alias — kept until all callers migrate to EmailJobsAdapter.
+# Bestehende Imports `from services.job_sources.email_jobs import IndeedEmailAdapter`
+# funktionieren weiter; Default-Profil ist `PROFILES["indeed"]`.
+IndeedEmailAdapter = EmailJobsAdapter
