@@ -4240,12 +4240,26 @@ const JobsView = (() => {
 
     // Wandelt feedback_text/feedback_reasons in eine menschenlesbare Begründung um.
     // Wird beim Render von dismissed-Karten unter der Headline angezeigt.
+    //
+    // Bekannte technische Codes (Backend-side gesetzt bei Auto-Dismiss):
+    //   prefilter_low_score      — Vor-Filter Score unter Schwelle (Stage 2 cron)
+    //   claude_low_score         — Claude-Match Score unter Schwelle (zukunft)
+    //   learned                  — Match-Lerner hat Score adaptiert (zukunft)
+    //   auto_blocked_by_rejection — Indeed-Email-Cron: Firma im Rejection-Fenster
+    //   rejection_blocked_skip    — User-Approval-Dialog: "Skip"-Choice
+    //   title_blacklisted        — Hard-Marketing-Filter (Profile-Level)
+    //   url_pattern_mismatch     — URL passt nicht zum Plattform-Pattern
     function formatDismissReason(m) {
         const txt = (m.feedback_text || '').trim();
         const reasons = Array.isArray(m.feedback_reasons) ? m.feedback_reasons : [];
         const knownCodes = {
-            'auto_blocked_by_rejection': '🚫 Auto: Firma hatte Absage im aktiven Fenster (Cron)',
-            'rejection_blocked_skip':    '🚫 Manuell ignoriert: Firma hatte Absage',
+            'prefilter_low_score':        '🔻 Vor-Filter-Score zu niedrig (Keyword-Match)',
+            'claude_low_score':           '🤖 KI-Bewertung zu niedrig (Skill-Mismatch)',
+            'learned':                    '🧠 Adaptiv gelernt: passt nicht zu deinem Profil',
+            'auto_blocked_by_rejection':  '🚫 Auto: Firma hatte Absage im aktiven Fenster',
+            'rejection_blocked_skip':     '🚫 Manuell uebersprungen: Firma hatte Absage',
+            'title_blacklisted':          '🛡️ Marketing-Header (LinkedIn-Section-Title)',
+            'url_pattern_mismatch':       '🔗 URL passt nicht zum Plattform-Pattern',
         };
         const parts = [];
         if (txt) {

@@ -282,6 +282,11 @@ def prefilter():
             pass  # Embedding ist optional, prefilter funktioniert auch ohne
         if score < PREFILTER_DISMISS_THRESHOLD:
             match.status = 'dismissed'
+            # Markiere den Auto-Dismiss-Grund — UI zeigt das als
+            # menschenlesbare Begruendung an. Score selbst ist via
+            # match.prefilter_score schon gespeichert; hier nur das Label.
+            if not match.feedback_text:
+                match.feedback_text = 'prefilter_low_score'
             dismissed += 1
         scored += 1
 
