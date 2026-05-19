@@ -3398,7 +3398,8 @@ const JdSourcesUI = (() => {
                         <td style="padding:0.4rem">${status}</td>
                         <td style="padding:0.4rem;white-space:nowrap">
                             ${s.type && s.type.endsWith('_email')
-                                ? `<button class="btn btn-sm btn-primary" onclick="JdSourcesUI.importFromEmail(${s.id})" title="Import aus IMAP-Folder">📧 Import</button>`
+                                ? `<button class="btn btn-sm btn-primary" onclick="JdSourcesUI.importFromEmail(${s.id})" title="Import aus IMAP-Folder">📧 Import</button>
+                                   <button class="btn btn-sm" onclick="JdSourcesUI.trainPattern(${s.id})" title="Pattern für diese Plattform neu lernen (AI-Analyse, ca. 30-60s)">🧠 Lernen</button>`
                                 : `<button class="btn btn-sm" onclick="JdSourcesUI.testCrawl(${s.id})" title="Test-Crawl">🧪</button>`}
                             ${s.is_own ? `
                                 <button class="btn btn-sm" onclick="JdSourcesUI.edit(${s.id})" title="Bearbeiten">✏️</button>
@@ -3714,6 +3715,41 @@ const JdSourcesUI = (() => {
         }
     }
 
+    async function trainPattern(sourceId) {
+        const src = (state && state.sourcesCache || []).find(s => s.id === sourceId);
+        if (!src) { alert('Quelle nicht gefunden (refresh nötig)'); return; }
+        const platform = (src.type || '').replace('_email', '');
+        const confirmText = (
+            '🧠 Pattern für ' + platform.toUpperCase() + ' neu lernen?\n\n' +
+            '• Lädt 30 aktuelle Mails aus deinem IMAP-Folder\n' +
+            '• 5 Mails an deinen AI-Provider zur Layout-Analyse\n' +
+            '• 25 Test-Mails validieren das Pattern (Schwelle: 40%)\n' +
+            '• Bei Erfolg: Pattern wird für ALLE Nutzer dieser Plattform aktiv\n' +
+            '• Bei Fehlschlag: aktuelles Pattern bleibt unverändert\n\n' +
+            'Dauer: 30-60 s. Kosten: 0 EUR (Ollama) bzw. ~0.01 EUR (Claude).\n\n' +
+            'Fortsetzen?'
+        );
+        if (!confirm(confirmText)) return;
+        const showToast = typeof window.showToast === 'function' ? window.showToast : ((m) => alert(m));
+        showToast('🧠 Pattern-Train laeuft... (kann 30-60s dauern)', 'info');
+        try {
+            const r = await Auth.fetch('/jobs/sources/' + sourceId + '/train-pattern', {
+                method: 'POST', body: JSON.stringify({}),
+            });
+            if (r && r.ok) {
+                const pct = Math.round((r.hit_rate || 0) * 100);
+                showToast('✅ Pattern gelernt: ' + pct + '% Hit-Rate auf ' + r.sample_count + ' Test-Mails', 'success');
+                refresh();
+                if (typeof loadLearnedPatterns === 'function') loadLearnedPatterns();
+            } else if (r && r.error) {
+                const pct = r.hit_rate != null ? ' (' + Math.round(r.hit_rate*100) + '%)' : '';
+                alert('❌ Pattern-Train fehlgeschlagen' + pct + ':\n\n' + r.error);
+            }
+        } catch (e) {
+            alert('❌ ' + (e && e.message ? e.message : 'Fehler beim Pattern-Train'));
+        }
+    }
+
     function openImportApprovalDialog(sourceId, importResult) {
         if ($('jdImportApprovalWrap')) return;
 
@@ -3914,6 +3950,7 @@ const JdSourcesUI = (() => {
         importFromEmail, skipAllBlocked, submitApproval, closeApprovalDialog,
         saveIndeedScriptUrl, toggleIndeedScriptCode,
         testImap, clearImapCreds, loadImapStatus,
+        trainPattern,
     };
 })();
 
