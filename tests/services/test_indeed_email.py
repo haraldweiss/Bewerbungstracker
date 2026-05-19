@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.job_sources.indeed_email import (
+from services.job_sources.email_jobs import (
     IndeedEmailAdapter,
     _decode_mime,
     _extract_body,
@@ -218,7 +218,7 @@ def test_ai_fallback_called_when_fields_missing(monkeypatch):
         }
 
     monkeypatch.setattr(
-        'services.job_sources.indeed_email._ai_extract',
+        'services.job_sources.email_jobs._ai_extract',
         fake_ai_extract,
     )
 
@@ -325,7 +325,7 @@ def test_ai_fallback_skipped_for_non_indeed_emails(monkeypatch):
         called['count'] += 1
         return {'title': 'X', 'company': 'Y', 'location': None, 'url': 'https://de.indeed.com/viewjob?jk=ai'}
 
-    monkeypatch.setattr('services.job_sources.indeed_email._ai_extract', fake_ai)
+    monkeypatch.setattr('services.job_sources.email_jobs._ai_extract', fake_ai)
 
     # Newsletter ohne Indeed-Bezug → kein AI-Call, return None
     result = adapter._parse_email({
@@ -354,7 +354,7 @@ def test_ai_fallback_budget_caps_calls(monkeypatch):
         call_count['n'] += 1
         return {'title': 'T', 'company': 'C', 'location': None,
                 'url': 'https://de.indeed.com/viewjob?jk=ai' + str(call_count['n'])}
-    monkeypatch.setattr('services.job_sources.indeed_email._ai_extract', fake_ai)
+    monkeypatch.setattr('services.job_sources.email_jobs._ai_extract', fake_ai)
 
     # 10 Indeed-Mails ohne klares Subject → würden alle AI triggern
     emails = [
@@ -396,7 +396,7 @@ def test_ai_fallback_only_fills_missing_fields(monkeypatch):
     adapter = IndeedEmailAdapter(config={}, user=FakeUser())
 
     monkeypatch.setattr(
-        'services.job_sources.indeed_email._ai_extract',
+        'services.job_sources.email_jobs._ai_extract',
         lambda u, s, b: {
             'title': 'AI Override Title',
             'company': 'AI Override Co',

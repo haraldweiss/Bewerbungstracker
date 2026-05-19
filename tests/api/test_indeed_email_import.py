@@ -121,7 +121,7 @@ def test_import_creates_raw_job_and_match_for_new_jobs(client, auth_header, inde
         _make_fetched("Senior Python Dev", "TechCorp", "https://de.indeed.com/viewjob?jk=a1"),
         _make_fetched("Data Engineer", "DataCo", "https://de.indeed.com/viewjob?jk=a2"),
     ]
-    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+    with patch('services.job_sources.email_jobs.IndeedEmailAdapter.fetch',
                return_value=fetched):
         r = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
@@ -158,7 +158,7 @@ def test_import_blocks_rejected_company(client, auth_header, indeed_source):
         _make_fetched("IT Consultant", "KA Resources", "https://de.indeed.com/viewjob?jk=b1"),
         _make_fetched("Senior Dev", "GoodCo", "https://de.indeed.com/viewjob?jk=b2"),
     ]
-    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+    with patch('services.job_sources.email_jobs.IndeedEmailAdapter.fetch',
                return_value=fetched):
         r = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
@@ -189,7 +189,7 @@ def test_import_respects_rejection_window_expiry(client, auth_header, indeed_sou
     db.session.commit()
 
     fetched = [_make_fetched("Dev", "OldRejection Co", "https://de.indeed.com/viewjob?jk=c1")]
-    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+    with patch('services.job_sources.email_jobs.IndeedEmailAdapter.fetch',
                return_value=fetched):
         r = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
@@ -217,7 +217,7 @@ def test_import_dedupes_existing_urls(client, auth_header, indeed_source):
         _make_fetched("New One", "NewCo", "https://de.indeed.com/viewjob?jk=fresh"),
         _make_fetched("Dup", "DupCo", "https://de.indeed.com/viewjob?jk=dup"),
     ]
-    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+    with patch('services.job_sources.email_jobs.IndeedEmailAdapter.fetch',
                return_value=fetched):
         r = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
@@ -254,7 +254,7 @@ def test_import_rejects_wrong_source_type(client, auth_header):
 
 def test_import_handles_fetch_error_and_increments_failures(client, auth_header, indeed_source):
     headers, _ = auth_header
-    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+    with patch('services.job_sources.email_jobs.IndeedEmailAdapter.fetch',
                side_effect=RuntimeError("IMAP unreachable")):
         r = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
@@ -271,7 +271,7 @@ def test_import_auto_disables_after_5_failures(client, auth_header, indeed_sourc
     indeed_source.consecutive_failures = 4
     db.session.commit()
 
-    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+    with patch('services.job_sources.email_jobs.IndeedEmailAdapter.fetch',
                side_effect=RuntimeError("boom")):
         r = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
@@ -289,7 +289,7 @@ def test_import_resets_failure_counter_on_success(client, auth_header, indeed_so
     indeed_source.last_error = 'previous'
     db.session.commit()
 
-    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+    with patch('services.job_sources.email_jobs.IndeedEmailAdapter.fetch',
                return_value=[]):
         r = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
@@ -575,7 +575,7 @@ def test_import_apps_script_proxy_rejects_bad_url(client, auth_header, indeed_so
 def test_import_empty_body_uses_imap_mode(client, auth_header, indeed_source):
     """Leerer Body → IMAP-Mode (existing). Mocked weil keine echten Creds."""
     headers, _ = auth_header
-    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+    with patch('services.job_sources.email_jobs.IndeedEmailAdapter.fetch',
                return_value=[]):
         r = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
@@ -619,7 +619,7 @@ def test_cron_indeed_email_import_runs_via_imap_when_credentials_present(
                    title="Cron Dev", url="https://de.indeed.com/viewjob?jk=cron1",
                    company="CronCo", location="Berlin", description="..."),
     ]
-    with patch('services.job_sources.indeed_email.IndeedEmailAdapter.fetch',
+    with patch('services.job_sources.email_jobs.IndeedEmailAdapter.fetch',
                return_value=fetched):
         r = client.post(
             "/api/jobs/indeed-email-import-all",

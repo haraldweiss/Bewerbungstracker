@@ -8,7 +8,7 @@ from services.job_sources.arbeitnow import ArbeitnowAdapter
 from services.job_sources.xing import XingAdapter
 from services.job_sources.linkedin import LinkedInAdapter
 from services.job_sources.stepstone import StepstoneAdapter
-from services.job_sources.indeed_email import IndeedEmailAdapter
+from services.job_sources.email_jobs import IndeedEmailAdapter
 
 
 def get_adapter(source_type: str, config: dict, **kwargs) -> JobSourceAdapter:

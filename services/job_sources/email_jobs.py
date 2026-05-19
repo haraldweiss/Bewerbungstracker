@@ -15,6 +15,7 @@ import json
 import logging
 import re
 import ssl
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.header import decode_header
 from typing import Optional
@@ -22,6 +23,27 @@ from typing import Optional
 from services.job_sources.base import JobSourceAdapter, FetchedJob
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PlatformProfile:
+    """Plattform-spezifische Daten für den EmailJobsAdapter.
+
+    Nur Daten, keine Logik. Profile werden in `PROFILES`-Dict registriert
+    und vom Adapter via `EmailJobsAdapter(config, user, profile=...)`
+    injected.
+    """
+    name: str
+    source_label: str
+    from_filter: str
+    from_whitelist: tuple[str, ...]
+    url_pattern: "re.Pattern"
+    subject_patterns: tuple
+    body_title_re: "re.Pattern"
+    body_company_re: "re.Pattern"
+    body_location_re: "re.Pattern"
+    digest_threshold: int = 3
+    ai_hint: str = ""
 
 
 # Subject-Patterns für Indeed-Emails (DE + EN).
@@ -59,6 +81,28 @@ _BODY_LOCATION_RE = re.compile(
     r'(?:Ort|Standort|Location|Place|City)\s*:?\s*([^\n\r]+)',
     re.IGNORECASE,
 )
+
+
+PROFILES: dict[str, PlatformProfile] = {
+    "indeed": PlatformProfile(
+        name="indeed",
+        source_label="Indeed",
+        from_filter="from:indeed",
+        from_whitelist=(
+            r"@(?:[a-z0-9.-]+\.)?indeed\.(?:de|com|co\.uk|fr|it|es)$",
+        ),
+        url_pattern=_INDEED_URL_RE,
+        subject_patterns=tuple(_SUBJECT_PATTERNS),
+        body_title_re=_BODY_TITLE_RE,
+        body_company_re=_BODY_COMPANY_RE,
+        body_location_re=_BODY_LOCATION_RE,
+        digest_threshold=3,
+        ai_hint=(
+            "Indeed-Jobempfehlung. Click-Tracker-URLs cts.indeed.com/v3 "
+            "bleiben als external_id (kein Auto-Follow)."
+        ),
+    ),
+}
 
 
 class IndeedEmailAdapter(JobSourceAdapter):
