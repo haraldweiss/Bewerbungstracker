@@ -430,6 +430,10 @@ class EmailJobsAdapter(JobSourceAdapter):
                     u = (m.group('url') or '').strip()
                     if not t or not u:
                         continue
+                    # Trenner-Linien (z.B. "---") schlüpfen sonst als Title
+                    # durch und schieben echte Title in den Company-Slot.
+                    if re.fullmatch(r"[\-=_~\*\.\s]{3,}", t):
+                        continue
                     jobs_from_cards.append(FetchedJob(
                         external_id=u[:512],
                         title=t[:512],
