@@ -513,6 +513,20 @@
                     <option value="dismissed">Verworfen</option>
                 </select>
             </label>
+            <label style="font-size:0.85em;color:var(--text-muted);display:flex;align-items:center;gap:0.35rem;cursor:pointer"
+                   title="Zeigt nur Matches, bei denen ein Grund (feedback_text oder feedback_reasons) hinterlegt ist">
+                <input type="checkbox" id="jobs-with-feedback-filter" style="width:auto;cursor:pointer">
+                🏷️ Nur mit Grund
+            </label>
+            <label style="font-size:0.85em;color:var(--text-muted)"
+                   title="Bei Verworfenen: manuell durch dich vs. automatisch (Pre-Filter / Rejection-Window-Cron)">
+                Origin:
+                <select id="jobs-origin-filter" style="padding:4px 8px;background:var(--bg-card2);color:var(--text);border:1px solid var(--border);border-radius:4px">
+                    <option value="" selected>Alle</option>
+                    <option value="manual">🤚 Manuell</option>
+                    <option value="auto">🤖 Auto (KI/System)</option>
+                </select>
+            </label>
             <label style="font-size:0.85em;color:var(--text-muted)">
                 Quelle:
                 <select id="jobs-source-filter" style="padding:4px 8px;background:var(--bg-card2);color:var(--text);border:1px solid var(--border);border-radius:4px">
@@ -772,10 +786,16 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Ordner <span style="color:var(--text-muted);font-size:0.75rem;">(nur IMAP)</span></label>
+                    <label>
+                        Ordner <span style="color:var(--text-muted);font-size:0.75rem;">(nur IMAP)</span>
+                        <button type="button" class="btn btn-sm" onclick="listImapFolders()"
+                                style="margin-left:0.5rem;font-size:0.7rem;padding:0.15rem 0.5rem"
+                                title="Listet alle Folder deines Mailservers auf">📋 Listen</button>
+                    </label>
                     <input type="text" id="imapFolder" value="INBOX" placeholder="INBOX">
                 </div>
             </div>
+            <div id="imapFolderPicker" style="display:none;background:var(--bg-card2);padding:0.5rem;border-radius:6px;max-height:200px;overflow-y:auto;margin-bottom:0.75rem;"></div>
             <div id="imapFolderHint" style="display:none;font-size:0.82rem;color:#FCD34D;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:rgba(245,158,11,0.08);border-radius:6px;border-left:3px solid #F59E0B;"></div>
 
             <div class="form-grid" style="margin-bottom:1rem;">
@@ -810,6 +830,10 @@
                 <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.85rem;color:var(--text-muted);">
                     <input type="checkbox" id="imapRemember" checked style="width:auto;">
                     Server-Einstellungen merken (kein Passwort)
+                </label>
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.85rem;color:var(--text-muted);" title="Speichert Host+User+Passwort encrypted in der DB — nötig für Server-side Indeed-Email-Import">
+                    <input type="checkbox" id="imapServerSync" style="width:auto;">
+                    🌐 Auch zum Server speichern (für Indeed-Server-Import)
                 </label>
             </div>
         </div>
@@ -1237,6 +1261,38 @@
             </thead>
             <tbody id="jdSourcesTableBody"><tr><td colspan="4" style="padding:0.6rem;color:var(--text-muted)">Lade…</td></tr></tbody>
         </table>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
+        <div style="font-weight:600;margin-bottom:0.5rem">🖥️ Server-IMAP (für Indeed-Import)</div>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;line-height:1.5">
+            Credentials werden im Tab <b>📧 Mail Connector</b> eingegeben — dort Checkbox
+            <code>🌐 Auch zum Server speichern</code> aktivieren und Verbinden. Hier nur
+            Status-Anzeige + Folder-Listing zum Anlegen einer Indeed-Quelle.
+        </p>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.3rem">
+            <div id="imapServerStatus" style="font-size:0.85rem;color:var(--text-muted);flex:1;min-width:200px">Status: lade…</div>
+            <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.testImap()">🧪 Test + Folder listen</button>
+            <button class="btn btn-danger btn-sm" onclick="JdSourcesUI.clearImapCreds()">🗑️ Server-Credentials löschen</button>
+        </div>
+        <div id="imapServerFolders" style="display:none;background:var(--bg-card2);padding:0.5rem;border-radius:6px;max-height:240px;overflow-y:auto;margin-top:0.3rem"></div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:1.5rem 0">
+        <div style="font-weight:600;margin-bottom:0.5rem">📧 Indeed-Email Import (Gmail Apps Script)</div>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;line-height:1.5">
+            Empfohlen für Gmail-User: Deploy ein kleines Google-Apps-Script
+            (kein IMAP-Passwort auf dem VPS). Anleitung &amp; Code-Snippet unten,
+            dann die <code>/exec</code>-URL hier einfügen. Leer lassen, um stattdessen
+            VPS-IMAP-Mode zu nutzen (erfordert DB-Credentials).
+        </p>
+        <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap">
+            <input type="text" id="indeedScriptUrl"
+                placeholder="https://script.google.com/macros/s/XXXXX/exec"
+                style="flex:1;min-width:200px">
+            <button class="btn btn-primary btn-sm" onclick="JdSourcesUI.saveIndeedScriptUrl()">💾 URL speichern</button>
+            <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.toggleIndeedScriptCode()">📋 Code anzeigen</button>
+        </div>
+        <pre id="indeedScriptCodeBox" style="display:none;background:var(--bg-card2);padding:0.75rem;border-radius:6px;font-size:0.75rem;overflow-x:auto;max-height:300px;margin-top:0.5rem"></pre>
+        <div id="indeedScriptUrlStatus" style="font-size:0.85rem;margin-top:0.3rem"></div>
     </div>
 
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
@@ -1917,6 +1973,57 @@ function generateAppsScriptCode(keywords) {
 // Default Apps Script Code (with default keywords)
 const APPS_SCRIPT_CODE = generateAppsScriptCode('Bewerbung,Stelle,Stellenausschreibung,Application,Job,Position,Kandidat,Recruiting,Interview,Absage,Zusage');
 
+// Apps-Script Code für Indeed-Job-Import.
+// Quota-optimiert (Gmail hat tägliche API-Limits, vor allem auf Consumer-
+// Accounts: ~250 search-queries/Tag):
+//  - Default-Limit niedriger (50 statt 100) — pro Run weniger Quota.
+//  - GmailApp.getMessagesForThreads([threads]) BATCH-Read statt N×
+//    thread.getMessages() — spart einen Faktor 5-10 an API-Calls.
+//  - Optional ?days=N (1-365, default 30) und ?limit=N (1-200) als
+//    Query-Parameter — bei 'Quota exceeded' temporär kleiner stellen.
+const INDEED_APPS_SCRIPT_CODE = `function doGet(e) {
+  var p = (e && e.parameter) || {};
+  var days  = parseInt(p.days  || '30', 10);
+  var limit = parseInt(p.limit || '50', 10);
+  if (isNaN(days)  || days  < 1 || days  > 365) days  = 30;
+  if (isNaN(limit) || limit < 1 || limit > 200) limit = 50;
+
+  try {
+    var query = 'from:(indeed.com OR indeed.de OR noreply@indeed.com) newer_than:' + days + 'd';
+    var threads = GmailApp.search(query, 0, limit);
+    // BATCH-Read: ein API-Call holt alle Messages aller Threads.
+    var msgsByThread = GmailApp.getMessagesForThreads(threads);
+    var results = [];
+    for (var i = 0; i < msgsByThread.length; i++) {
+      var msgs = msgsByThread[i];
+      for (var j = 0; j < msgs.length; j++) {
+        var msg = msgs[j];
+        results.push({
+          id:      msg.getId(),
+          subject: msg.getSubject(),
+          from:    msg.getFrom(),
+          date:    msg.getDate().toISOString(),
+          body:    msg.getPlainBody().substring(0, 8000)
+        });
+      }
+    }
+    var output = ContentService.createTextOutput(JSON.stringify({
+      status: 'ok',
+      count:  results.length,
+      emails: results
+    }));
+    output.setMimeType(ContentService.MimeType.JSON);
+    return output;
+  } catch (err) {
+    var errOutput = ContentService.createTextOutput(JSON.stringify({
+      status: 'error',
+      error:  String(err && err.message ? err.message : err)
+    }));
+    errOutput.setMimeType(ContentService.MimeType.JSON);
+    return errOutput;
+  }
+}`;
+
 /* ═══════════════════════════════════════════════════════
    AUTHENTICATION FUNCTIONS
 ═══════════════════════════════════════════════════════ */
@@ -2196,6 +2303,11 @@ let state = {
         appsScriptUrl: '',
         appsScriptMonitoringEnabled: false,
         appsScriptMonitoringInterval: 30, // minutes
+        // Separate Apps-Script-URL für Indeed-Job-Import (eigener doGet,
+        // returnt full body — anders als das Bewerbungs-Script).
+        indeedScriptUrl: '',
+        // Mail-Connector Checkbox: bei Connect auch zum VPS pushen?
+        imapServerSync: false,
         imapHost: '',
         imapPort: 993,
         imapProtocol: 'imap',
@@ -2894,6 +3006,27 @@ function loadSettingsForm() {
     if (ed) ed.value = state.settings.emailImportStartDate || '';
     if (su) su.value = state.settings.appsScriptUrl || '';
 
+    // Indeed-Script-URL (separates Apps Script für Job-Import)
+    const isu = document.getElementById('indeedScriptUrl');
+    if (isu) isu.value = state.settings.indeedScriptUrl || '';
+
+    // Mail-Connector Server-Sync Checkbox + Passwort-Placeholder.
+    const iss = document.getElementById('imapServerSync');
+    if (iss) iss.checked = !!state.settings.imapServerSync;
+    // Wenn Server-Sync aktiv ist, signalisiert ein angepasster Placeholder
+    // dem User, dass das Passwort leer gelassen werden kann.
+    const ipw = document.getElementById('imapPass');
+    if (ipw) {
+        ipw.placeholder = state.settings.imapServerSync
+            ? 'Passwort (leer lassen, Server-stored)'
+            : 'Passwort';
+    }
+
+    // IMAP-Status laden (asynchron, fire-and-forget)
+    if (typeof JdSourcesUI !== 'undefined' && JdSourcesUI.loadImapStatus) {
+        JdSourcesUI.loadImapStatus();
+    }
+
     // Apps Script Monitoring-Einstellungen
     const asme = document.getElementById('appsScriptMonitoringEnabled');
     const asmi = document.getElementById('appsScriptMonitoringInterval');
@@ -3226,7 +3359,16 @@ const JdSourcesUI = (() => {
     const TYPE_LABELS = {
         rss: '📰 RSS', adzuna: '🔎 Adzuna',
         bundesagentur: '🇩🇪 Bundesagentur', arbeitnow: '🌍 Arbeitnow',
+        indeed_email: '📧 Indeed-Email',
     };
+
+    // Per-Approval-Dialog-State: blocked Jobs aus dem letzten Import.
+    // Wird beim Öffnen des Approval-Dialogs gesetzt und beim Schließen geleert.
+    let _blockedJobsState = [];
+
+    // Wenn != null: openCreate-Modal ist im Edit-Modus für diese Source-ID.
+    // create() macht PATCH statt POST. closeCreate setzt zurück auf null.
+    let _editingSourceId = null;
 
     async function refresh() {
         const tbody = $('jdSourcesTableBody');
@@ -3253,8 +3395,11 @@ const JdSourcesUI = (() => {
                         <td style="padding:0.4rem">${TYPE_LABELS[s.type] || s.type}</td>
                         <td style="padding:0.4rem">${status}</td>
                         <td style="padding:0.4rem;white-space:nowrap">
-                            <button class="btn btn-sm" onclick="JdSourcesUI.testCrawl(${s.id})" title="Test-Crawl">🧪</button>
+                            ${s.type === 'indeed_email'
+                                ? `<button class="btn btn-sm btn-primary" onclick="JdSourcesUI.importFromEmail(${s.id})" title="Import aus IMAP-Folder">📧 Import</button>`
+                                : `<button class="btn btn-sm" onclick="JdSourcesUI.testCrawl(${s.id})" title="Test-Crawl">🧪</button>`}
                             ${s.is_own ? `
+                                <button class="btn btn-sm" onclick="JdSourcesUI.edit(${s.id})" title="Bearbeiten">✏️</button>
                                 <button class="btn btn-sm" onclick="JdSourcesUI.toggle(${s.id}, ${!s.enabled})" title="${s.enabled ? 'Deaktivieren' : 'Aktivieren'}">${s.enabled ? '⏸️' : '▶️'}</button>
                                 <button class="btn btn-sm btn-danger" onclick="JdSourcesUI.del(${s.id})" title="Löschen">🗑️</button>
                             ` : ''}
@@ -3305,6 +3450,7 @@ const JdSourcesUI = (() => {
                         <option value="bundesagentur">🇩🇪 Bundesagentur Jobsuche</option>
                         <option value="adzuna">🔎 Adzuna</option>
                         <option value="arbeitnow">🌍 Arbeitnow (Remote)</option>
+                        <option value="indeed_email">📧 Indeed Email-Folder (manuell)</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -3349,6 +3495,13 @@ const JdSourcesUI = (() => {
         } else if (t === 'arbeitnow') {
             c.innerHTML = `<div class="form-group"><label>Tags (kommagetrennt):</label>
                 <input type="text" id="jdCfgTags" placeholder="javascript, remote" style="width:100%"></div>`;
+        } else if (t === 'indeed_email') {
+            c.innerHTML = `
+                <div class="form-group"><label>IMAP-Folder:</label>
+                    <input type="text" id="jdCfgFolder" value="Indeed" placeholder="Indeed" style="width:100%"></div>
+                <div class="form-group"><label>Lookback (Tage):</label>
+                    <input type="number" id="jdCfgLookback" value="30" min="1" max="365" style="width:120px"></div>
+                <div class="form-group" style="font-size:0.8rem;color:var(--text-muted)">Nur manueller Import via 📧 Button. User-IMAP-Credentials müssen gesetzt sein.</div>`;
         }
     }
 
@@ -3368,19 +3521,33 @@ const JdSourcesUI = (() => {
         if (t === 'arbeitnow') return {
             tags: ($('jdCfgTags').value || '').split(',').map(s => s.trim()).filter(Boolean),
         };
+        if (t === 'indeed_email') return {
+            folder: ($('jdCfgFolder').value || 'Indeed').trim(),
+            lookback_days: parseInt($('jdCfgLookback').value, 10) || 30,
+        };
         return {};
     }
 
     async function create() {
         try {
-            const r = await Auth.fetch('/jobs/sources', {
-                method: 'POST',
-                body: JSON.stringify({
-                    name: $('jdNewName').value,
-                    type: $('jdNewType').value,
-                    config: buildConfig(),
-                    crawl_interval_min: parseInt($('jdNewInterval').value, 10) || 60,
-                }),
+            const body = {
+                name: $('jdNewName').value,
+                config: buildConfig(),
+                crawl_interval_min: parseInt($('jdNewInterval').value, 10) || 60,
+            };
+            let endpoint, method;
+            if (_editingSourceId != null) {
+                // Edit-Modus: type bleibt unverändert (PATCH akzeptiert kein type)
+                endpoint = `/jobs/sources/${_editingSourceId}`;
+                method = 'PATCH';
+            } else {
+                endpoint = '/jobs/sources';
+                method = 'POST';
+                body.type = $('jdNewType').value;
+            }
+            const r = await Auth.fetch(endpoint, {
+                method,
+                body: JSON.stringify(body),
             });
             if (r && r.source) {
                 closeCreate();
@@ -3391,13 +3558,309 @@ const JdSourcesUI = (() => {
         }
     }
 
+    function edit(id) {
+        const src = (state && state.sourcesCache || []).find(s => s.id === id);
+        if (!src) { alert('Quelle nicht gefunden (refresh nötig)'); return; }
+        if (!src.is_own) { alert('Globale Quellen können nicht bearbeitet werden'); return; }
+        _editingSourceId = id;
+        openCreate();
+        // Type-Dropdown disabled (Type ist nicht änderbar) + auf den richtigen Wert setzen
+        const typeEl = $('jdNewType');
+        if (typeEl) {
+            typeEl.value = src.type;
+            typeEl.disabled = true;
+        }
+        // Name + Intervall
+        const nameEl = $('jdNewName'); if (nameEl) nameEl.value = src.name || '';
+        const intEl = $('jdNewInterval'); if (intEl) intEl.value = src.crawl_interval_min || 60;
+        // Type-spezifische Felder rendern und mit cfg pre-fillen
+        renderTypeFields();
+        const cfg = src.config || {};
+        if (src.type === 'indeed_email') {
+            if ($('jdCfgFolder')) $('jdCfgFolder').value = cfg.folder || 'Indeed';
+            if ($('jdCfgLookback')) $('jdCfgLookback').value = cfg.lookback_days || 30;
+        } else if (src.type === 'rss') {
+            if ($('jdCfgUrl')) $('jdCfgUrl').value = cfg.url || '';
+        } else if (src.type === 'adzuna') {
+            if ($('jdCfgAppId')) $('jdCfgAppId').value = cfg.app_id || '';
+            if ($('jdCfgAppKey')) $('jdCfgAppKey').value = cfg.app_key || '';
+            if ($('jdCfgCountry')) $('jdCfgCountry').value = cfg.country || 'de';
+            if ($('jdCfgWhat')) $('jdCfgWhat').value = cfg.what || '';
+            if ($('jdCfgWhere')) $('jdCfgWhere').value = cfg.where || '';
+        } else if (src.type === 'bundesagentur') {
+            if ($('jdCfgWas')) $('jdCfgWas').value = cfg.was || '';
+            if ($('jdCfgWo')) $('jdCfgWo').value = cfg.wo || '';
+            if ($('jdCfgUmkreis')) $('jdCfgUmkreis').value = cfg.umkreis || 25;
+        } else if (src.type === 'arbeitnow') {
+            if ($('jdCfgTags')) $('jdCfgTags').value = (cfg.tags || []).join(', ');
+        }
+        // Modal-Titel anpassen
+        const h3 = document.querySelector('#jdSourceModalWrap h3');
+        if (h3) h3.textContent = '✏️ Quelle bearbeiten';
+    }
+
     function closeCreate(event) {
         if (event && event.target.id !== 'jdSourceModalWrap') return;
         const m = $('jdSourceModalWrap');
         if (m) m.remove();
+        // Edit-Mode immer zurücksetzen — sonst würde 'Anlegen' beim
+        // nächsten Mal fälschlich PATCH machen.
+        _editingSourceId = null;
     }
 
-    return { refresh, openCreate, closeCreate, renderTypeFields, create, testCrawl, toggle, del };
+    // ── Indeed-Email Import-Flow ────────────────────────────────────────────
+
+    async function importFromEmail(id) {
+        const btn = document.querySelector(`button[onclick="JdSourcesUI.importFromEmail(${id})"]`);
+        const originalText = btn ? btn.innerHTML : '';
+        if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Lade…'; }
+
+        try {
+            // Wenn indeedScriptUrl gesetzt: Backend macht serverseitigen Fetch
+            // (umgeht CORS — Browser kann nicht direkt zu script.google.com).
+            // Fallback ohne URL: leerer Body → VPS versucht IMAP-Mode mit
+            // User.imap_* Credentials aus der DB.
+            const scriptUrl = (state && state.settings && state.settings.indeedScriptUrl || '').trim();
+            const requestBody = scriptUrl ? JSON.stringify({ script_url: scriptUrl }) : null;
+            if (scriptUrl && btn) btn.innerHTML = '⏳ Hole + Parse Mails…';
+
+            const r = await Auth.fetch(`/jobs/sources/${id}/import-from-email`, {
+                method: 'POST',
+                body: requestBody,
+            });
+            if (!r) throw new Error('Leere Antwort vom Server');
+
+            const imported = r.imported || 0;
+            const blocked = r.blocked || [];
+            const dup = r.duplicates || 0;
+            const total = r.total_emails || 0;
+
+            // Kein Approval nötig → einfache Erfolgsmeldung
+            if (blocked.length === 0) {
+                alert(`✅ Import abgeschlossen.\n\n${total} Email(s) geprüft\n${imported} neue(r) Job-Vorschlag(e) importiert${dup ? `\n${dup} Duplikat(e) übersprungen` : ''}.`);
+                refresh();
+                return;
+            }
+
+            // Blocked Jobs → Approval-Dialog
+            openImportApprovalDialog(id, r);
+        } catch (e) {
+            let msg = (e && e.message) ? e.message : String(e);
+            // Browser-JSON.parse-Fehler von HTML-Response (Server-Crash, Apache 5xx) abfangen.
+            // ABER: Backend-Errors die das Wort 'HTML' im Text enthalten (z.B. unsere
+            // eigene Diagnose 'Apps-Script gibt HTML statt JSON zurück') NICHT ersetzen.
+            const isBrowserJsonParseError = /unexpected token .* is not valid json/i.test(msg);
+            if (isBrowserJsonParseError) {
+                msg = 'Server-Timeout oder -Crash (HTML-Antwort). '
+                    + 'Bitte später nochmal versuchen.';
+            }
+            alert(`❌ Import fehlgeschlagen: ${msg}`);
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
+        }
+    }
+
+    function openImportApprovalDialog(sourceId, importResult) {
+        if ($('jdImportApprovalWrap')) return;
+
+        _blockedJobsState = (importResult.blocked || []).slice();
+        const imported = importResult.imported || 0;
+        const dup = importResult.duplicates || 0;
+        const windowDays = importResult.rejection_window_days || 180;
+
+        const rowsHtml = _blockedJobsState.map((j, idx) => `
+            <div data-blocked-idx="${idx}" style="margin-bottom:0.75rem;padding:0.75rem;background:var(--bg-card2);border-radius:6px;border-left:3px solid var(--warning)">
+                <div style="font-weight:600">${escapeHtml(j.title || '')}</div>
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-top:0.2rem">
+                    ${escapeHtml(j.company || '—')}${j.location ? ' · ' + escapeHtml(j.location) : ''}
+                </div>
+                ${j.url ? `<div style="margin-top:0.3rem;font-size:0.8rem;word-break:break-all"><a href="${escapeHtml(j.url)}" target="_blank" rel="noopener">🔗 Job ansehen</a></div>` : ''}
+                <div style="margin-top:0.6rem;display:flex;gap:1rem;flex-wrap:wrap;font-size:0.9rem">
+                    <label style="cursor:pointer"><input type="radio" name="jdDecision_${idx}" value="import_as_new"> ✅ Neue Stelle (importieren)</label>
+                    <label style="cursor:pointer"><input type="radio" name="jdDecision_${idx}" value="skip" checked> ❌ Ignorieren</label>
+                </div>
+            </div>`).join('');
+
+        const html = `
+        <div id="jdImportApprovalWrap" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000">
+            <div style="background:var(--bg-card);border-radius:8px;padding:1.5rem;max-width:700px;width:92%;max-height:88vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+                <h3 style="margin-top:0;margin-bottom:0.5rem">📧 Indeed Import — Entscheidung nötig</h3>
+                <div style="font-size:0.9rem;margin-bottom:1rem;line-height:1.5">
+                    ${imported} Job(s) automatisch importiert${dup ? `, ${dup} Duplikat(e) übersprungen` : ''}.<br>
+                    <strong>${_blockedJobsState.length} Job(s) sind von Firmen mit Absage in den letzten ${windowDays} Tagen.</strong>
+                    Bitte für jeden entscheiden:
+                </div>
+                <div style="overflow-y:auto;flex:1;margin-bottom:1rem">${rowsHtml}</div>
+                <div style="display:flex;gap:0.5rem;justify-content:space-between;border-top:1px solid var(--border);padding-top:1rem">
+                    <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.skipAllBlocked()">⏭️ Alle ignorieren</button>
+                    <div style="display:flex;gap:0.5rem">
+                        <button class="btn btn-secondary" onclick="JdSourcesUI.closeApprovalDialog()">Abbrechen</button>
+                        <button class="btn btn-primary" onclick="JdSourcesUI.submitApproval(${sourceId})">💾 Speichern</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        const el = document.createElement('div');
+        el.innerHTML = html;
+        document.body.appendChild(el.firstElementChild);
+    }
+
+    function skipAllBlocked() {
+        _blockedJobsState.forEach((_, idx) => {
+            const r = document.querySelector(`input[name="jdDecision_${idx}"][value="skip"]`);
+            if (r) r.checked = true;
+        });
+    }
+
+    async function submitApproval(sourceId) {
+        const decisions = _blockedJobsState.map((job, idx) => {
+            const radio = document.querySelector(`input[name="jdDecision_${idx}"]:checked`);
+            const action = radio ? radio.value : 'skip';
+            return { action, job };
+        });
+
+        try {
+            const r = await Auth.fetch(`/jobs/sources/${sourceId}/import-from-email/approve`, {
+                method: 'POST',
+                body: JSON.stringify({ decisions }),
+            });
+            closeApprovalDialog();
+            const imp = (r && r.imported) || 0;
+            const skp = (r && r.skipped) || 0;
+            const ign = (r && r.ignored) || 0;
+            alert(`✅ Entscheidungen gespeichert.\n\n${imp} importiert\n${skp} dauerhaft ignoriert${ign ? `\n${ign} übersprungen (z.B. Duplikate)` : ''}.`);
+            refresh();
+        } catch (e) {
+            const msg = (e && e.message) ? e.message : String(e);
+            alert(`❌ Fehler beim Speichern: ${msg}`);
+        }
+    }
+
+    function closeApprovalDialog() {
+        const m = $('jdImportApprovalWrap');
+        if (m) m.remove();
+        _blockedJobsState = [];
+    }
+
+    // ── Indeed Apps-Script-URL Settings ─────────────────────────────────────
+
+    function saveIndeedScriptUrl() {
+        const input = $('indeedScriptUrl');
+        const statusEl = $('indeedScriptUrlStatus');
+        if (!input) return;
+        const url = (input.value || '').trim();
+        if (url && !/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec/.test(url)) {
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--danger)">❌ URL muss auf https://script.google.com/macros/s/.../exec passen</span>';
+            return;
+        }
+        state.settings.indeedScriptUrl = url;
+        saveToStorage();
+        if (statusEl) statusEl.innerHTML = url
+            ? '<span style="color:var(--success)">✅ Gespeichert. Import nutzt jetzt Apps-Script-Mode.</span>'
+            : '<span style="color:var(--text-muted)">URL geleert — Import fällt auf IMAP-Mode zurück.</span>';
+    }
+
+    // ── Server-IMAP Status & Folder-Picker ─────────────────────────────────
+    // Credentials werden im Mail-Connector eingegeben (siehe fetchImapEmails),
+    // hier nur Status-Anzeige + Folder-Listing zum Anlegen einer Indeed-Quelle.
+
+    async function loadImapStatus() {
+        const statusEl = $('imapServerStatus');
+        if (!statusEl) return;
+        try {
+            const r = await Auth.fetch('/profile/imap', { method: 'GET' });
+            statusEl.innerHTML = r && r.configured
+                ? `<span style="color:var(--success)">✅ Konfiguriert (${escapeHtml(r.host || '')} / ${escapeHtml(r.user || '')})</span>`
+                : '<span style="color:var(--text-muted)">⏸️ Nicht konfiguriert — Setup im 📧 Mail Connector</span>';
+        } catch (e) {
+            statusEl.innerHTML = `<span style="color:var(--danger)">Fehler: ${escapeHtml(e.message || e)}</span>`;
+        }
+    }
+
+    async function clearImapCreds() {
+        if (!confirm('Server-IMAP-Credentials löschen?\n\nDanach nicht mehr per Server-IMAP importieren möglich, bis du sie im Mail Connector wieder pusht.')) return;
+        const statusEl = $('imapServerStatus');
+        try {
+            await Auth.fetch('/profile/imap', { method: 'DELETE' });
+            const foldersEl = $('imapServerFolders');
+            if (foldersEl) foldersEl.style.display = 'none';
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏸️ Nicht konfiguriert — Setup im 📧 Mail Connector</span>';
+        } catch (e) {
+            if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(e.message || e)}</span>`;
+        }
+    }
+
+    // Letzte erfolgreich getestete Folder-Liste — wird verwendet wenn der
+    // User auf einen Folder klickt um damit eine neue Indeed-Quelle anzulegen.
+    let _lastTestFolders = [];
+
+    async function testImap() {
+        const statusEl = $('imapServerStatus');
+        const foldersEl = $('imapServerFolders');
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--text-muted)">⏳ Verbinde…</span>';
+        try {
+            const r = await Auth.fetch('/profile/imap/test', { method: 'POST' });
+            if (r && r.ok) {
+                if (statusEl) statusEl.innerHTML = `<span style="color:var(--success)">✅ Verbunden — ${r.folder_count} Folder gefunden. Klick einen Folder unten um damit eine Indeed-Quelle anzulegen.</span>`;
+                _lastTestFolders = r.folders_sample || [];
+                if (foldersEl) {
+                    foldersEl.innerHTML = _lastTestFolders.map((f, idx) =>
+                        `<button type="button" class="btn btn-sm" data-folder-idx="${idx}" style="margin:0.15rem;font-family:monospace;font-size:0.78rem;text-align:left">${escapeHtml(f)}</button>`
+                    ).join('');
+                    foldersEl.style.display = 'block';
+                    // Event-Listener (kein onclick-Inline → XSS-sicher)
+                    foldersEl.querySelectorAll('button[data-folder-idx]').forEach(b => {
+                        b.addEventListener('click', () => {
+                            const idx = parseInt(b.getAttribute('data-folder-idx'), 10);
+                            const folder = _lastTestFolders[idx];
+                            if (folder) useFolderForNewSource(folder);
+                        });
+                    });
+                }
+            } else {
+                if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml((r && r.error) || 'Test fehlgeschlagen')}</span>`;
+                if (foldersEl) foldersEl.style.display = 'none';
+                _lastTestFolders = [];
+            }
+        } catch (e) {
+            if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(e.message || e)}</span>`;
+        }
+    }
+
+    function useFolderForNewSource(folder) {
+        openCreate();
+        const typeSelect = $('jdNewType');
+        if (typeSelect) {
+            typeSelect.value = 'indeed_email';
+            renderTypeFields();
+        }
+        // renderTypeFields ist synchron → die Felder existieren jetzt
+        const folderInput = $('jdCfgFolder');
+        if (folderInput) folderInput.value = folder;
+        const nameInput = $('jdNewName');
+        if (nameInput && !nameInput.value) nameInput.value = 'Indeed (' + folder + ')';
+    }
+
+    function toggleIndeedScriptCode() {
+        const box = $('indeedScriptCodeBox');
+        if (!box) return;
+        if (box.style.display === 'none' || !box.style.display) {
+            box.textContent = (typeof INDEED_APPS_SCRIPT_CODE !== 'undefined')
+                ? INDEED_APPS_SCRIPT_CODE
+                : '// Code nicht gefunden — bitte Seite neu laden';
+            box.style.display = 'block';
+        } else {
+            box.style.display = 'none';
+        }
+    }
+
+    return {
+        refresh, openCreate, closeCreate, renderTypeFields, create,
+        testCrawl, toggle, del, edit,
+        importFromEmail, skipAllBlocked, submitApproval, closeApprovalDialog,
+        saveIndeedScriptUrl, toggleIndeedScriptCode,
+        testImap, clearImapCreds, loadImapStatus,
+    };
 })();
 
 function switchTab(el, tabId) {
@@ -3414,7 +3877,7 @@ const JobsView = (() => {
     const PAGE_SIZE = 25;
     const state = {
         initialized: false,
-        filters: { minScore: 0, minPrefilterScore: 0, status: 'new', sourceId: null, q: '' },
+        filters: { minScore: 0, minPrefilterScore: 0, status: 'new', sourceId: null, q: '', withFeedback: false, origin: '' },
         offset: 0,
         total: 0,
         sourcesCache: [],
@@ -3469,6 +3932,25 @@ const JobsView = (() => {
         </span>`;
     }
 
+    // Wandelt feedback_text/feedback_reasons in eine menschenlesbare Begründung um.
+    // Wird beim Render von dismissed-Karten unter der Headline angezeigt.
+    function formatDismissReason(m) {
+        const txt = (m.feedback_text || '').trim();
+        const reasons = Array.isArray(m.feedback_reasons) ? m.feedback_reasons : [];
+        const knownCodes = {
+            'auto_blocked_by_rejection': '🚫 Auto: Firma hatte Absage im aktiven Fenster (Cron)',
+            'rejection_blocked_skip':    '🚫 Manuell ignoriert: Firma hatte Absage',
+        };
+        const parts = [];
+        if (txt) {
+            parts.push(knownCodes[txt] || ('📝 ' + txt));
+        }
+        if (reasons.length) {
+            parts.push('🏷️ ' + reasons.join(', '));
+        }
+        return parts.join(' · ');
+    }
+
     function renderCard(m) {
         const r = m.raw_job || {};
         const date = r.posted_at ? new Date(r.posted_at).toLocaleDateString('de-DE') : '';
@@ -3483,6 +3965,12 @@ const JobsView = (() => {
 
         const missing = (m.missing_skills || []).slice(0, 5).map(s => escapeHtml(s));
         const suspiciousBadge = renderSuspiciousBadge(m.suspicious_reasons);
+        const dismissReason = (m.status === 'dismissed') ? formatDismissReason(m) : '';
+        const originBadge = (m.status === 'dismissed' && m.origin) ? (
+            m.origin === 'auto'
+                ? `<span style="background:#a78bfa33;color:#a78bfa;padding:0.15rem 0.55rem;border-radius:6px;font-size:0.72rem;font-weight:600">🤖 Auto</span>`
+                : `<span style="background:#10b98133;color:#10b981;padding:0.15rem 0.55rem;border-radius:6px;font-size:0.72rem;font-weight:600">🤚 Manuell</span>`
+        ) : '';
 
         const evaluateBtn = hasClaudeScore ? '' : `
             <button class="btn btn-primary btn-sm" onclick="JobsView.requestSingleScore(${m.id})">
@@ -3506,6 +3994,12 @@ const JobsView = (() => {
                 <div style="color:var(--text-muted);font-size:0.85em;margin-top:0.5rem">
                     ${escapeHtml(r.company || '')}${r.location ? ' · ' + escapeHtml(r.location) : ''}${date ? ' · ' + date : ''}${r.source_name ? ' · ' + escapeHtml(r.source_name) : ''}
                 </div>
+                ${(dismissReason || originBadge) ? `
+                    <p style="color:var(--text-muted);font-size:0.85em;margin:0.5rem 0;padding:0.4rem 0.6rem;background:var(--bg-card2);border-radius:6px;border-left:3px solid var(--danger,#ef4444);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+                        ${originBadge}
+                        <span><strong>Verworfen${dismissReason ? ':' : ''}</strong>${dismissReason ? ' ' + escapeHtml(dismissReason) : ''}</span>
+                    </p>
+                ` : ''}
                 ${m.match_reasoning ? `
                     <p style="margin:0.75rem 0;border-left:3px solid var(--primary);padding-left:0.75rem;font-style:italic">
                         ${escapeHtml(m.match_reasoning)}
@@ -3564,6 +4058,8 @@ const JobsView = (() => {
         params.set('status', state.filters.status);
         if (state.filters.sourceId) params.set('source_id', state.filters.sourceId);
         if (state.filters.q) params.set('q', state.filters.q);
+        if (state.filters.withFeedback) params.set('with_feedback', 'true');
+        if (state.filters.origin) params.set('origin', state.filters.origin);
         params.set('limit', PAGE_SIZE);
         params.set('offset', state.offset);
         try {
@@ -3830,6 +4326,26 @@ const JobsView = (() => {
             state.offset = 0;
             fetchMatches();
         });
+        const withFbEl = document.getElementById('jobs-with-feedback-filter');
+        if (withFbEl) {
+            withFbEl.addEventListener('change', e => {
+                state.selectedIds.clear();
+                renderBulkActionBar();
+                state.filters.withFeedback = e.target.checked;
+                state.offset = 0;
+                fetchMatches();
+            });
+        }
+        const originEl = document.getElementById('jobs-origin-filter');
+        if (originEl) {
+            originEl.addEventListener('change', e => {
+                state.selectedIds.clear();
+                renderBulkActionBar();
+                state.filters.origin = e.target.value || '';
+                state.offset = 0;
+                fetchMatches();
+            });
+        }
         $('jobs-source-filter').addEventListener('change', e => {
             state.selectedIds.clear();
             renderBulkActionBar();
@@ -7402,6 +7918,136 @@ async function checkImapProxy() {
     }
 }
 
+// Server-Credentials-Mode: ruft den Backend-Wrapper auf, der die in der DB
+// gespeicherten Credentials nutzt → Passwort muss nicht im Browser-Form sein.
+async function _fetchImapViaServerCredentials(folder, limit) {
+    const btn = document.getElementById('imapConnectBtn');
+    if (btn) { btn.innerHTML = '<span class="spinner"></span> Server-Credentials…'; btn.disabled = true; }
+    try {
+        const r = await Auth.fetch('/profile/imap/proxy-fetch', {
+            method: 'POST',
+            body: JSON.stringify({ folder, limit, offset: 0 }),
+        });
+        if (!r || r.error) throw new Error((r && r.error) || 'Leere Antwort');
+        updateProxyStatus(r);
+        state.imapEmails = r.emails || [];
+        renderImapResults(r.debug || '');
+        showToast(`${r.count} Email(s) via Server-Credentials geladen ✓`, 'success');
+    } catch (err) {
+        showToast('Server-Fetch fehlgeschlagen: ' + (err.message || ''), 'error');
+    } finally {
+        if (btn) { btn.innerHTML = '🔌 Verbinden & Abrufen'; btn.disabled = false; }
+    }
+}
+
+async function _listImapFoldersViaServerCredentials() {
+    const picker = document.getElementById('imapFolderPicker');
+    if (picker) {
+        picker.style.display = 'block';
+        picker.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">⏳ Lade Folder (Server-Credentials)…</span>';
+    }
+    try {
+        const r = await Auth.fetch('/profile/imap/proxy-fetch', {
+            method: 'POST',
+            body: JSON.stringify({ listFolders: true }),
+        });
+        if (!r || r.error) throw new Error((r && r.error) || 'Leere Antwort');
+        const folders = r.folders || [];
+        if (!picker) return;
+        if (folders.length === 0) {
+            picker.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">Keine Folder gefunden.</span>';
+            return;
+        }
+        picker.innerHTML = `<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.4rem">${folders.length} Folder gefunden — klick einen zum Übernehmen:</div>` +
+            folders.map((f, i) =>
+                `<button type="button" class="btn btn-sm" data-folder-idx="${i}" style="margin:0.15rem;font-family:monospace;font-size:0.78rem;text-align:left">${escHtml(f)}</button>`
+            ).join('');
+        picker.querySelectorAll('button[data-folder-idx]').forEach(b => {
+            b.addEventListener('click', () => {
+                const idx = parseInt(b.getAttribute('data-folder-idx'), 10);
+                const folder = folders[idx];
+                if (!folder) return;
+                document.getElementById('imapFolder').value = folder;
+                showToast('Ordner übernommen: ' + folder, 'success');
+            });
+        });
+    } catch (err) {
+        if (picker) picker.innerHTML = `<span style="color:var(--danger);font-size:0.85rem">❌ ${escHtml(err.message || 'Fehler')}</span>`;
+    }
+}
+
+
+async function listImapFolders() {
+    // Wie fetchImapEmails, aber mit Body-Flag listFolders:true — der
+    // imap_proxy macht dann nur LIST und gibt eine Folder-Liste zurück,
+    // kein Search/Fetch.
+    const host     = document.getElementById('imapHost').value.trim();
+    const port     = parseInt(document.getElementById('imapPort').value) || 993;
+    const protocol = document.getElementById('imapProtocol').value;
+    const user     = document.getElementById('imapUser').value.trim();
+    const pass     = document.getElementById('imapPass').value;
+    const noVerify = document.getElementById('imapNoVerify').checked;
+    const picker   = document.getElementById('imapFolderPicker');
+
+    // Server-Credentials-Mode: leeres Passwort + DB-stored
+    if (!pass && state.settings.imapServerSync) {
+        return _listImapFoldersViaServerCredentials();
+    }
+
+    if (!host || !user || !pass) {
+        showToast('Server-Adresse, E-Mail und Passwort sind erforderlich!', 'error');
+        return;
+    }
+    if (protocol !== 'imap') {
+        showToast('Folder-Listing geht nur mit IMAP, nicht POP3', 'warning');
+        return;
+    }
+
+    if (picker) {
+        picker.style.display = 'block';
+        picker.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">⏳ Lade Folder…</span>';
+    }
+
+    try {
+        const res = await fetch(IMAP_PROXY + '/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host, port, protocol, user, pass, noVerify, listFolders: true }),
+            signal: AbortSignal.timeout(30000),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        const folders = data.folders || [];
+        if (!picker) return;
+        if (folders.length === 0) {
+            picker.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem">Keine Folder gefunden.</span>';
+            return;
+        }
+        // Klickbare Buttons rendern (XSS-safe: data-folder-idx Attribute statt onclick-Inline)
+        picker.innerHTML = `<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.4rem">${folders.length} Folder gefunden — klick einen zum Übernehmen:</div>` +
+            folders.map((f, i) =>
+                `<button type="button" class="btn btn-sm" data-folder-idx="${i}" style="margin:0.15rem;font-family:monospace;font-size:0.78rem;text-align:left">${escHtml(f)}</button>`
+            ).join('');
+        picker.querySelectorAll('button[data-folder-idx]').forEach(b => {
+            b.addEventListener('click', () => {
+                const idx = parseInt(b.getAttribute('data-folder-idx'), 10);
+                const folder = folders[idx];
+                if (!folder) return;
+                document.getElementById('imapFolder').value = folder;
+                showToast('Ordner übernommen: ' + folder, 'success');
+                // Picker offen lassen, falls User nochmal wechseln will.
+            });
+        });
+    } catch (err) {
+        if (picker) {
+            picker.innerHTML = `<span style="color:var(--danger);font-size:0.85rem">❌ ${escHtml(err.message || 'Fehler')}</span>`;
+        }
+        showToast('Folder-Listing fehlgeschlagen: ' + (err.message || ''), 'error');
+    }
+}
+
+
 async function fetchImapEmails() {
     const host     = document.getElementById('imapHost').value.trim();
     const port     = parseInt(document.getElementById('imapPort').value)  || 993;
@@ -7412,9 +8058,16 @@ async function fetchImapEmails() {
     const limit    = parseInt(document.getElementById('imapLimit').value)  || 50;
     const noVerify = document.getElementById('imapNoVerify').checked;
     const remember = document.getElementById('imapRemember').checked;
+    const syncServer = (document.getElementById('imapServerSync') || {}).checked;
+
+    // Server-Credentials-Mode: Passwort-Feld leer, aber DB hat Creds gespeichert.
+    // Wir rufen den Wrapper-Endpoint auf statt direkt zum imap_proxy zu POSTen.
+    if (!pass && state.settings.imapServerSync) {
+        return _fetchImapViaServerCredentials(folder, limit);
+    }
 
     if (!host || !user || !pass) {
-        showToast('Server-Adresse, E-Mail und Passwort sind erforderlich!', 'error');
+        showToast('Server-Adresse, E-Mail und Passwort sind erforderlich! (Oder Passwort leer + zuvor Server-stored)', 'error');
         return;
     }
 
@@ -7424,7 +8077,27 @@ async function fetchImapEmails() {
         state.settings.imapPort     = port;
         state.settings.imapProtocol = protocol;
         state.settings.imapUser     = user;
+        state.settings.imapServerSync = syncServer;
         saveToStorage();
+    }
+
+    // VPS-Sync: einmaliger Push der Credentials zum Server, damit der
+    // Indeed-Email-Import (Backend-IMAP) damit arbeiten kann. Nur sinnvoll
+    // bei IMAP-SSL (Port 993) — POP3 unterstützt das Backend nicht.
+    if (syncServer) {
+        if (protocol !== 'imap' || port !== 993) {
+            showToast('Server-Sync erfordert IMAP auf Port 993 — Push übersprungen', 'warning');
+        } else {
+            try {
+                await Auth.fetch('/profile/imap', {
+                    method: 'POST',
+                    body: JSON.stringify({ host, user, password: pass }),
+                });
+                showToast('🌐 Credentials zum Server gepusht ✓', 'success');
+            } catch (e) {
+                showToast('⚠️ Server-Push fehlgeschlagen: ' + (e.message || e), 'warning');
+            }
+        }
     }
 
     const btn = document.getElementById('imapConnectBtn');
@@ -7737,6 +8410,22 @@ function filterImapResults() {
     renderImapResultsFiltered(imapFilteredEmails);
 }
 
+// Klassifiziert eine Mail per Subject-Heuristik in eine Bewerbungs-Status-Kategorie.
+// Returnt null wenn keine Kategorie passt — Render zeigt dann keinen Badge.
+function classifyEmailStatus(subject, fromAddr) {
+    const s = (subject || '').toLowerCase();
+    const userEmail = (state && state.settings && state.settings.imapUser || '').toLowerCase();
+    const fromLower = (fromAddr || '').toLowerCase();
+    const isFromMe = userEmail && fromLower.includes(userEmail);
+    if (isFromMe) return { label: '📤 Gesendet', bg: '#94a3b833', fg: '#94a3b8' };
+    if (/(zusage|stellenangebot|wir freuen uns,? ihnen|gratulier)/i.test(s)) return { label: '✅ Zusage', bg: '#10b98133', fg: '#10b981' };
+    if (/(absage|leider|bedauern|keine.{0,5}zusage|nicht.{0,5}weiter|nicht.{0,5}berücksichtigen|haben uns gegen)/i.test(s)) return { label: '❌ Absage', bg: '#ef444433', fg: '#ef4444' };
+    if (/(vorstellungs|interview|kennenlern|gespräch|video.?call|termin.{0,5}vereinbar)/i.test(s)) return { label: '🎤 Interview', bg: '#a78bfa33', fg: '#a78bfa' };
+    if (/(eingangsbest|ihre bewerbung.{0,15}(erhalten|eingegangen|angekommen)|vielen dank für ihre bewerbung)/i.test(s)) return { label: '📨 Eingang', bg: '#3b82f633', fg: '#3b82f6' };
+    if (/(im auswahlverfahren|prüfen|sichtung|in bearbeitung)/i.test(s)) return { label: '⏳ Prüfung', bg: '#f59e0b33', fg: '#f59e0b' };
+    return null;
+}
+
 function renderImapResultsFiltered(emailsToRender) {
     const list = document.getElementById('imapEmailList');
     if (!list) return;
@@ -7747,11 +8436,16 @@ function renderImapResultsFiltered(emailsToRender) {
     }
 
     // XSS-safe: escHtml für alle vom IMAP-Server kommenden Felder
-    list.innerHTML = emailsToRender.map((email, idx) => `
+    list.innerHTML = emailsToRender.map((email, idx) => {
+        const status = classifyEmailStatus(email.subject, email.from);
+        const badge = status
+            ? `<span style="background:${status.bg};color:${status.fg};padding:0.15rem 0.55rem;border-radius:6px;font-size:0.72rem;font-weight:600;margin-right:0.4rem;vertical-align:middle">${status.label}</span>`
+            : '';
+        return `
         <div class="email-item" style="margin-bottom:0.75rem;">
             <div class="email-item-header">
                 <div style="flex:1;">
-                    <div class="email-firma">${escHtml(email.firma || 'Unbekannt')}</div>
+                    <div class="email-firma">${badge}${escHtml(email.firma || 'Unbekannt')}</div>
                     <div style="font-size:0.82rem;color:var(--text-muted);">Von: ${escHtml(email.from || 'N/A')}</div>
                 </div>
                 <button class="btn btn-success btn-sm" onclick="importSingleImapEmail(${idx})">Importieren</button>
@@ -7762,8 +8456,8 @@ function renderImapResultsFiltered(emailsToRender) {
             <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">
                 ${escHtml(email.date || 'Kein Datum')}
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function importSingleImapEmail(idx) {

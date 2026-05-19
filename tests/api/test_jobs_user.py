@@ -103,6 +103,38 @@ def test_list_matches_filters_by_score_and_status(client, app, user_factory, aut
     assert body["matches"][0]["match_score"] == 90  # sorted DESC
 
 
+def test_status_unbewertet_filter_returns_only_unscored_news(client, auth_header):
+    """status=unbewertet → JobMatches mit status='new' und match_score IS NULL.
+
+    Vorher zeigte 'Unbewertete' nichts an, weil 'unbewertet' nie als DB-Wert
+    gesetzt wird — es ist ein Pseudo-Status für 'Pre-Filter ja, Claude noch nicht'.
+    """
+    headers, user = auth_header
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+
+    # 3 Matches anlegen: 1 mit Claude-Score, 1 ohne (nur Pre-Filter), 1 dismissed
+    raws = [RawJob(source_id=src.id, external_id=f"x{i}", title=f"Job{i}", url=f"u{i}",
+                   crawl_status='raw') for i in range(3)]
+    for r in raws: db.session.add(r)
+    db.session.flush()
+    db.session.add(JobMatch(raw_job_id=raws[0].id, user_id=user.id,
+                            status='new', match_score=85, prefilter_score=60))
+    db.session.add(JobMatch(raw_job_id=raws[1].id, user_id=user.id,
+                            status='new', match_score=None, prefilter_score=50))
+    db.session.add(JobMatch(raw_job_id=raws[2].id, user_id=user.id,
+                            status='dismissed', match_score=None, prefilter_score=40))
+    db.session.commit()
+
+    r = client.get("/api/jobs/matches?status=unbewertet", headers=headers)
+    assert r.status_code == 200
+    body = r.get_json()
+    assert len(body["matches"]) == 1
+    assert body["matches"][0]["raw_job"]["title"] == 'Job1'
+    assert body["matches"][0]["match_score"] is None
+    assert body["matches"][0]["prefilter_score"] == 50
+
+
 def test_patch_match_status(client, user_factory, auth_header):
     headers, user = auth_header
     src = JobSource(name="x", type="rss", config={"url": "x"})
@@ -461,7 +493,10 @@ def test_import_match_transfers_all_fields(client, auth_header):
     assert app_obj.company == "TechCorp"
     assert app_obj.position == "React Developer"
     assert app_obj.location == "Berlin, Germany"
-    assert app_obj.applied_date == posted_date.date()
+    # applied_date = HEUTE (Tag der Bewerbung), nicht raw.posted_at —
+    # User-Frust 2026-05-17: 'übernommene Indeed-Bewerbung hat kein Datum',
+    # weil Indeed-Email-Imports kein posted_at parsen.
+    assert app_obj.applied_date == datetime.utcnow().date()
     assert app_obj.source == "TestSource"
     assert app_obj.link == "https://example.com/job/123"
 
@@ -889,33 +924,37 @@ def test_reject_invalid_status(client, auth_header):
 
 
 def test_default_filter_includes_unbewertet(client, auth_header):
-    """GET /matches: Default Filter ohne status-Parameter → ['new', 'unbewertet']."""
+    """GET /matches Default: ['new', 'unbewertet'] → enthält neue mit Score
+    UND neue ohne Score (Pseudo-Status 'unbewertet'). Dismissed bleibt aus.
+
+    'unbewertet' wird NIE als DB-Status gesetzt — es ist ein Pseudo-Filter
+    für status='new' AND match_score IS NULL (Pre-Filter durch, Claude pending).
+    """
     headers, user = auth_header
     src = JobSource(name="x", type="rss", config={"url": "x"})
     db.session.add(src); db.session.flush()
 
-    # Create 3 matches: new, unbewertet, dismissed
-    raw_new = RawJob(source_id=src.id, external_id="dn1", title="New Job", url="https://j/1", crawl_status='matched')
-    raw_ub = RawJob(source_id=src.id, external_id="dn2", title="Unbewertet Job", url="https://j/2", crawl_status='matched')
-    raw_dis = RawJob(source_id=src.id, external_id="dn3", title="Dismissed Job", url="https://j/3", crawl_status='matched')
-    db.session.add_all([raw_new, raw_ub, raw_dis]); db.session.flush()
+    raw_scored = RawJob(source_id=src.id, external_id="ds1", title="Scored", url="https://j/1", crawl_status='matched')
+    raw_pending = RawJob(source_id=src.id, external_id="ds2", title="Pending", url="https://j/2", crawl_status='matched')
+    raw_dis = RawJob(source_id=src.id, external_id="ds3", title="Dismissed", url="https://j/3", crawl_status='matched')
+    db.session.add_all([raw_scored, raw_pending, raw_dis]); db.session.flush()
 
-    m_new = JobMatch(raw_job_id=raw_new.id, user_id=user.id, status='new', prefilter_score=70)
-    m_ub = JobMatch(raw_job_id=raw_ub.id, user_id=user.id, status='unbewertet', prefilter_score=70)
-    m_dis = JobMatch(raw_job_id=raw_dis.id, user_id=user.id, status='dismissed', prefilter_score=70)
-    db.session.add_all([m_new, m_ub, m_dis]); db.session.commit()
+    # m_scored: bewertet (match_score gesetzt) → status='new' counts in 'new'
+    # m_pending: unbewertet (match_score=None) → status='new' counts in 'unbewertet'
+    # m_dis: dismissed
+    m_scored = JobMatch(raw_job_id=raw_scored.id, user_id=user.id,
+                        status='new', prefilter_score=70, match_score=80)
+    m_pending = JobMatch(raw_job_id=raw_pending.id, user_id=user.id,
+                         status='new', prefilter_score=70, match_score=None)
+    m_dis = JobMatch(raw_job_id=raw_dis.id, user_id=user.id,
+                     status='dismissed', prefilter_score=70)
+    db.session.add_all([m_scored, m_pending, m_dis]); db.session.commit()
 
-    # GET without status parameter
     r = client.get("/api/jobs/matches", headers=headers)
     assert r.status_code == 200
     body = r.get_json()
-    assert len(body["matches"]) == 2
-
-    # Verify both 'new' and 'unbewertet' are included
-    statuses = {m["status"] for m in body["matches"]}
-    assert 'new' in statuses
-    assert 'unbewertet' in statuses
-    assert 'dismissed' not in statuses
+    titles = sorted(m["raw_job"]["title"] for m in body["matches"])
+    assert titles == ['Pending', 'Scored']  # dismissed nicht dabei
 
 
 # ---------------------------------------------------------------------------

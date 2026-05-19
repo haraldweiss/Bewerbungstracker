@@ -191,23 +191,77 @@ def _extract_raw_headers(data: list) -> Optional[bytes]:
     return None
 
 
+_UID_IN_FETCH_RE = re.compile(rb'\bUID\s+(\d+)\b')
+
+
 def _extract_all_headers_batch(data: list) -> dict[bytes, bytes]:
-    """Extract all headers from a batch FETCH response. Returns {uid: raw_headers}."""
+    """Extract all headers from a batch FETCH response. Returns {uid: raw_headers}.
+
+    IMAP-Format bei conn.uid('fetch', ...) sieht so aus:
+        (b'1 (UID 12345 RFC822.HEADER {1234}', <header bytes>)
+    Das erste Token (b'1') ist die Message-Sequence-Number, NICHT die UID.
+    Frühere Version parste das fälschlich als Key → Lookup gegen das per
+    UID indizierte uid_list scheiterte → 0 emails trotz Search-Treffer.
+    Jetzt extrahieren wir die UID aus dem 'UID <num>'-Subpattern.
+    """
     headers_dict = {}
-    i = 0
-    while i < len(data):
-        item = data[i]
-        # IMAP batch response format: (b'1 (RFC822.HEADER {size}', raw_bytes), (b'2 (RFC822.HEADER {size}', raw_bytes), ...
-        if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], bytes):
-            # Extract UID from the response tuple
-            if isinstance(item[0], bytes):
-                try:
-                    uid_part = item[0].decode('ascii', errors='ignore').split()[0]
-                    headers_dict[uid_part.encode()] = item[1]
-                except (ValueError, IndexError):
-                    pass
-        i += 1
+    for item in data:
+        if not (isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], bytes)):
+            continue
+        if not isinstance(item[0], bytes):
+            continue
+        m = _UID_IN_FETCH_RE.search(item[0])
+        if m:
+            headers_dict[m.group(1)] = item[1]
+        else:
+            # Fallback (Server liefert keine UID in der Header-Zeile, sehr selten):
+            # erste Token nutzen. Dann passt der Lookup mit Sequence-Number-Keys.
+            try:
+                first = item[0].split()[0]
+                headers_dict[first] = item[1]
+            except (ValueError, IndexError):
+                pass
     return headers_dict
+
+
+# Regex zum Parsen einer IMAP-LIST-Zeile: `(flags) "delim" "name"` → Name.
+_IMAP_LIST_NAME_RE = re.compile(r'"([^"]*)"\s*$')
+
+
+def list_imap_folders(host: str, port: int, user: str, password: str,
+                      no_verify: bool) -> list[str]:
+    """Login + LIST + Logout. Returnt Folder-Namen sortiert.
+
+    Schnell genug für interaktiven UI-Use (1 Round-Trip). Kein Caching, weil
+    der User bei jedem Klick aktuelle Liste sehen will.
+    """
+    ctx = ssl.create_default_context()
+    if no_verify:
+        ctx.check_hostname = False
+        ctx.verify_mode    = ssl.CERT_NONE
+    conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx)
+    folders: list[str] = []
+    try:
+        conn.login(user, password)
+        typ, raw = conn.list()
+        if typ == 'OK' and raw:
+            for entry in raw[:200]:
+                if not entry:
+                    continue
+                line = entry.decode('utf-8', errors='ignore') if isinstance(entry, bytes) else str(entry)
+                m = _IMAP_LIST_NAME_RE.search(line)
+                if m:
+                    folders.append(m.group(1))
+                else:
+                    parts = line.rsplit(' ', 1)
+                    if len(parts) == 2:
+                        folders.append(parts[1].strip().strip('"'))
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+    return sorted(folders, key=str.lower)
 
 
 def fetch_imap(host: str, port: int, user: str, password: str,
@@ -227,19 +281,48 @@ def fetch_imap(host: str, port: int, user: str, password: str,
     conn = imaplib.IMAP4_SSL(host, port, ssl_context=ctx)
     try:
         conn.login(user, password)
-        conn.select(folder or 'INBOX', readonly=True)
+        # Folder-Name muss double-quoted übergeben werden — Python imaplib
+        # quotet NICHT automatisch, und Gmail-Folder wie '[Gmail]/All Mail'
+        # oder '[Google Mail]/Alle Nachrichten' wären sonst eine ungültige
+        # IMAP-Command-Syntax → 'EXAMINE command error: BAD'.
+        folder_to_select = folder or 'INBOX'
+        escaped_folder = folder_to_select.replace('\\', '\\\\').replace('"', '\\"')
+        conn.select(f'"{escaped_folder}"', readonly=True)
 
         # ── Stage 1: server-side keyword search ──────────────────────────────
+        # Versucht zuerst Gmail's X-GM-RAW Extension (greift auf vollen
+        # Gmail-Search-Index zu, 1 Call statt N — und findet zuverlässig
+        # Mails die Standard-IMAP-SUBJECT-SEARCH übersieht). Bei Non-Gmail-
+        # Servern fällt es auf den N-Call-Loop zurück.
         all_uids: set[bytes] = set()
         search_errors: list[str] = []
+        gm_raw_used = False
 
-        for kw in SEARCH_KEYWORDS:
-            try:
-                typ, data = conn.uid('SEARCH', 'SUBJECT', f'"{kw}"')
-                if typ == 'OK' and data:
-                    all_uids |= _collect_uids(data)
-            except Exception as e:
-                search_errors.append(f'"{kw}": {type(e).__name__}')
+        try:
+            # Gmail-Suche: "(subject:Bewerbung OR subject:Application OR ...)
+            #               -in:sent -in:drafts -in:spam -in:trash"
+            # -in:sent schließt eigene Antwort-Mails aus (False-Positives bei
+            # [Google Mail]/Alle Nachrichten, da der Folder auch Sent enthält).
+            gm_query = (
+                '"(' + ' OR '.join(f'subject:{kw}' for kw in SEARCH_KEYWORDS) + ')'
+                ' -in:sent -in:drafts -in:spam -in:trash"'
+            )
+            typ, data = conn.uid('SEARCH', 'X-GM-RAW', gm_query)
+            if typ == 'OK' and data:
+                all_uids |= _collect_uids(data)
+                gm_raw_used = True
+        except imaplib.IMAP4.error:
+            # Server kennt X-GM-RAW nicht → Standard-Loop
+            pass
+
+        if not gm_raw_used:
+            for kw in SEARCH_KEYWORDS:
+                try:
+                    typ, data = conn.uid('SEARCH', 'SUBJECT', f'"{kw}"')
+                    if typ == 'OK' and data:
+                        all_uids |= _collect_uids(data)
+                except Exception as e:
+                    search_errors.append(f'"{kw}": {type(e).__name__}')
 
         kw_search_hits = len(all_uids)
         use_fallback   = (kw_search_hits == 0)
@@ -312,7 +395,12 @@ def fetch_imap(host: str, port: int, user: str, password: str,
         has_more = (offset + limit) < total_uids
         next_offset = offset + limit if has_more else offset
 
-        mode = 'Betreff-Suche' if not use_fallback else 'Zeitraum-Fallback (90 Tage)'
+        if use_fallback:
+            mode = 'Zeitraum-Fallback (90 Tage)'
+        elif gm_raw_used:
+            mode = 'Betreff-Suche (X-GM-RAW)'
+        else:
+            mode = 'Betreff-Suche (Standard-IMAP)'
         info = (f'Modus: {mode} | Ordner: {folder} | '
                 f'UIDs: {total_uids} | Emails zurückgegeben: {len(emails)} | '
                 f'Offset: {offset}, Limit: {limit}')
@@ -427,6 +515,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         limit     = max(5, min(200, int(data.get('limit', 50))))
         offset    = max(0, int(data.get('offset', 0)))
         no_verify = bool(data.get('noVerify', False))
+        list_folders_only = bool(data.get('listFolders', False))
 
         if not host:
             self._json({'error': 'Server-Adresse fehlt oder ungültig'}, 400); return
@@ -436,10 +525,25 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self._json({'error': 'Benutzername fehlt'}, 400); return
         if not password:
             self._json({'error': 'Passwort fehlt'}, 400); return
-        # IMAP folder name: only allow alphanumerics + a few safe separators.
-        # Prevents injection of IMAP control characters (CR/LF, quotes, backslashes).
-        if not re.match(r'^[A-Za-z0-9._\-/ ]{1,100}$', folder):
+        # IMAP folder name: erlaube alle druckbaren Zeichen inkl. Brackets
+        # (Gmail-Sonderfolder '[Gmail]/All Mail', '[Google Mail]/Alle Nachrichten').
+        # Blockt: control chars (CR/LF/NULL → IMAP-Injection-Schutz),
+        # doppelte Anführungszeichen und Backslashes.
+        if not re.match(r'^[^\x00-\x1f\x7f"\\]{1,100}$', folder):
             self._json({'error': 'Ungültiger Ordner-Name'}, 400); return
+
+        # listFolders-Mode: nur IMAP-LIST machen, return Folder-Namen — kein Search.
+        # Wird vom Frontend für den Folder-Picker im Mail Connector genutzt.
+        if list_folders_only and protocol == 'imap':
+            try:
+                folders = list_imap_folders(host, port, user, password, no_verify)
+                self._json({'status': 'ok', 'count': len(folders), 'folders': folders})
+            except (imaplib.IMAP4.error, ConnectionError, ssl.SSLError) as e:
+                msg = str(e).replace(password, '***')
+                self._json({'error': f'IMAP-Fehler: {msg}'}, 502)
+            except Exception as e:
+                self._json({'error': f'Server-Fehler: {type(e).__name__}'}, 500)
+            return
 
         try:
             # ── Check cache (use cache key without password) ────────────────────────

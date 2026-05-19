@@ -3,6 +3,7 @@
 """User-facing Job-Discovery Endpoints (JWT-geschützt)."""
 
 from __future__ import annotations
+import re
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, current_app
 
@@ -31,7 +32,13 @@ def _get_anthropic_client():
     return Anthropic(api_key=api_key)
 
 
-_VALID_TYPES = {"rss", "adzuna", "bundesagentur", "arbeitnow"}
+_VALID_TYPES = {"rss", "adzuna", "bundesagentur", "arbeitnow", "indeed_email"}
+
+# Indeed-Email-Folder-Validation: erlaubt alle druckbaren ASCII-Zeichen
+# inkl. Brackets [...] (Gmail-Sonderfolder wie '[Google Mail]/Alle Nachrichten').
+# Verbietet: Control-Chars (CR/LF/NULL → IMAP-Injection-Schutz),
+# doppelte Anführungszeichen und Backslashes.
+_INDEED_FOLDER_RE = re.compile(r'^[^\x00-\x1f\x7f"\\]{1,100}$')
 
 
 def _validate_config(source_type: str, config: dict) -> str | None:
@@ -51,6 +58,13 @@ def _validate_config(source_type: str, config: dict) -> str | None:
             return "Bundesagentur-Config benötigt mindestens 'was' oder 'wo'"
     elif source_type == "arbeitnow":
         pass
+    elif source_type == "indeed_email":
+        folder = (config or {}).get("folder", "Indeed")
+        if not isinstance(folder, str) or not _INDEED_FOLDER_RE.match(folder):
+            return "indeed_email-Config: 'folder' fehlt oder enthält ungültige Zeichen"
+        lookback = (config or {}).get("lookback_days", 30)
+        if not isinstance(lookback, int) or not (1 <= lookback <= 365):
+            return "indeed_email-Config: 'lookback_days' muss 1-365 sein"
     return None
 
 
@@ -144,7 +158,7 @@ def test_crawl_source(user, source_id: int):
         return jsonify({"error": "Forbidden"}), 403
 
     try:
-        adapter = get_adapter(src.type, src.config)
+        adapter = get_adapter(src.type, src.config, user=user)
         jobs = adapter.fetch()
         return jsonify({"ok": True, "found_jobs": len(jobs),
                         "sample_titles": [j.title for j in jobs[:5]]}), 200
@@ -156,11 +170,45 @@ def test_crawl_source(user, source_id: int):
 # Match-Endpoints
 # ---------------------------------------------------------------------------
 
+def _classify_match_origin(m: JobMatch) -> str:
+    """Bei dismissed Matches: 'auto' (KI/System) oder 'manual' (User).
+
+    Heuristik:
+      - feedback_text starts with 'auto_'  → auto  (z.B. auto_blocked_by_rejection)
+      - feedback_text/feedback_reasons set → manual (User hat begründet)
+      - prefilter_score < 5 AND kein Feedback → auto (Pre-Filter Score zu niedrig)
+      - sonst → manual (User klickte "Verwerfen" ohne Begründung)
+
+    Für status != 'dismissed' returnt '' (uninteressant).
+    """
+    if m.status != 'dismissed':
+        return ''
+    txt = (m.feedback_text or '').strip()
+    if txt.startswith('auto_'):
+        return 'auto'
+    has_feedback_reasons = m.feedback_reasons and m.feedback_reasons not in ('', '[]')
+    if txt or has_feedback_reasons:
+        return 'manual'
+    if m.prefilter_score is not None and m.prefilter_score < 5:
+        return 'auto'
+    return 'manual'
+
+
 def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
     # suspicious_reasons ist comma-separated im DB-Feld; Frontend bekommt Liste.
     suspicious_list = []
     if getattr(m, 'suspicious_reasons', None):
         suspicious_list = [r.strip() for r in m.suspicious_reasons.split(',') if r.strip()]
+    # feedback_reasons ist JSON-Array (Adaptive-Learning); Frontend bekommt Liste.
+    feedback_reasons_list = []
+    if getattr(m, 'feedback_reasons', None):
+        try:
+            import json as _json2
+            feedback_reasons_list = _json2.loads(m.feedback_reasons)
+            if not isinstance(feedback_reasons_list, list):
+                feedback_reasons_list = []
+        except (TypeError, ValueError):
+            feedback_reasons_list = []
     return {
         "id": m.id,
         "match_score": m.match_score,
@@ -171,6 +219,9 @@ def _serialize_match(m: JobMatch, raw: RawJob, src: JobSource) -> dict:
         "notified_at": m.notified_at.isoformat() if m.notified_at else None,
         "imported_application_id": m.imported_application_id,
         "suspicious_reasons": suspicious_list,
+        "feedback_reasons": feedback_reasons_list,
+        "feedback_text": m.feedback_text or None,
+        "origin": _classify_match_origin(m),  # '', 'manual', oder 'auto'
         "raw_job": {
             "id": raw.id, "title": raw.title, "company": raw.company,
             "location": raw.location, "url": raw.url, "description": raw.description,
@@ -190,6 +241,13 @@ def list_matches(user):
     q_text = (request.args.get('q') or '').strip().lower()
     limit = min(request.args.get('limit', type=int, default=50), 200)
     offset = request.args.get('offset', type=int, default=0)
+    # ?with_feedback=true → nur Matches die einen Grund/Begründung haben
+    # (feedback_text gesetzt ODER feedback_reasons-JSON ist nicht leer).
+    # Nützlich beim Status='dismissed': sieht nur die mit erklärtem Grund.
+    with_feedback = request.args.get('with_feedback', '').lower() in ('1', 'true', 'yes')
+    # ?origin=manual|auto: filtert dismissed Matches nach User-Entscheidung
+    # vs. System/KI. Heuristik in _classify_match_origin(). '' = alle.
+    origin_filter = request.args.get('origin', '').strip().lower()
     # Default: bereits beworbene Stellen (Treffer in Applications-Tabelle)
     # ausblenden. ?include_applied=true zeigt sie wieder an.
     include_applied = (request.args.get('include_applied', '').lower() in ('1', 'true', 'yes'))
@@ -206,11 +264,30 @@ def list_matches(user):
         'rejection_window_days', user.job_reject_window_days or 180,
     ))
 
+    # 'unbewertet' ist ein Pseudo-Status, kein DB-Wert. Bedeutet:
+    # JobMatch ist 'new' aber Claude hat noch keinen match_score vergeben
+    # (Pre-Filter hat ggf. prefilter_score gesetzt, Claude-Bewertung steht aus).
+    # Echte DB-Statuses sind 'new', 'seen', 'imported', 'dismissed'.
+    real_status_filter = [s for s in status_filter if s != 'unbewertet']
+    unbewertet_requested = 'unbewertet' in status_filter
+
     query = (db.session.query(JobMatch, RawJob, JobSource)
              .join(RawJob, RawJob.id == JobMatch.raw_job_id)
              .join(JobSource, JobSource.id == RawJob.source_id)
-             .filter(JobMatch.user_id == user.id,
-                     JobMatch.status.in_(status_filter)))
+             .filter(JobMatch.user_id == user.id))
+
+    if unbewertet_requested and real_status_filter:
+        # Beide: 'unbewertet' OR andere echte Statuses
+        query = query.filter(db.or_(
+            JobMatch.status.in_(real_status_filter),
+            db.and_(JobMatch.status == 'new', JobMatch.match_score.is_(None)),
+        ))
+    elif unbewertet_requested:
+        # Nur 'unbewertet'
+        query = query.filter(JobMatch.status == 'new',
+                             JobMatch.match_score.is_(None))
+    else:
+        query = query.filter(JobMatch.status.in_(real_status_filter or ['new']))
 
     if min_score > 0:
         query = query.filter(JobMatch.match_score >= min_score)
@@ -223,6 +300,32 @@ def list_matches(user):
             db.func.lower(RawJob.title).contains(q_text),
             db.func.lower(RawJob.company).contains(q_text),
         ))
+    if with_feedback:
+        # Nur Matches mit hinterlegtem Grund — feedback_text oder
+        # feedback_reasons (JSON-Array, also nicht leer/null).
+        query = query.filter(db.or_(
+            db.and_(JobMatch.feedback_text.isnot(None), JobMatch.feedback_text != ''),
+            db.and_(JobMatch.feedback_reasons.isnot(None), JobMatch.feedback_reasons != '',
+                    JobMatch.feedback_reasons != '[]'),
+        ))
+
+    if origin_filter in ('auto', 'manual'):
+        # 'auto'-Signal (SQL-Spiegel von _classify_match_origin):
+        #   feedback_text LIKE 'auto_%'  ODER
+        #   (kein Feedback UND prefilter_score < 5)
+        auto_signal = db.or_(
+            db.and_(JobMatch.feedback_text.isnot(None),
+                    JobMatch.feedback_text.like('auto_%')),
+            db.and_(
+                db.or_(JobMatch.feedback_text.is_(None), JobMatch.feedback_text == ''),
+                db.or_(JobMatch.feedback_reasons.is_(None),
+                       JobMatch.feedback_reasons == '',
+                       JobMatch.feedback_reasons == '[]'),
+                JobMatch.prefilter_score.isnot(None),
+                JobMatch.prefilter_score < 5,
+            ),
+        )
+        query = query.filter(auto_signal if origin_filter == 'auto' else db.not_(auto_signal))
 
     # Cross-Check gegen Applications: schon beworben?
     # Match-Heuristik (in dieser Reihenfolge):
@@ -380,13 +483,16 @@ def import_match(user, match_id: int):
         f"Original-Link: {raw.url}"
     )
 
-    # Übertrage alle verfügbaren Felder vom RawJob
+    # Übertrage alle verfügbaren Felder vom RawJob.
+    # applied_date semantisch: Tag an dem der User sich BEWORBEN hat — also
+    # heute, wenn er den Vorschlag jetzt importiert. NICHT das Job-Posting-
+    # Datum (raw.posted_at), das verwirrt und fehlt bei Email-Imports eh oft.
     application = Application(
         user_id=user.id,
         company=raw.company or "Unbekannt",
         position=raw.title,
         status='beworben',
-        applied_date=raw.posted_at.date() if raw.posted_at else None,
+        applied_date=datetime.utcnow().date(),
         location=raw.location,
         source=src.name if src else None,
         link=raw.url,
@@ -580,4 +686,343 @@ def update_match_bulk(user):
         "updated": updated,
         "forbidden": forbidden,
         "not_found": not_found,
+    }), 200
+
+
+# ---------------------------------------------------------------------------
+# Indeed-Email Import (manueller User-Action)
+# ---------------------------------------------------------------------------
+
+_INDEED_AUTO_DISABLE_THRESHOLD = 5
+
+# Apps-Script-Proxy: nur https://script.google.com/macros/s/{id}/(exec|dev) zulassen
+# (SSRF-Schutz — kein arbiträrer URL-Fetch durchs Backend).
+_APPS_SCRIPT_URL_RE = re.compile(
+    r'^https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/[a-z]+(?:\?[^\s]*)?$'
+)
+
+# Gmail-API hat ein hartes Tages-Limit (~250 search/Tag bei Consumer-Accounts).
+# Cache pro (user_id, url) für 1h, damit Mehrfach-Klicks / Retries die Quota
+# nicht killen. In-Memory pro Worker — bei Restart geleert (OK, Cache-Miss
+# kostet nur einen Apps-Script-Call).
+_APPS_SCRIPT_CACHE: dict[tuple[str, str], tuple[float, list[dict]]] = {}
+_APPS_SCRIPT_CACHE_TTL = 3600.0  # 1 Stunde
+
+
+def _fetch_apps_script_emails(url: str, user_id: str | None = None,
+                              use_cache: bool = True) -> tuple[list[dict], bool]:
+    """Server-side GET eines Apps-Script-Web-Endpoints (umgeht Browser-CORS).
+
+    URL-Validation gegen Whitelist (script.google.com/macros/s/…/exec) blockt
+    SSRF gegen interne Dienste. Google macht 30x-redirects nach
+    googleusercontent.com → wir folgen mit allow_redirects=True.
+
+    Cache: pro (user_id, url) für _APPS_SCRIPT_CACHE_TTL Sekunden. Spart
+    Gmail-API-Quota bei wiederholten Imports im selben Zeitfenster.
+    Setze use_cache=False für Force-Refresh.
+
+    Returns: (emails_list, cache_hit)
+    """
+    if not _APPS_SCRIPT_URL_RE.match(url or ''):
+        raise ValueError(
+            "Apps-Script-URL muss auf https://script.google.com/macros/s/.../exec passen"
+        )
+
+    import time
+    cache_key = (user_id or '', url)
+    now = time.time()
+
+    if use_cache:
+        entry = _APPS_SCRIPT_CACHE.get(cache_key)
+        if entry and (now - entry[0]) < _APPS_SCRIPT_CACHE_TTL:
+            return entry[1], True
+
+    import requests
+    try:
+        r = requests.get(url, timeout=60, allow_redirects=True)
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Apps-Script nicht erreichbar: {exc}") from exc
+
+    if r.status_code != 200:
+        raise RuntimeError(f"Apps-Script HTTP {r.status_code}")
+
+    ctype = (r.headers.get('Content-Type') or '').lower()
+    text = r.text
+    if 'json' not in ctype and not text.lstrip().startswith('{'):
+        snippet = text[:120].replace('\n', ' ')
+        raise RuntimeError(
+            f"Apps-Script gibt HTML statt JSON zurück — Deploy-Access falsch? "
+            f"(Beginn: {snippet!r})"
+        )
+
+    try:
+        data = r.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Apps-Script JSON-Parse-Fehler: {exc}") from exc
+
+    if data.get('status') and data['status'] != 'ok':
+        raise RuntimeError(f"Apps-Script-Error: {data.get('error') or data['status']}")
+
+    emails = data.get('emails') if isinstance(data.get('emails'), list) else []
+    _APPS_SCRIPT_CACHE[cache_key] = (now, emails)
+    return emails, False
+
+
+def _get_rejected_companies_lower(user_id: str, window_days: int) -> set[str]:
+    """Liefert lowercase company-Namen mit Status 'absage' im Reject-Fenster.
+
+    Spiegelt die Filter-Logik von list_matches (Zeile ~258), damit beim Import
+    dieselben Companies als "blocked" gekennzeichnet werden wie sie im
+    Vorschläge-Listing ausgeblendet wären.
+    """
+    cutoff_dt = datetime.utcnow() - timedelta(days=window_days)
+    cutoff_date = cutoff_dt.date()
+    q = (
+        db.session.query(db.func.lower(Application.company))
+        .filter(
+            Application.user_id == user_id,
+            Application.deleted == False,  # noqa: E712
+            Application.status.in_(['absage', 'rejected']),
+            Application.company.isnot(None),
+            db.or_(
+                Application.applied_date >= cutoff_date,
+                db.and_(Application.applied_date.is_(None),
+                        Application.created_at >= cutoff_dt),
+            ),
+        )
+        .distinct()
+    )
+    return {row[0] for row in q.all() if row[0]}
+
+
+def _create_raw_job_and_match(
+    src: JobSource,
+    user_id: str,
+    job_data: dict,
+    match_status: str,
+    feedback_text: str | None = None,
+) -> tuple[RawJob, JobMatch]:
+    """Erstellt RawJob + JobMatch in einer Transaktion. Caller commit()et."""
+    url = (job_data.get('url') or '').strip()
+    external_id = (job_data.get('external_id') or url or '')[:512]
+    raw = RawJob(
+        source_id=src.id,
+        external_id=external_id,
+        title=(job_data.get('title') or '')[:512],
+        company=(job_data.get('company') or '')[:255] or None,
+        location=(job_data.get('location') or '')[:255] or None,
+        url=url[:1024],
+        description=(job_data.get('description') or '')[:2000] or None,
+        crawl_status='raw',
+    )
+    raw.raw_payload = job_data.get('raw') or {}
+    db.session.add(raw)
+    db.session.flush()  # raw.id verfügbar machen
+
+    match = JobMatch(
+        raw_job_id=raw.id,
+        user_id=user_id,
+        status=match_status,
+        feedback_text=feedback_text,
+    )
+    db.session.add(match)
+    return raw, match
+
+
+@jobs_user_bp.post('/sources/<int:source_id>/import-from-email')
+@token_required
+def import_from_email(user, source_id: int):
+    """Fetcht neue Indeed-Job-Empfehlungen aus dem User-IMAP-Folder.
+
+    Ablauf:
+    1. Source laden, Ownership prüfen
+    2. Adapter fetch() → list[FetchedJob]
+    3. URL-Dedup gegen RawJob + Application
+    4. Rejection-Window: Companies mit Status='absage' werden als 'blocked'
+       markiert (nicht direkt importiert)
+    5. Non-blocked → RawJob + JobMatch(status='new') sofort
+    6. Blocked → temp zurück an Frontend (User entscheidet via /approve)
+
+    Returns:
+        {
+          "imported": int,        # direkt erstellte JobMatches
+          "blocked": [job_data],  # Companies mit aktiver Absage
+          "duplicates": int,      # bereits in DB
+          "total_emails": int,    # gefetchte Emails
+          "errors": [str]         # parse errors (best-effort)
+        }
+    """
+    from services.job_sources import get_adapter
+    from services.job_sources import dedup as _dedup
+
+    src = JobSource.query.get_or_404(source_id)
+    if src.user_id != user.id:
+        return jsonify({"error": "Forbidden"}), 403
+    if src.type != 'indeed_email':
+        return jsonify({"error": "Source ist nicht vom Typ indeed_email"}), 400
+
+    # Modus-Wahl (3-fach):
+    #   1) Body {emails:[...]}     → Apps-Script-Mode (Browser hat schon gefetcht)
+    #   2) Body {script_url:"..."} → Apps-Script-Proxy-Mode (VPS fetcht, umgeht CORS)
+    #   3) Leerer Body             → IMAP-Mode (VPS verbindet direkt zu IMAP)
+    payload = request.get_json(silent=True) or {}
+    provided_emails = payload.get('emails')
+    script_url = payload.get('script_url')
+    force_refresh = bool(payload.get('force_refresh'))
+
+    cache_hit = False
+    try:
+        adapter = get_adapter(src.type, src.config, user=user)
+        if isinstance(provided_emails, list):
+            fetched = adapter.parse_emails(provided_emails)
+            fetch_mode = 'apps_script'
+        elif isinstance(script_url, str) and script_url:
+            emails, cache_hit = _fetch_apps_script_emails(
+                script_url,
+                user_id=user.id,
+                use_cache=not force_refresh,
+            )
+            fetched = adapter.parse_emails(emails)
+            fetch_mode = 'apps_script_proxy'
+        else:
+            fetched = adapter.fetch()
+            fetch_mode = 'imap'
+    except Exception as e:
+        src.last_error = f"{type(e).__name__}: {str(e)[:500]}"
+        src.consecutive_failures = (src.consecutive_failures or 0) + 1
+        if src.consecutive_failures >= _INDEED_AUTO_DISABLE_THRESHOLD:
+            src.enabled = False
+        db.session.commit()
+        status_code = 503 if src.consecutive_failures < _INDEED_AUTO_DISABLE_THRESHOLD else 502
+        return jsonify({
+            "error": src.last_error,
+            "consecutive_failures": src.consecutive_failures,
+            "auto_disabled": not src.enabled,
+        }), status_code
+
+    # Erfolg: Counter zurücksetzen
+    src.consecutive_failures = 0
+    src.last_error = None
+
+    # URL-Dedup
+    existing_urls = _dedup.get_existing_job_urls()
+    fresh = _dedup.deduplicate(fetched, existing_urls)
+    duplicates_count = len(fetched) - len(fresh)
+
+    # Rejection-Window
+    window_days = int(user.job_reject_window_days or 180)
+    reject_enabled = bool(user.job_reject_filter_enabled)
+    rejected_companies = (
+        _get_rejected_companies_lower(user.id, window_days) if reject_enabled else set()
+    )
+
+    new_for_dialog: list[dict] = []
+    blocked_for_dialog: list[dict] = []
+
+    for fjob in fresh:
+        company_lower = (fjob.company or '').strip().lower()
+        is_blocked = bool(company_lower) and company_lower in rejected_companies
+        payload = {
+            'title': fjob.title,
+            'company': fjob.company,
+            'location': fjob.location,
+            'url': fjob.url,
+            'external_id': fjob.external_id,
+            'description': fjob.description,
+            'raw': fjob.raw or {},
+        }
+        if is_blocked:
+            blocked_for_dialog.append(payload)
+        else:
+            new_for_dialog.append(payload)
+
+    # Non-blocked: sofort als RawJob + JobMatch erstellen
+    imported_count = 0
+    for payload in new_for_dialog:
+        _create_raw_job_and_match(src, user.id, payload, match_status='new')
+        imported_count += 1
+
+    src.last_crawled_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({
+        "imported": imported_count,
+        "blocked": blocked_for_dialog,
+        "duplicates": duplicates_count,
+        "total_emails": len(fetched),
+        "rejection_window_days": window_days,
+        "reject_filter_enabled": reject_enabled,
+        "fetch_mode": fetch_mode,
+        "cache_hit": cache_hit,
+    }), 200
+
+
+@jobs_user_bp.post('/sources/<int:source_id>/import-from-email/approve')
+@token_required
+def approve_email_import(user, source_id: int):
+    """Verarbeitet User-Entscheidungen für blocked Jobs.
+
+    Body: { "decisions": [{ "action": "import_as_new"|"skip", "job": {...} }] }
+
+    - "import_as_new": RawJob + JobMatch(status='new') → erscheint in Vorschlägen
+    - "skip":          RawJob + JobMatch(status='dismissed',
+                       feedback_text='rejection_blocked_skip') → wird beim
+                       nächsten Import als URL-Duplicate erkannt und nicht
+                       erneut zur Entscheidung vorgelegt.
+
+    Returns: {"imported": N, "skipped": N, "ignored": N}
+    """
+    from services.job_sources import dedup as _dedup
+
+    src = JobSource.query.get_or_404(source_id)
+    if src.user_id != user.id:
+        return jsonify({"error": "Forbidden"}), 403
+    if src.type != 'indeed_email':
+        return jsonify({"error": "Source ist nicht vom Typ indeed_email"}), 400
+
+    data = request.get_json() or {}
+    decisions = data.get('decisions') or []
+    if not isinstance(decisions, list):
+        return jsonify({"error": "decisions muss eine Liste sein"}), 400
+
+    existing_urls = _dedup.get_existing_job_urls()
+
+    imported = 0
+    skipped = 0
+    ignored = 0  # malformed entries oder URL-Duplikate
+
+    for d in decisions:
+        if not isinstance(d, dict):
+            ignored += 1
+            continue
+        action = d.get('action')
+        job = d.get('job') or {}
+        url = (job.get('url') or '').strip()
+        if not url or not job.get('title'):
+            ignored += 1
+            continue
+        if url in existing_urls:
+            ignored += 1
+            continue
+
+        if action == 'import_as_new':
+            _create_raw_job_and_match(src, user.id, job, match_status='new')
+            imported += 1
+            existing_urls.add(url)
+        elif action == 'skip':
+            _create_raw_job_and_match(
+                src, user.id, job,
+                match_status='dismissed',
+                feedback_text='rejection_blocked_skip',
+            )
+            skipped += 1
+            existing_urls.add(url)
+        else:
+            ignored += 1
+
+    db.session.commit()
+    return jsonify({
+        "imported": imported,
+        "skipped": skipped,
+        "ignored": ignored,
     }), 200
