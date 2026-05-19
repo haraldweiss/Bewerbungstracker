@@ -220,3 +220,61 @@ def test_get_learned_patterns_history_count(client, auth_header, db_session):
     data = resp.get_json()
     ln = next(p for p in data["patterns"] if p["platform"] == "linkedin")
     assert ln["history_count"] == 1
+
+
+def test_rollback_restores_previous(client, auth_header, db_session):
+    headers, user = auth_header
+    older = LearnedEmailPattern(
+        platform="linkedin", pattern_json='{"v":1}', sample_count=10, hit_rate=0.5,
+        trained_at=datetime.utcnow() - timedelta(days=2),
+        trained_by_user_id=user.id, is_active=False,
+    )
+    newer = LearnedEmailPattern(
+        platform="linkedin", pattern_json='{"v":2}', sample_count=20, hit_rate=0.7,
+        trained_at=datetime.utcnow(),
+        trained_by_user_id=user.id, is_active=True,
+    )
+    db_session.add_all([older, newer]); db_session.commit()
+    resp = client.post(
+        "/api/jobs/learned-patterns/linkedin/rollback",
+        headers=headers, json={},
+    )
+    assert resp.status_code == 200
+    db_session.expire_all()
+    older_after = LearnedEmailPattern.query.filter_by(pattern_json='{"v":1}').first()
+    newer_after = LearnedEmailPattern.query.filter_by(pattern_json='{"v":2}').first()
+    assert older_after.is_active is True
+    assert newer_after.is_active is False
+    assert newer_after.rolled_back_at is not None
+    assert newer_after.rolled_back_by_user_id == user.id
+
+
+def test_rollback_no_history_returns_400(client, auth_header, db_session):
+    headers, user = auth_header
+    only_one = LearnedEmailPattern(
+        platform="linkedin", pattern_json='{}', sample_count=10, hit_rate=0.5,
+        trained_at=datetime.utcnow(),
+        trained_by_user_id=user.id, is_active=True,
+    )
+    db_session.add(only_one); db_session.commit()
+    resp = client.post(
+        "/api/jobs/learned-patterns/linkedin/rollback",
+        headers=headers, json={},
+    )
+    assert resp.status_code == 400
+
+
+def test_rollback_no_active_pattern_returns_400(client, auth_header, db_session):
+    headers, user = auth_header
+    # Plattform mit nur inaktiven Rows
+    db_session.add(LearnedEmailPattern(
+        platform="xing", pattern_json='{}', sample_count=10, hit_rate=0.5,
+        trained_at=datetime.utcnow(),
+        trained_by_user_id=user.id, is_active=False,
+    ))
+    db_session.commit()
+    resp = client.post(
+        "/api/jobs/learned-patterns/xing/rollback",
+        headers=headers, json={},
+    )
+    assert resp.status_code == 400

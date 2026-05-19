@@ -1234,3 +1234,45 @@ def list_learned_patterns(user):
         d["history_count"] = history_count
         out.append(d)
     return jsonify({"patterns": out}), 200
+
+
+@jobs_user_bp.post('/learned-patterns/<string:platform>/rollback')
+@token_required
+def rollback_pattern(user, platform):
+    """Rollback zur naechst-juengeren Pattern-Version fuer die Plattform.
+
+    Idempotent NICHT — jeder Aufruf rotiert eine Generation zurueck.
+    Audit-Log via rolled_back_at + rolled_back_by_user_id auf der
+    deaktivierten Row.
+    """
+    from models import LearnedEmailPattern
+
+    current = LearnedEmailPattern.query.filter_by(
+        platform=platform, is_active=True,
+    ).first()
+    if current is None:
+        return jsonify({
+            "error": "Keine aktive Pattern-Version fuer diese Plattform"
+        }), 400
+    prev = LearnedEmailPattern.query.filter(
+        LearnedEmailPattern.platform == platform,
+        LearnedEmailPattern.trained_at < current.trained_at,
+    ).order_by(LearnedEmailPattern.trained_at.desc()).first()
+    if prev is None:
+        return jsonify({
+            "error": "Keine aeltere Version vorhanden — kann nicht rollback."
+        }), 400
+
+    current.is_active = False
+    current.rolled_back_at = datetime.utcnow()
+    current.rolled_back_by_user_id = user.id
+    # Flush vor dem Re-Activate, sonst kollidiert die partial-unique-index
+    # (platform WHERE is_active=1) — beide Rows waeren transient aktiv.
+    db.session.flush()
+    prev.is_active = True
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "rolled_back_from": current.to_dict(),
+        "restored_pattern": prev.to_dict(),
+    }), 200
