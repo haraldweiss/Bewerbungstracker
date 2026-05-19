@@ -140,6 +140,44 @@ PROFILES: dict[str, PlatformProfile] = {
             "Extrahiere {title, company, location, url} pro Job als JSON-Array."
         ),
     ),
+    "xing": PlatformProfile(
+        name="xing",
+        source_label="XING",
+        from_filter="from:xing.com",
+        from_whitelist=(
+            r"@(?:[a-z0-9.-]+\.)?xing\.com$",
+        ),
+        url_pattern=re.compile(
+            r"https?://(?:www\.)?xing\.com/(?:jobs|app/jobs)/[^\s)<>\"'\\]+",
+            re.IGNORECASE,
+        ),
+        subject_patterns=(
+            re.compile(
+                r"(?:Neue\s+(?:Stelle|Jobempfehlung)|New\s+job|Stellenangebot)"
+                r"\s*:?\s*(?P<title>.+?)\s+(?:bei|at|@)\s+(?P<company>.+?)"
+                r"(?:\s*[-–|]\s*XING.*)?$",
+                re.IGNORECASE,
+            ),
+        ),
+        body_title_re=re.compile(
+            r"(?:Stelle|Position|Jobtitel|Job\s*Title)\s*[:\-]\s*([^\n\r]+)",
+            re.IGNORECASE,
+        ),
+        body_company_re=re.compile(
+            r"(?:Firma|Unternehmen|Company|Arbeitgeber|Employer)\s*[:\-]\s*([^\n\r]+)",
+            re.IGNORECASE,
+        ),
+        body_location_re=re.compile(
+            r"(?:Ort|Standort|Location|Place)\s*[:\-]\s*([^\n\r]+)",
+            re.IGNORECASE,
+        ),
+        digest_threshold=3,
+        ai_hint=(
+            "XING-Jobempfehlungs-Digest (deutsch). Jede Job-Card hat einen "
+            "xing.com/jobs/<slug>-Link. "
+            "Extrahiere {title, company, location, url} pro Job als JSON-Array."
+        ),
+    ),
 }
 
 
