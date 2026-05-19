@@ -489,3 +489,52 @@ class AIWordsResearchLog(db.Model):
 
     def __repr__(self):
         return f'<AIWordsResearchLog {self.id} at {self.timestamp}: {self.found_total} words, {self.new_count} new>'
+
+
+class LearnedEmailPattern(db.Model):
+    """Pro Plattform gelerntes Layout-Pattern (Email-Job-Source-Adapter).
+
+    Versionierung: jedes Train erzeugt eine neue Row, alte wird is_active=False.
+    Rollback: aktuelle deaktivieren + vorige wieder aktivieren.
+    Partial-Unique-Constraint: max 1 is_active=True pro Plattform.
+    """
+    __tablename__ = 'learned_email_patterns'
+
+    id = db.Column(db.Integer, primary_key=True)
+    platform = db.Column(db.String(32), nullable=False, index=True)
+    pattern_json = db.Column(db.Text, nullable=False)
+    sample_count = db.Column(db.Integer, nullable=False)
+    hit_rate = db.Column(db.Float, nullable=False)
+    trained_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    trained_by_user_id = db.Column(
+        db.String(36), db.ForeignKey('users.id'), nullable=False
+    )
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    rolled_back_at = db.Column(db.DateTime, nullable=True)
+    rolled_back_by_user_id = db.Column(
+        db.String(36), db.ForeignKey('users.id'), nullable=True
+    )
+
+    __table_args__ = (
+        db.Index(
+            'ux_lep_one_active_per_platform',
+            'platform',
+            unique=True,
+            sqlite_where=db.text('is_active = 1'),
+            postgresql_where=db.text('is_active = TRUE'),
+        ),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'platform': self.platform,
+            'pattern_json': self.pattern_json,
+            'sample_count': self.sample_count,
+            'hit_rate': self.hit_rate,
+            'trained_at': self.trained_at.isoformat() if self.trained_at else None,
+            'trained_by_user_id': self.trained_by_user_id,
+            'is_active': self.is_active,
+            'rolled_back_at': self.rolled_back_at.isoformat() if self.rolled_back_at else None,
+            'rolled_back_by_user_id': self.rolled_back_by_user_id,
+        }
