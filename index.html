@@ -1295,6 +1295,29 @@
         <div id="indeedScriptUrlStatus" style="font-size:0.85rem;margin-top:0.3rem"></div>
     </div>
 
+    <div class="card" style="margin-top:1rem">
+      <div class="card-title" style="margin-bottom:0.75rem">🧠 Gelernte Pattern</div>
+      <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:0.5rem">
+        Pro Plattform wird ein Layout-Pattern global aktiv. Bei Layout-Drift
+        der Mails: 🧠-Button in der Job-Quellen-Tabelle. Rollback wenn neues
+        Pattern schlechter als Vorversion.
+      </p>
+      <table style="width:100%;font-size:0.9rem">
+        <thead><tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:0.4rem">Plattform</th>
+          <th style="text-align:left;padding:0.4rem">Hit-Rate</th>
+          <th style="text-align:left;padding:0.4rem">Trainiert am</th>
+          <th style="text-align:left;padding:0.4rem">Versionen</th>
+          <th style="text-align:left;padding:0.4rem">Aktion</th>
+        </tr></thead>
+        <tbody id="jdLearnedPatternsTableBody">
+          <tr><td colspan="5" style="padding:0.6rem;color:var(--text-muted)">Lade…</td></tr>
+        </tbody>
+      </table>
+      <button class="btn btn-secondary btn-sm" style="margin-top:0.5rem"
+              onclick="JdSourcesUI.loadLearnedPatterns()">🔄 Aktualisieren</button>
+    </div>
+
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">🔔 Benachrichtigungen</div>
         <div class="form-group" style="margin-bottom:1rem;">
@@ -3123,6 +3146,9 @@ function showView(name) {
         BackupManager.init();
         loadJobDiscoveryFilters();
         if (typeof JdSourcesUI !== 'undefined') JdSourcesUI.refresh();
+        if (typeof JdSourcesUI !== 'undefined' && JdSourcesUI.loadLearnedPatterns) {
+            JdSourcesUI.loadLearnedPatterns();
+        }
         initSettingsSection();
         if (typeof initLearnSettingsHandlers === 'function') initLearnSettingsHandlers();
         if (typeof loadLearnSettings === 'function') loadLearnSettings();
@@ -3753,6 +3779,57 @@ const JdSourcesUI = (() => {
         }
     }
 
+    async function loadLearnedPatterns() {
+        const tbody = document.getElementById('jdLearnedPatternsTableBody');
+        if (!tbody) return;
+        try {
+            const r = await Auth.fetch('/jobs/learned-patterns', { method: 'GET' });
+            const list = (r && r.patterns) || [];
+            const PLATFORMS = ['indeed', 'linkedin', 'xing'];
+            const rows = PLATFORMS.map(function(platform) {
+                const entry = list.find(function(p) { return p.platform === platform; });
+                if (!entry) {
+                    return '<tr><td style="padding:0.4rem">' + escapeHtml(platform.toUpperCase()) + '</td>' +
+                        '<td>—</td><td colspan="2" style="color:var(--text-muted)">(Hardcoded Default)</td><td>—</td></tr>';
+                }
+                const pct = Math.round((entry.hit_rate || 0) * 100);
+                const date = entry.trained_at ? new Date(entry.trained_at).toLocaleString('de-DE') : '—';
+                const rollbackBtn = entry.history_count >= 1
+                    ? '<button class="btn btn-sm btn-secondary" onclick="JdSourcesUI.rollbackPattern(\'' + escapeHtml(platform) + '\')" title="Zur Vorversion zurueck">↶ Rollback</button>'
+                    : '<span style="color:var(--text-muted)">—</span>';
+                return '<tr style="border-bottom:1px solid var(--border)">' +
+                    '<td style="padding:0.4rem">' + escapeHtml(platform.toUpperCase()) + '</td>' +
+                    '<td>' + pct + '%</td>' +
+                    '<td>' + escapeHtml(date) + '</td>' +
+                    '<td>' + (entry.history_count + 1) + '</td>' +
+                    '<td>' + rollbackBtn + '</td>' +
+                    '</tr>';
+            });
+            tbody.innerHTML = rows.join('');
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="5" style="padding:0.6rem;color:var(--danger)">Fehler: ' + escapeHtml(e.message || 'unbekannt') + '</td></tr>';
+        }
+    }
+
+
+    async function rollbackPattern(platform) {
+        if (!confirm('Pattern fuer ' + platform.toUpperCase() + ' auf Vorversion zuruecksetzen?')) return;
+        try {
+            const r = await Auth.fetch('/jobs/learned-patterns/' + platform + '/rollback', {
+                method: 'POST', body: JSON.stringify({}),
+            });
+            if (r && r.ok) {
+                const showToast = typeof window.showToast === 'function' ? window.showToast : ((m) => alert(m));
+                showToast('✅ Rollback erfolgreich fuer ' + platform, 'success');
+                loadLearnedPatterns();
+            } else if (r && r.error) {
+                alert('❌ Rollback fehlgeschlagen: ' + r.error);
+            }
+        } catch (e) {
+            alert('❌ ' + (e.message || 'Fehler'));
+        }
+    }
+
     function openImportApprovalDialog(sourceId, importResult) {
         if ($('jdImportApprovalWrap')) return;
 
@@ -3953,7 +4030,7 @@ const JdSourcesUI = (() => {
         importFromEmail, skipAllBlocked, submitApproval, closeApprovalDialog,
         saveIndeedScriptUrl, toggleIndeedScriptCode,
         testImap, clearImapCreds, loadImapStatus,
-        trainPattern,
+        trainPattern, loadLearnedPatterns, rollbackPattern,
     };
 })();
 
