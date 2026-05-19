@@ -3398,12 +3398,18 @@ const JdSourcesUI = (() => {
     // create() macht PATCH statt POST. closeCreate setzt zurück auf null.
     let _editingSourceId = null;
 
+    // Modul-lokaler Source-Cache, gefuellt von refresh().
+    // edit() + trainPattern() greifen hierauf zu (state.sourcesCache aus
+    // JobsView ist NICHT global verfuegbar — pre-existing Bug).
+    let _sourcesCache = [];
+
     async function refresh() {
         const tbody = $('jdSourcesTableBody');
         if (!tbody) return;
         try {
             const r = await Auth.fetch('/jobs/sources', { method: 'GET' });
             const list = (r && r.sources) || [];
+            _sourcesCache = list;
             tbody.innerHTML = list.length === 0
                 ? `<tr><td colspan="4" style="padding:0.6rem;color:var(--text-muted)">Keine Quellen.</td></tr>`
                 : list.map(s => {
@@ -3643,7 +3649,7 @@ const JdSourcesUI = (() => {
     }
 
     function edit(id) {
-        const src = (state && state.sourcesCache || []).find(s => s.id === id);
+        const src = _sourcesCache.find(s => s.id === id);
         if (!src) { alert('Quelle nicht gefunden (refresh nötig)'); return; }
         if (!src.is_own) { alert('Globale Quellen können nicht bearbeitet werden'); return; }
         _editingSourceId = id;
@@ -3745,7 +3751,7 @@ const JdSourcesUI = (() => {
     }
 
     async function trainPattern(sourceId) {
-        const src = (state && state.sourcesCache || []).find(s => s.id === sourceId);
+        const src = _sourcesCache.find(s => s.id === sourceId);
         if (!src) { alert('Quelle nicht gefunden (refresh nötig)'); return; }
         const platform = (src.type || '').replace('_email', '');
         const confirmText = (
