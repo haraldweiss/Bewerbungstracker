@@ -49,6 +49,12 @@ class PlatformProfile:
     # einzelnen body_*_re-Label-Pattern nichts finden. Für Plattformen wo
     # der Body keine "Label:"-Felder nutzt (LinkedIn, XING).
     body_card_re: "re.Pattern | None" = None
+    # Hardcoded Title-Blacklist (zusätzlich zum AI-gelernten title_blacklist).
+    # Greift IMMER, egal welches Pattern aktiv ist. Wird im Adapter
+    # angewendet, nachdem body_card_re ein title-Match liefert. Schützt vor
+    # offensichtlichen Marketing-Headers die LinkedIn/XING in jeder Mail
+    # nutzen (Section-Header vor Job-Gruppen etc.).
+    hard_title_blacklist_re: "re.Pattern | None" = None
 
 
 # Subject-Patterns für Indeed-Emails (DE + EN).
@@ -160,6 +166,24 @@ PROFILES: dict[str, PlatformProfile] = {
             "LinkedIn-Jobempfehlungs-Digest. Jede Job-Card hat einen "
             "linkedin.com/jobs/view/<ID>-Link. "
             "Extrahiere {title, company, location, url} pro Job als JSON-Array."
+        ),
+        # Hardcoded Marketing-Header die LinkedIn vor Job-Cards einstreut.
+        # Diese sind KEINE Job-Titel, sondern Sektion-Header. Greift IMMER,
+        # auch wenn das AI-gelernte title_blacklist sie nicht enthält.
+        hard_title_blacklist_re=re.compile(
+            r"^(?:"
+            r"\d+\s+neue?r?\s+(?:Position|Stelle|Job)|"     # "11 neue Positionen als ..."
+            r"Ihre Jobbenachrichtigung|"                     # Newsletter-Header
+            r"Top-Jobs?|"                                    # "Top-Jobs für Sie"
+            r"\d+\s+neue?r?\s+Jobs?|"                        # "5 neue Jobs"
+            r"Ergebnisse der|"                               # "Ergebnisse der KI-Suche"
+            r"Empfohlene Jobs|"
+            r"Recommended (?:for you|jobs)|"
+            r"Lust auf|"                                     # "Lust auf einen Nebenjob..."
+            r"Jobs you may be interested in|"
+            r"Bewerben Sie sich als Erste"                   # CTA-Heading
+            r")",
+            re.IGNORECASE,
         ),
     ),
     "xing": PlatformProfile(
@@ -509,6 +533,16 @@ class EmailJobsAdapter(JobSourceAdapter):
                     if active_title_blacklist and active_title_blacklist.search(t):
                         continue
                     if active_company_sep and c and active_company_sep.match(c):
+                        continue
+                    # Profile-level hard-blacklist (greift IMMER, auch
+                    # wenn kein learned pattern aktiv ist). Schuetzt vor
+                    # offensichtlichen Marketing-Headers wie "11 neue
+                    # Positionen als ..." die LinkedIn vor Job-Gruppen
+                    # einstreut.
+                    if (
+                        self.profile.hard_title_blacklist_re
+                        and self.profile.hard_title_blacklist_re.search(t)
+                    ):
                         continue
                     jobs_from_cards.append(FetchedJob(
                         external_id=u[:512],
