@@ -377,6 +377,14 @@ class RawJob(db.Model):
     posted_at = db.Column(db.DateTime, nullable=True)
     _raw_payload = db.Column('raw_payload', db.Text, nullable=True)
     crawl_status = db.Column(db.String(16), default='raw', nullable=False)  # raw|prefiltered|matched|archived
+    # URL-Health-Check Felder (seit 2026-05-19).
+    # url_check_status valid values: 'ok' | '404' | '410' | '5xx' |
+    #   'timeout' | 'connection_error' | 'invalid_url'.
+    # crawl_status bekommt einen zusaetzlichen erlaubten Wert
+    # 'marked_for_deletion' (3-Strike-Failure oder 404/410).
+    url_last_checked_at = db.Column(db.DateTime, nullable=True)
+    url_check_failures = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+    url_check_status = db.Column(db.String(32), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     @property
