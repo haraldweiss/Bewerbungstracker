@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # © 2026 Harald Weiss
-"""Unit-Tests für IndeedEmailAdapter — Parser-Pfade ohne echten IMAP-Call."""
+"""Unit-Tests für EmailJobsAdapter mit Indeed-Profil — Parser-Pfade ohne echten IMAP-Call."""
 from unittest.mock import patch
 
 import pytest
 
 from services.job_sources.email_jobs import (
-    IndeedEmailAdapter,
+    PROFILES,
+    EmailJobsAdapter,
     _decode_mime,
     _extract_body,
     _parse_subject,
@@ -71,7 +72,7 @@ def test_parse_subject_returns_none_on_nonsense():
 
 def _make_adapter_no_user():
     """Adapter ohne User — für reine Parser-Tests, kein AI-Fallback."""
-    return IndeedEmailAdapter(config={}, user=None)
+    return EmailJobsAdapter(config={}, user=None, platform_profile=PROFILES["indeed"])
 
 
 def test_parse_email_extracts_from_subject_and_body_url():
@@ -164,7 +165,7 @@ def test_parse_email_truncates_long_fields():
 
 
 def test_fetch_raises_without_user():
-    adapter = IndeedEmailAdapter(config={'folder': 'Indeed'}, user=None)
+    adapter = EmailJobsAdapter(config={'folder': 'Indeed'}, user=None, platform_profile=PROFILES["indeed"])
     with pytest.raises(RuntimeError, match="User-Kontext"):
         adapter.fetch()
 
@@ -174,7 +175,7 @@ def test_fetch_raises_without_imap_credentials():
         imap_host = None
         imap_user = None
         decrypted_imap_password = None
-    adapter = IndeedEmailAdapter(config={'folder': 'Indeed'}, user=FakeUser())
+    adapter = EmailJobsAdapter(config={'folder': 'Indeed'}, user=FakeUser(), platform_profile=PROFILES["indeed"])
     with pytest.raises(RuntimeError, match="IMAP-Credentials"):
         adapter.fetch()
 
@@ -184,9 +185,10 @@ def test_fetch_raises_on_invalid_folder_name():
         imap_host = 'imap.example.com'
         imap_user = 'me@example.com'
         decrypted_imap_password = 'pw'
-    adapter = IndeedEmailAdapter(
+    adapter = EmailJobsAdapter(
         config={'folder': 'bad\r\nfolder; DELETE *'},
         user=FakeUser(),
+        platform_profile=PROFILES["indeed"],
     )
     with pytest.raises(ValueError, match="Ordner-Name"):
         adapter.fetch()
@@ -207,7 +209,7 @@ def test_ai_fallback_called_when_fields_missing(monkeypatch):
         def get_backup_config(self):
             return None
 
-    adapter = IndeedEmailAdapter(config={}, user=FakeUser())
+    adapter = EmailJobsAdapter(config={}, user=FakeUser(), platform_profile=PROFILES["indeed"])
 
     def fake_ai_extract(user, subject, body):
         return {
@@ -302,7 +304,7 @@ def test_parse_emails_rejects_non_list_input():
 def test_parse_emails_works_without_user_context():
     """parse_emails braucht keinen User (kein IMAP-Connect). AI-Fallback
     wird nur bei user!=None aktiv."""
-    adapter = IndeedEmailAdapter(config={}, user=None)
+    adapter = EmailJobsAdapter(config={}, user=None, platform_profile=PROFILES["indeed"])
     jobs = adapter.parse_emails([{
         'subject': 'Neue Stelle: Dev at Corp',
         'body': 'https://de.indeed.com/viewjob?jk=nouser',
@@ -318,7 +320,7 @@ def test_ai_fallback_skipped_for_non_indeed_emails(monkeypatch):
         def get_model_for(self, _): return ('ollama', 'llama2')
         def get_backup_config(self): return None
 
-    adapter = IndeedEmailAdapter(config={}, user=FakeUser())
+    adapter = EmailJobsAdapter(config={}, user=FakeUser(), platform_profile=PROFILES["indeed"])
     called = {'count': 0}
 
     def fake_ai(user, subject, body):
@@ -346,7 +348,7 @@ def test_ai_fallback_budget_caps_calls(monkeypatch):
         def get_model_for(self, _): return ('ollama', 'llama2')
         def get_backup_config(self): return None
 
-    adapter = IndeedEmailAdapter(config={}, user=FakeUser())
+    adapter = EmailJobsAdapter(config={}, user=FakeUser(), platform_profile=PROFILES["indeed"])
     adapter.AI_FALLBACK_BUDGET = 3  # für Test runter
 
     call_count = {'n': 0}
@@ -375,7 +377,7 @@ def test_ai_budget_resets_between_runs():
         def get_model_for(self, _): return ('ollama', 'llama2')
         def get_backup_config(self): return None
 
-    adapter = IndeedEmailAdapter(config={}, user=FakeUser())
+    adapter = EmailJobsAdapter(config={}, user=FakeUser(), platform_profile=PROFILES["indeed"])
     adapter._ai_calls_used = 999
     adapter.parse_emails([])  # leerer Lauf
     assert adapter._ai_calls_used == 0
@@ -393,7 +395,7 @@ def test_ai_fallback_only_fills_missing_fields(monkeypatch):
         def get_backup_config(self):
             return None
 
-    adapter = IndeedEmailAdapter(config={}, user=FakeUser())
+    adapter = EmailJobsAdapter(config={}, user=FakeUser(), platform_profile=PROFILES["indeed"])
 
     monkeypatch.setattr(
         'services.job_sources.email_jobs._ai_extract',
