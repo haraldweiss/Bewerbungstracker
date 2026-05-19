@@ -132,6 +132,87 @@ def _build_cv_summary(cv_data_json: str) -> str:
     return "\n".join(parts)
 
 
+# Wieviele AI-Confirm-Calls maximal pro Pre-Filter-Tick. Schuetzt vor
+# Cron-Timeout + Kosten-Explosion bei vielen Niedrig-Score-Items.
+AI_CONFIRM_BUDGET = 50
+
+
+def _ai_confirm_prefilter_dismiss(user, raw, cv_summary: str):
+    """Schneller AI-Check vor dem Auto-Dismiss: passt der Job DOCH zum CV?
+
+    Pre-Filter ist eine Keyword-Heuristik — uebersieht z.B. ungewoehnlich
+    formulierte Job-Beschreibungen. Diese Funktion fragt das LLM nach
+    einem groben Ja/Nein bevor wir endgueltig dismissen.
+
+    Returns:
+        (fits: bool, reason: str)  — fits=True heisst Pre-Filter hat sich
+            geirrt, Item nicht dismissen.
+        None — kein AI-Provider verfuegbar / Parse-Error / Timeout. Caller
+            soll auf altes Verhalten fallen (sofort dismissen mit
+            'prefilter_low_score'-Marker).
+    """
+    if not getattr(user, 'ai_provider', None) or not getattr(user, 'ai_provider_model', None):
+        return None
+    from services import ai_provider_client as _aip
+    client = _aip.get_client()
+    if client is None:
+        return None
+
+    title = (raw.title or '(ohne Titel)')[:200]
+    description = (raw.description or '')[:1500]
+    cv_text = (cv_summary or '')[:1500]
+    prompt = (
+        "Du bist ein Recruiting-Assistent. Bewertet wird grob, ob ein Job "
+        "zum CV-Profil grundsaetzlich passt. Sei tolerant — auch wenn nicht "
+        "100% perfekt, aber das CV-Profil in die richtige Richtung geht, "
+        "antworte mit fits=true.\n\n"
+        f"CV-Profil:\n{cv_text}\n\n"
+        f"Job-Titel: {title}\n"
+        f"Job-Beschreibung:\n{description}\n\n"
+        'Antworte NUR mit JSON: {"fits": true|false, "reason": "<1 Satz, deutsch, max 150 Zeichen>"}'
+    )
+
+    try:
+        resp = client.chat(
+            user_id=user.id,
+            provider=user.ai_provider,
+            model=user.ai_provider_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=120,
+        )
+    except Exception as exc:
+        logger.warning("ai_confirm_prefilter failed for match=%s: %s", raw.id, exc)
+        return None
+
+    # ChatResponse-Dataclass oder dict (Tests mocken dict)
+    content = ""
+    if hasattr(resp, 'content'):
+        contents = getattr(resp, 'content', None) or []
+        if contents and hasattr(contents[0], 'text'):
+            content = contents[0].text
+    elif isinstance(resp, dict):
+        content = resp.get('content', '') or ''
+    content = (content or "").strip()
+    if content.startswith("```"):
+        content = content.split("```", 2)[1]
+        if content.startswith("json"):
+            content = content[4:]
+        content = content.rstrip("`").strip()
+    try:
+        data = json.loads(content)
+        fits = bool(data.get('fits'))
+        reason = str(data.get('reason') or '')[:200]
+        return (fits, reason)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        # Text-Fallback fuer LLMs die nicht-strikte JSON liefern
+        c_lower = content.lower()
+        if '"fits": true' in c_lower or 'fits:true' in c_lower or 'fits: true' in c_lower:
+            return (True, content[:200])
+        if '"fits": false' in c_lower or 'fits:false' in c_lower or 'fits: false' in c_lower:
+            return (False, content[:200])
+        return None
+
+
 def _select_due_source() -> JobSource | None:
     # Email-basierte Sources (indeed_email, linkedin_email, xing_email)
     # werden NUR vom dedizierten /indeed-email-import-all-Cron verarbeitet,
@@ -251,9 +332,13 @@ def prefilter():
                .limit(MAX_PREFILTER_PER_TICK).all())
 
     cv_cache: dict = {}
+    cv_summary_cache: dict = {}  # user_id → cv_summary string (für AI-Confirm)
+    user_cache: dict = {}
     ctx_cache: dict = {}
     scored = 0
     dismissed = 0
+    ai_confirm_used = 0     # Budget-Counter pro Run
+    ai_confirm_overruled = 0  # Items die AI "passt doch" gerettet hat
 
     for match in pending:
         if time.time() - started > HARD_TIME_LIMIT_SEC:
@@ -261,8 +346,10 @@ def prefilter():
 
         if match.user_id not in cv_cache:
             user = User.query.get(match.user_id)
+            user_cache[match.user_id] = user
             cv_data = json.loads(user.cv_data_json) if user.cv_data_json else {}
             cv_cache[match.user_id] = tokenize_cv(cv_data)
+            cv_summary_cache[match.user_id] = _build_cv_summary(user.cv_data_json)
             ctx_cache[match.user_id] = PrefilterContext(
                 language_filter=user.job_language_filter,
                 region_filter=user.job_region_filter,
@@ -311,18 +398,48 @@ def prefilter():
                 match.feedback_text = 'duplicate_of_other'
             dismissed += 1
         elif score < PREFILTER_DISMISS_THRESHOLD:
-            match.status = 'dismissed'
-            # Markiere den Auto-Dismiss-Grund — UI zeigt das als
-            # menschenlesbare Begruendung an. Score selbst ist via
-            # match.prefilter_score schon gespeichert; hier nur das Label.
-            if not match.feedback_text:
-                match.feedback_text = 'prefilter_low_score'
-            dismissed += 1
+            # AI-Confirm vor dem endgueltigen Dismiss — Pre-Filter ist
+            # eine Keyword-Heuristik und uebersieht ungewoehnlich formulierte
+            # Job-Beschreibungen. Budget: 50 AI-Calls/Tick.
+            ai_result = None
+            if ai_confirm_used < AI_CONFIRM_BUDGET:
+                user_obj = user_cache.get(match.user_id)
+                cv_sum = cv_summary_cache.get(match.user_id, '')
+                if user_obj and cv_sum:
+                    ai_result = _ai_confirm_prefilter_dismiss(user_obj, raw, cv_sum)
+                    if ai_result is not None:
+                        ai_confirm_used += 1
+
+            if ai_result is None:
+                # Kein AI-Provider / Budget aufgebraucht / Parse-Error →
+                # altes Verhalten (sofort dismissen, ohne AI-Bestaetigung).
+                match.status = 'dismissed'
+                if not match.feedback_text:
+                    match.feedback_text = 'prefilter_low_score'
+                dismissed += 1
+            elif ai_result[0]:
+                # AI sagt "passt doch" → Item NICHT dismissen, durchlaeuft
+                # weiter den normalen Claude-Match-Pfad (Stage 3).
+                ai_confirm_overruled += 1
+                # Begründung im match_reasoning konservieren fuer Audit.
+                if ai_result[1]:
+                    match.match_reasoning = f"[AI-Overrule] {ai_result[1]}"
+            else:
+                # AI bestaetigt: passt wirklich nicht.
+                match.status = 'dismissed'
+                match.feedback_text = 'prefilter_low_score_ai_confirmed'
+                if ai_result[1]:
+                    match.match_reasoning = f"[AI-Confirm-Dismiss] {ai_result[1]}"
+                dismissed += 1
         scored += 1
 
     db.session.commit()
-    return jsonify({"scored": scored, "dismissed": dismissed,
-                    "duration_sec": round(time.time() - started, 2)}), 200
+    return jsonify({
+        "scored": scored, "dismissed": dismissed,
+        "ai_confirm_used": ai_confirm_used,
+        "ai_confirm_overruled": ai_confirm_overruled,
+        "duration_sec": round(time.time() - started, 2),
+    }), 200
 
 
 def _extract_first_json_object(text: str) -> dict | None:

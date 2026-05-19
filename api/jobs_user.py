@@ -256,6 +256,7 @@ AUTO_FEEDBACK_CODES = frozenset({
     'auto_blocked_by_rejection',
     'rejection_blocked_skip',
     'prefilter_low_score',
+    'prefilter_low_score_ai_confirmed',
     'claude_low_score',
     'learned',
     'duplicate_of_other',

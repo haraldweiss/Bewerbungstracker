@@ -4253,14 +4253,15 @@ const JobsView = (() => {
         const txt = (m.feedback_text || '').trim();
         const reasons = Array.isArray(m.feedback_reasons) ? m.feedback_reasons : [];
         const knownCodes = {
-            'prefilter_low_score':        '🔻 Vor-Filter-Score zu niedrig (Keyword-Match)',
-            'claude_low_score':           '🤖 KI-Bewertung zu niedrig (Skill-Mismatch)',
-            'learned':                    '🧠 Adaptiv gelernt: passt nicht zu deinem Profil',
-            'duplicate_of_other':         '♻️ Duplikat: gleicher Job wurde bereits gesehen',
-            'auto_blocked_by_rejection':  '🚫 Auto: Firma hatte Absage im aktiven Fenster',
-            'rejection_blocked_skip':     '🚫 Manuell uebersprungen: Firma hatte Absage',
-            'title_blacklisted':          '🛡️ Marketing-Header (LinkedIn-Section-Title)',
-            'url_pattern_mismatch':       '🔗 URL passt nicht zum Plattform-Pattern',
+            'prefilter_low_score':              '🔻 Vor-Filter: Score zu niedrig (keine KI-Bestaetigung, z.B. Tunnel offline)',
+            'prefilter_low_score_ai_confirmed': '🤖 Vor-Filter + KI bestaetigen: passt nicht zum Profil',
+            'claude_low_score':                 '🤖 KI-Bewertung zu niedrig (Skill-Mismatch)',
+            'learned':                          '🧠 Adaptiv gelernt: passt nicht zu deinem Profil',
+            'duplicate_of_other':               '♻️ Duplikat: gleicher Job wurde bereits gesehen',
+            'auto_blocked_by_rejection':        '🚫 Auto: Firma hatte Absage im aktiven Fenster',
+            'rejection_blocked_skip':           '🚫 Manuell uebersprungen: Firma hatte Absage',
+            'title_blacklisted':                '🛡️ Marketing-Header (LinkedIn-Section-Title)',
+            'url_pattern_mismatch':             '🔗 URL passt nicht zum Plattform-Pattern',
         };
         const parts = [];
         if (txt) {
