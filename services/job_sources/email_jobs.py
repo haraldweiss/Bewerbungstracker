@@ -431,8 +431,19 @@ class EmailJobsAdapter(JobSourceAdapter):
                     if not t or not u:
                         continue
                     # Trenner-Linien (z.B. "---") schlüpfen sonst als Title
-                    # durch und schieben echte Title in den Company-Slot.
+                    # oder Company durch und schieben echte Werte raus.
                     if re.fullmatch(r"[\-=_~\*\.\s]{3,}", t):
+                        continue
+                    if c and re.fullmatch(r"[\-=_~\*\.\s]{3,}", c):
+                        continue
+                    # LinkedIn-Marketing-Header-Zeilen ausfiltern — die rutschen
+                    # sonst als Title rein wenn der Card-Header direkt vor
+                    # "Jobangebot ansehen" steht (statt einer echten Job-Card).
+                    if re.search(
+                        r"(?i)^(?:Ihre Jobbenachrichtigung|\d+\s*neue?r?\s*Jobs?|"
+                        r"Ergebnisse|Top-Jobs|Lust auf)",
+                        t,
+                    ):
                         continue
                     jobs_from_cards.append(FetchedJob(
                         external_id=u[:512],
