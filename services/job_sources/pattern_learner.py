@@ -166,6 +166,33 @@ def validate_pattern_schema(pattern: dict) -> list[str]:
     ]
 
 
+def fetch_sample_mails(
+    user, platform: str, folder: str, lookback_days: int, n: int = 30,
+) -> list[dict]:
+    """Holt N Email-Samples via IMAP (delegiert an EmailJobsAdapter).
+
+    Raises:
+        ValueError wenn platform nicht in PROFILES.
+        RuntimeError wenn User keine IMAP-Credentials hat.
+    """
+    from services.job_sources.email_jobs import EmailJobsAdapter, PROFILES
+    if platform not in PROFILES:
+        raise ValueError(f"Unknown platform: {platform}")
+
+    host = user.imap_host
+    imap_user = user.imap_user
+    pw = user.decrypted_imap_password
+    if not host or not imap_user or not pw:
+        raise RuntimeError("User hat keine IMAP-Credentials")
+
+    adapter = EmailJobsAdapter(
+        config={"folder": folder, "lookback_days": lookback_days, "limit": n},
+        user=user,
+        platform_profile=PROFILES[platform],
+    )
+    return adapter._fetch_emails(host, imap_user, pw, folder, lookback_days, n)
+
+
 def validate_pattern(
     compiled: CompiledPattern, samples: list[dict]
 ) -> tuple[float, list[dict]]:

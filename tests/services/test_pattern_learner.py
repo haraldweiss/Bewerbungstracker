@@ -177,3 +177,42 @@ def test_validate_respects_title_blacklist():
     hit_rate, diags = validate_pattern(cp, [{"subject": "Test", "body": bad_body}])
     assert hit_rate == 0.0
     assert diags[0]["matched"] is False
+
+
+from unittest.mock import MagicMock, patch
+from services.job_sources.pattern_learner import fetch_sample_mails
+
+
+def test_fetch_delegates_to_adapter():
+    user = MagicMock()
+    user.imap_host = "imap.gmail.com"
+    user.imap_user = "u@x.de"
+    user.decrypted_imap_password = "pw"
+    fake_mails = [{"subject": "X", "body": "Y"}] * 10
+    with patch(
+        "services.job_sources.email_jobs.EmailJobsAdapter._fetch_emails",
+        return_value=fake_mails,
+    ) as m:
+        result = fetch_sample_mails(
+            user, platform="linkedin",
+            folder="INBOX", lookback_days=30, n=10,
+        )
+    assert result == fake_mails
+    assert m.called
+
+
+def test_fetch_unknown_platform_raises():
+    user = MagicMock()
+    with pytest.raises(ValueError, match="Unknown platform"):
+        fetch_sample_mails(user, platform="myspace",
+                           folder="INBOX", lookback_days=30, n=10)
+
+
+def test_fetch_missing_credentials_raises():
+    user = MagicMock()
+    user.imap_host = None  # missing!
+    user.imap_user = "u@x.de"
+    user.decrypted_imap_password = "pw"
+    with pytest.raises(RuntimeError, match="IMAP-Credentials"):
+        fetch_sample_mails(user, platform="linkedin",
+                           folder="INBOX", lookback_days=30, n=10)
