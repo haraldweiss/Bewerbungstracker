@@ -213,6 +213,41 @@ def _ai_confirm_prefilter_dismiss(user, raw, cv_summary: str):
         return None
 
 
+def _has_user_judgment(match) -> bool:
+    """True wenn der User bereits eine eigene Bewertung hinterlegt hat.
+
+    Schuetzt vor Auto-Updates die User-Reasons ueberschreiben — Backfills
+    und Pre-Filter-Cron muessen das vor jedem feedback_text-Write pruefen.
+
+    User-Bewertung erkennen wir an:
+      - feedback_reasons (JSON-Array mit Tags wie 'wrong_location') oder
+      - feedback_text das KEIN Auto-Code ist (also User-Freitext)
+    """
+    reasons = (match.feedback_reasons or '').strip()
+    if reasons and reasons not in ('[]', ''):
+        return True
+    txt = (match.feedback_text or '').strip()
+    if txt and txt not in _AUTO_FEEDBACK_CODES_CRON:
+        return True
+    return False
+
+
+# Lokales Set fuer _has_user_judgment (gespiegelt von api.jobs_user.AUTO_FEEDBACK_CODES).
+# Wenn neue Auto-Codes hinzukommen → an BEIDEN Stellen ergaenzen.
+_AUTO_FEEDBACK_CODES_CRON = frozenset({
+    'auto_blocked_by_rejection',
+    'rejection_blocked_skip',
+    'company_already_rejected',
+    'prefilter_low_score',
+    'prefilter_low_score_ai_confirmed',
+    'claude_low_score',
+    'learned',
+    'duplicate_of_other',
+    'title_blacklisted',
+    'url_pattern_mismatch',
+})
+
+
 def _select_due_source() -> JobSource | None:
     # Email-basierte Sources (indeed_email, linkedin_email, xing_email)
     # werden NUR vom dedizierten /indeed-email-import-all-Cron verarbeitet,
@@ -427,9 +462,13 @@ def prefilter():
                 if raw.company.lower().strip() in rejected_set:
                     is_rejected_company = True
 
+        # User-Judgment NIE ueberschreiben — wenn User schon eigene Reasons
+        # (feedback_reasons-Tags ODER Freitext) hinterlegt hat, bleibt das.
+        user_has_judgment = _has_user_judgment(match)
+
         if is_rejected_company:
             match.status = 'dismissed'
-            if not match.feedback_text:
+            if not user_has_judgment:
                 match.feedback_text = 'company_already_rejected'
             dismissed += 1
             rejected_company_dismissed += 1
@@ -438,7 +477,7 @@ def prefilter():
             # das Item dismissed wurde, auch wenn Score eigentlich OK gewesen
             # waere.
             match.status = 'dismissed'
-            if not match.feedback_text:
+            if not user_has_judgment:
                 match.feedback_text = 'duplicate_of_other'
             dismissed += 1
         elif score < PREFILTER_DISMISS_THRESHOLD:
@@ -458,7 +497,7 @@ def prefilter():
                 # Kein AI-Provider / Budget aufgebraucht / Parse-Error →
                 # altes Verhalten (sofort dismissen, ohne AI-Bestaetigung).
                 match.status = 'dismissed'
-                if not match.feedback_text:
+                if not user_has_judgment:
                     match.feedback_text = 'prefilter_low_score'
                 dismissed += 1
             elif ai_result[0]:
@@ -471,7 +510,8 @@ def prefilter():
             else:
                 # AI bestaetigt: passt wirklich nicht.
                 match.status = 'dismissed'
-                match.feedback_text = 'prefilter_low_score_ai_confirmed'
+                if not user_has_judgment:
+                    match.feedback_text = 'prefilter_low_score_ai_confirmed'
                 if ai_result[1]:
                     match.match_reasoning = f"[AI-Confirm-Dismiss] {ai_result[1]}"
                 dismissed += 1
