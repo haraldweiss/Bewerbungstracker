@@ -18,3 +18,4 @@ requests==2.31.0
 python-docx>=1.0
 reportlab>=4.0
 numpy>=1.24
+jsonschema>=4.0
