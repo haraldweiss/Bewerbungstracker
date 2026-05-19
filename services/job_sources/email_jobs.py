@@ -102,6 +102,44 @@ PROFILES: dict[str, PlatformProfile] = {
             "bleiben als external_id (kein Auto-Follow)."
         ),
     ),
+    "linkedin": PlatformProfile(
+        name="linkedin",
+        source_label="LinkedIn",
+        from_filter="from:linkedin.com",
+        from_whitelist=(
+            r"@(?:[a-z0-9.-]+\.)?linkedin\.com$",
+        ),
+        url_pattern=re.compile(
+            r"https?://(?:www\.)?linkedin\.com/(?:jobs/view|comm/jobs/view)/\d+[^\s)<>\"'\\]*",
+            re.IGNORECASE,
+        ),
+        subject_patterns=(
+            re.compile(
+                r"(?:New job|Neue Stelle|Job alert)\s*:?\s*"
+                r"(?P<title>.+?)\s+(?:at|bei|@)\s+(?P<company>.+?)"
+                r"(?:\s*[-–|]\s*LinkedIn.*)?$",
+                re.IGNORECASE,
+            ),
+        ),
+        body_title_re=re.compile(
+            r"(?:Position|Job\s*Title|Jobtitel|Stelle)\s*[:\-]\s*([^\n\r]+)",
+            re.IGNORECASE,
+        ),
+        body_company_re=re.compile(
+            r"(?:Company|Firma|Unternehmen|Employer)\s*[:\-]\s*([^\n\r]+)",
+            re.IGNORECASE,
+        ),
+        body_location_re=re.compile(
+            r"(?:Location|Standort|Ort|Place)\s*[:\-]\s*([^\n\r]+)",
+            re.IGNORECASE,
+        ),
+        digest_threshold=3,
+        ai_hint=(
+            "LinkedIn-Jobempfehlungs-Digest. Jede Job-Card hat einen "
+            "linkedin.com/jobs/view/<ID>-Link. "
+            "Extrahiere {title, company, location, url} pro Job als JSON-Array."
+        ),
+    ),
 }
 
 
