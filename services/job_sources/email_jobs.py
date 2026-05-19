@@ -406,7 +406,12 @@ class EmailJobsAdapter(JobSourceAdapter):
         # angewendet, wenn `from` überhaupt gesetzt ist — leeres From-Feld
         # darf nicht blockieren (Pre-Fetched Test-Inputs ohne Header sind
         # legitim und der IMAP-SEARCH FROM-Filter hat bereits gefiltert).
-        from_addr = (em.get('from') or '').lower()
+        # Email-Adresse aus "Display Name <user@host>"-Format extrahieren;
+        # ohne den Schritt würde der whitelist-Pattern mit "$"-Anker am
+        # ">" scheitern (häufiges Format bei Gmail-Headern).
+        raw_from = (em.get('from') or '').lower()
+        addr_match = re.search(r'<([^>]+)>', raw_from)
+        from_addr = addr_match.group(1) if addr_match else raw_from
         if from_addr and self.profile.from_whitelist:
             if not any(re.search(pat, from_addr) for pat in self.profile.from_whitelist):
                 return None
