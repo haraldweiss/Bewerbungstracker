@@ -3359,7 +3359,9 @@ const JdSourcesUI = (() => {
     const TYPE_LABELS = {
         rss: '📰 RSS', adzuna: '🔎 Adzuna',
         bundesagentur: '🇩🇪 Bundesagentur', arbeitnow: '🌍 Arbeitnow',
-        indeed_email: '📧 Indeed-Email',
+        indeed_email: '🔍 Indeed-Email',
+        linkedin_email: '💼 LinkedIn-Email',
+        xing_email: '📌 XING-Email',
     };
 
     // Per-Approval-Dialog-State: blocked Jobs aus dem letzten Import.
@@ -3395,7 +3397,7 @@ const JdSourcesUI = (() => {
                         <td style="padding:0.4rem">${TYPE_LABELS[s.type] || s.type}</td>
                         <td style="padding:0.4rem">${status}</td>
                         <td style="padding:0.4rem;white-space:nowrap">
-                            ${s.type === 'indeed_email'
+                            ${s.type && s.type.endsWith('_email')
                                 ? `<button class="btn btn-sm btn-primary" onclick="JdSourcesUI.importFromEmail(${s.id})" title="Import aus IMAP-Folder">📧 Import</button>`
                                 : `<button class="btn btn-sm" onclick="JdSourcesUI.testCrawl(${s.id})" title="Test-Crawl">🧪</button>`}
                             ${s.is_own ? `
@@ -3450,6 +3452,7 @@ const JdSourcesUI = (() => {
                         <option value="bundesagentur">🇩🇪 Bundesagentur Jobsuche</option>
                         <option value="adzuna">🔎 Adzuna</option>
                         <option value="arbeitnow">🌍 Arbeitnow (Remote)</option>
+                        <option value="bulk_email">📬 Job-Mails Setup (Indeed + LinkedIn + XING)</option>
                         <option value="indeed_email">📧 Indeed Email-Folder (manuell)</option>
                     </select>
                 </div>
@@ -3495,6 +3498,25 @@ const JdSourcesUI = (() => {
         } else if (t === 'arbeitnow') {
             c.innerHTML = `<div class="form-group"><label>Tags (kommagetrennt):</label>
                 <input type="text" id="jdCfgTags" placeholder="javascript, remote" style="width:100%"></div>`;
+        } else if (t === 'bulk_email') {
+            // Static template — no user input interpolated. Pattern matches the
+            // existing innerHTML usage in this function (see arbeitnow/indeed_email above).
+            c.innerHTML = `
+                <div style="background:var(--bg-secondary,#f7f8fc);padding:0.75rem;border-radius:6px;margin-bottom:0.75rem">
+                    <div style="font-weight:600;margin-bottom:0.5rem">📬 Plattformen wählen:</div>
+                    <label style="display:block;margin:0.25rem 0"><input type="checkbox" id="jdBulkIndeed" checked> 🔍 Indeed</label>
+                    <label style="display:block;margin:0.25rem 0"><input type="checkbox" id="jdBulkLinkedIn" checked> 💼 LinkedIn</label>
+                    <label style="display:block;margin:0.25rem 0"><input type="checkbox" id="jdBulkXing" checked> 📌 XING</label>
+                </div>
+                <div class="form-group"><label>IMAP-Folder (für alle):</label>
+                    <input type="text" id="jdBulkFolder" value="[Google Mail]/Alle Nachrichten" style="width:100%"></div>
+                <div class="form-group"><label>Lookback (Tage):</label>
+                    <input type="number" id="jdBulkLookback" value="30" min="1" max="365" style="width:120px"></div>
+                <div class="form-group"><label>Limit pro Plattform:</label>
+                    <input type="number" id="jdBulkLimit" value="100" min="10" max="500" style="width:120px"></div>
+                <div class="form-group" style="font-size:0.8rem;color:var(--text-muted)">
+                    Legt eine Source pro angehakter Plattform an (idempotent). Import dann per 📧-Button.
+                </div>`;
         } else if (t === 'indeed_email') {
             c.innerHTML = `
                 <div class="form-group"><label>IMAP-Folder:</label>
@@ -3530,6 +3552,38 @@ const JdSourcesUI = (() => {
 
     async function create() {
         try {
+            // Special-case: bulk_email uses dedicated endpoint
+            if ($('jdNewType').value === 'bulk_email') {
+                const platforms = [];
+                if ($('jdBulkIndeed').checked) platforms.push('indeed');
+                if ($('jdBulkLinkedIn').checked) platforms.push('linkedin');
+                if ($('jdBulkXing').checked) platforms.push('xing');
+                if (platforms.length === 0) {
+                    alert('Bitte mindestens eine Plattform auswählen.');
+                    return;
+                }
+                const r = await Auth.fetch('/jobs/sources/bulk-email', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        platforms,
+                        folder: $('jdBulkFolder').value || '[Google Mail]/Alle Nachrichten',
+                        lookback_days: parseInt($('jdBulkLookback').value, 10) || 30,
+                        limit: parseInt($('jdBulkLimit').value, 10) || 100,
+                    }),
+                });
+                if (r && Array.isArray(r.sources)) {
+                    const n = r.sources.length;
+                    closeCreate();
+                    refresh();
+                    if (typeof showToast === 'function') {
+                        if (n > 0) showToast(`✅ ${n} Quelle(n) angelegt`, 'success');
+                        else showToast('Alle drei Quellen existieren bereits.', 'info');
+                    } else {
+                        alert(n > 0 ? `✅ ${n} Quelle(n) angelegt` : 'Alle drei Quellen existieren bereits.');
+                    }
+                }
+                return;
+            }
             const body = {
                 name: $('jdNewName').value,
                 config: buildConfig(),
