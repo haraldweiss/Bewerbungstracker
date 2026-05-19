@@ -250,7 +250,13 @@ class EmailJobsAdapter(JobSourceAdapter):
             ).first()
             if row is None:
                 return None
-            self._learned_compiled = compile_pattern(_json.loads(row.pattern_json))
+            # Plattform-URL-Pattern (hardcoded in PROFILES) als Constraint
+            # an compile_pattern uebergeben — verhindert dass AI-gelernte
+            # url_labels Marketing-Links matchen (LinkedIn /games/...).
+            self._learned_compiled = compile_pattern(
+                _json.loads(row.pattern_json),
+                url_pattern_str=self.profile.url_pattern.pattern,
+            )
         except Exception as exc:
             logger.warning(
                 "Learned-pattern-lookup fehlgeschlagen für %s: %s",

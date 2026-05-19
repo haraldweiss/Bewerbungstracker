@@ -1177,11 +1177,17 @@ def train_pattern(user, source_id):
         return jsonify({"error": f"AI-Train fehlgeschlagen: {exc}"}), 502
 
     try:
-        compiled = pl.compile_pattern(pattern)
+        # Plattform-URL-Pattern (hardcoded) als Constraint einflechten —
+        # verhindert dass AI-gelernte url_labels Marketing-Links matchen.
+        from services.job_sources.email_jobs import PROFILES
+        url_pattern_str = PROFILES[platform].url_pattern.pattern
+        compiled = pl.compile_pattern(pattern, url_pattern_str=url_pattern_str)
     except (ValueError, _re.error) as exc:
         return jsonify({"error": f"Pattern-Compile fehlgeschlagen: {exc}"}), 502
 
-    hit_rate, diagnostics = pl.validate_pattern(compiled, test)
+    hit_rate, diagnostics = pl.validate_pattern(
+        compiled, test, url_check_re=PROFILES[platform].url_pattern,
+    )
     if hit_rate < min_hit_rate:
         return jsonify({
             "error": "Hit-Rate unter Schwelle - Pattern nicht aktiviert.",

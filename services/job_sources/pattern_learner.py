@@ -39,8 +39,16 @@ _FIELD_BUILDERS = {
 }
 
 
-def compile_pattern(pattern: dict) -> CompiledPattern:
+def compile_pattern(pattern: dict, url_pattern_str: str | None = None) -> CompiledPattern:
     """Baut Regex-Objekte aus dem JSON-Pattern.
+
+    Args:
+        pattern: das normalisierte AI-Pattern.
+        url_pattern_str: optionaler Plattform-URL-Regex-String aus
+            PROFILES[name].url_pattern. Wenn gesetzt, wird er ANSTELLE des
+            generischen `https?://...` im body_card_re-URL-Capture genutzt.
+            So koennen LinkedIn-Marketing-Links (z.B. /games/...) nicht
+            als Job-URL gematched werden — nur /jobs/view/<id>.
 
     Raises:
         ValueError wenn fields_before_url unbekannte Werte enthält.
@@ -56,7 +64,15 @@ def compile_pattern(pattern: dict) -> CompiledPattern:
     parts.append(rf"(?:[^\r\n]*\r?\n){{0,{n_sep}}}?")
     labels_alt = "|".join(re.escape(lbl) for lbl in body_card["url_labels"])
     parts.append(rf"\s*(?:{labels_alt})\s*:?\s*")
-    parts.append(r"(?P<url>https?://[^\s\r\n)<>\"']+)")
+    # Plattform-spezifisches URL-Pattern (hardcoded, Security-Grenze) ODER
+    # generic Fallback fuer Tests/Old-Callers.
+    if url_pattern_str:
+        # url_pattern_str ist bereits ein vollstaendiger Regex (z.B.
+        # 'https?://(?:www\\.)?linkedin\\.com/(?:jobs/view|...)/\\d+[^\\s)<>"\\\']*').
+        # Wrap in named group.
+        parts.append(rf"(?P<url>{url_pattern_str})")
+    else:
+        parts.append(r"(?P<url>https?://[^\s\r\n)<>\"']+)")
     body_card_re = re.compile(
         "^" + "".join(parts),
         re.IGNORECASE | re.MULTILINE,
@@ -296,22 +312,30 @@ _ANY_URL_RE = re.compile(r"https?://[^\s\r\n)<>\"']+")
 
 
 def validate_pattern(
-    compiled: CompiledPattern, samples: list[dict]
+    compiled: CompiledPattern, samples: list[dict],
+    url_check_re: "re.Pattern | None" = None,
 ) -> tuple[float, list[dict]]:
     """Misst Hit-Rate auf Sample-Mails — Hit wenn body_card ODER subject greift.
 
     Zwei akzeptierte Parsing-Pfade (spiegelt den echten Adapter):
       1. body_card_re findet ≥1 valide Card (LinkedIn/XING-Digest-Stil)
-      2. subject_re matched + Body enthaelt ≥1 URL (Indeed-Single-Job-Stil)
+      2. subject_re matched + Body enthaelt ≥1 Plattform-Job-URL
+         (Indeed-Single-Job-Stil)
+
+    Args:
+        url_check_re: optionales Plattform-URL-Pattern (z.B. profile.url_pattern).
+            Wenn gesetzt: Pfad-2-Hit verlangt eine ECHTE Plattform-Job-URL im
+            Body, nicht nur irgendeine HTTPS-URL. Verhindert dass Marketing-
+            Mails mit generischen Links als Hit zaehlen. Default: generic
+            `_ANY_URL_RE` (backward-compat fuer alte Tests).
 
     Returns:
-        (hit_rate, diagnostics)
-        - hit_rate ∈ [0.0, 1.0]
-        - diagnostics: liste mit {subject, matched: bool, card_count: int,
-          via: str} pro Sample-Mail (via: 'body_card', 'subject', 'none')
+        (hit_rate, diagnostics) — diagnostics enthaelt 'via' (body_card|subject|none).
     """
     if not samples:
         return 0.0, []
+
+    url_re = url_check_re or _ANY_URL_RE
 
     diagnostics: list[dict] = []
     matched_count = 0
@@ -344,7 +368,7 @@ def validate_pattern(
             via = "body_card"
             is_match = True
         else:
-            # ── Pfad 2: Subject + URL im Body (Single-Job-Mails) ────────
+            # ── Pfad 2: Subject + Plattform-URL im Body ─────────────────
             subj_m = compiled.subject_re.match(subject.strip())
             if subj_m:
                 t = (subj_m.group("title") or "").strip()
@@ -352,7 +376,7 @@ def validate_pattern(
                     compiled.title_blacklist_re
                     and compiled.title_blacklist_re.search(t)
                 )
-                has_url = bool(_ANY_URL_RE.search(body))
+                has_url = bool(url_re.search(body))
                 if not blacklisted and has_url:
                     via = "subject"
                     is_match = True
