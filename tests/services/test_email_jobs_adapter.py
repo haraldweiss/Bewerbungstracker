@@ -88,3 +88,51 @@ def test_adapter_from_whitelist_blocks_wrong_domain():
     jobs = adapter.parse_emails([email_dict])
     # Erwartung: From-Whitelist-Mismatch → Mail wird skipped
     assert jobs == []
+
+
+import json as _json
+from datetime import datetime as _dt
+
+
+def test_adapter_uses_learned_when_active(app, db_session):
+    """Aktives LearnedEmailPattern ueberstimmt das hardcoded body_card_re."""
+    from models import LearnedEmailPattern, User
+    # Need a real user_id for FK constraint
+    u = User.query.first()
+    if u is None:
+        u = User(id="adapter-test-uid", email="x@y.de", password_hash="x")
+        db_session.add(u); db_session.commit()
+    learned = LearnedEmailPattern(
+        platform="linkedin",
+        pattern_json=_json.dumps({
+            "subject_pattern": {"prefix_optional": True, "prefix_keywords": [], "separator": "bei"},
+            "body_card": {
+                "url_labels": ["MAGIC_LABEL"],
+                "fields_before_url": ["title", "company", "location"],
+                "separator_lines_allowed": 5,
+            },
+            "filters": {"title_blacklist": [], "company_blacklist_separators": []},
+        }),
+        sample_count=10, hit_rate=0.8,
+        trained_at=_dt.utcnow(),
+        trained_by_user_id=u.id, is_active=True,
+    )
+    db_session.add(learned); db_session.commit()
+
+    from services.job_sources.email_jobs import EmailJobsAdapter, PROFILES
+    from unittest.mock import MagicMock
+    adapter = EmailJobsAdapter(
+        config={}, user=MagicMock(), platform_profile=PROFILES["linkedin"],
+    )
+    em = {
+        "subject": "Senior Dev bei Acme",
+        "from": "jobs@linkedin.com",
+        "body": (
+            "Senior Dev\r\nAcme GmbH\r\nDE\r\n"
+            "MAGIC_LABEL: https://linkedin.com/comm/jobs/view/999"
+        ),
+        "date": "2026-05-19T10:00:00",
+    }
+    jobs = adapter.parse_emails([em])
+    assert len(jobs) == 1
+    assert "999" in jobs[0].url

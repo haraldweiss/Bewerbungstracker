@@ -233,6 +233,31 @@ class EmailJobsAdapter(JobSourceAdapter):
         self.user = user
         self.profile = platform_profile if platform_profile is not None else PROFILES["indeed"]
         self._ai_calls_used = 0
+        self._learned_compiled = None
+        self._learned_lookup_done = False
+
+    def _get_learned_pattern(self):
+        """Lazy-load learned pattern from DB. Cached for adapter lifetime."""
+        if self._learned_lookup_done:
+            return self._learned_compiled
+        self._learned_lookup_done = True
+        try:
+            from models import LearnedEmailPattern
+            from services.job_sources.pattern_learner import compile_pattern
+            import json as _json
+            row = LearnedEmailPattern.query.filter_by(
+                platform=self.profile.name, is_active=True,
+            ).first()
+            if row is None:
+                return None
+            self._learned_compiled = compile_pattern(_json.loads(row.pattern_json))
+        except Exception as exc:
+            logger.warning(
+                "Learned-pattern-lookup fehlgeschlagen für %s: %s",
+                self.profile.name, exc,
+            )
+            self._learned_compiled = None
+        return self._learned_compiled
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -419,8 +444,13 @@ class EmailJobsAdapter(JobSourceAdapter):
         # Body-Card-Pattern: wenn die Plattform ein structured-card-Pattern
         # liefert (z.B. LinkedIn/XING: Title/Company/Location/URL-Block),
         # parse direkt aus dem Body — multiple Cards pro Mail.
-        if self.profile.body_card_re is not None:
-            cards = list(self.profile.body_card_re.finditer(body))
+        # Learned pattern overrides hardcoded body_card_re if active for this platform.
+        learned = self._get_learned_pattern()
+        active_card_re = learned.body_card_re if learned else self.profile.body_card_re
+        active_title_blacklist = learned.title_blacklist_re if learned else None
+        active_company_sep = learned.company_blacklist_separator_re if learned else None
+        if active_card_re is not None:
+            cards = list(active_card_re.finditer(body))
             if cards:
                 jobs_from_cards = []
                 for m in cards:
@@ -444,6 +474,11 @@ class EmailJobsAdapter(JobSourceAdapter):
                         r"Ergebnisse|Top-Jobs|Lust auf)",
                         t,
                     ):
+                        continue
+                    # Learned-pattern title-blacklist + company-separator (if any)
+                    if active_title_blacklist and active_title_blacklist.search(t):
+                        continue
+                    if active_company_sep and c and active_company_sep.match(c):
                         continue
                     jobs_from_cards.append(FetchedJob(
                         external_id=u[:512],
