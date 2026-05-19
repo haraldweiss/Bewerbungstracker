@@ -155,6 +155,98 @@ PATTERN_JSON_SCHEMA: dict[str, Any] = {
 }
 
 
+def normalize_pattern(raw: dict) -> dict:
+    """Best-effort-Normalisierung des AI-Outputs vor Schema-Validation.
+
+    Schwache lokale LLMs (Ollama/qwen3-coder/etc.) halluzinieren oft
+    zusaetzliche Top-Level-Keys (z.B. 'footer') oder benennen Felder um
+    (z.B. body_card.fields statt body_card.fields_before_url). Statt
+    direkt zu rejecten:
+      1. Unbekannte Top-Level- und Sub-Level-Felder stillschweigend droppen
+      2. Synonyme remappen (fields → fields_before_url)
+      3. Fehlende required-Felder mit safe Defaults fuellen
+
+    Schema-Validation laeuft danach gegen das normalisierte Dict — falls
+    es immer noch nicht passt, ist's wirklich kaputt.
+    """
+    if not isinstance(raw, dict):
+        raise ValueError("Pattern muss ein Dict sein")
+
+    allowed_top = {"subject_pattern", "body_card", "filters"}
+    out: dict = {k: raw[k] for k in raw if k in allowed_top}
+
+    # ── subject_pattern ──────────────────────────────────────────────
+    sp_raw = raw.get("subject_pattern") or {}
+    if not isinstance(sp_raw, dict):
+        sp_raw = {}
+    out["subject_pattern"] = {
+        "prefix_optional": bool(sp_raw.get("prefix_optional", True)),
+        "prefix_keywords": [
+            str(k)[:80]
+            for k in (sp_raw.get("prefix_keywords") or [])
+            if isinstance(k, str)
+        ][:20],
+        "separator": str(sp_raw.get("separator") or "bei|at|@")[:50],
+    }
+
+    # ── body_card ────────────────────────────────────────────────────
+    bc_raw = raw.get("body_card") or {}
+    if not isinstance(bc_raw, dict):
+        bc_raw = {}
+    # Synonym-Mapping: 'fields' → 'fields_before_url'
+    fields_raw = bc_raw.get("fields_before_url")
+    if fields_raw is None:
+        fields_raw = bc_raw.get("fields")
+    if not isinstance(fields_raw, list):
+        fields_raw = ["title", "company", "location"]
+    allowed_field_values = {"title", "company", "location", "extra"}
+    fields_clean = [
+        f for f in fields_raw
+        if isinstance(f, str) and f in allowed_field_values
+    ][:5]
+    if not fields_clean:
+        fields_clean = ["title", "company", "location"]
+
+    url_labels = bc_raw.get("url_labels")
+    if not isinstance(url_labels, list):
+        url_labels = []
+    url_labels_clean = [
+        str(lbl)[:80] for lbl in url_labels if isinstance(lbl, str)
+    ][:10]
+    if not url_labels_clean:
+        url_labels_clean = ["Jobangebot ansehen", "View job"]
+
+    sep_lines_raw = bc_raw.get("separator_lines_allowed", 5)
+    try:
+        sep_lines = int(sep_lines_raw)
+        sep_lines = max(0, min(20, sep_lines))
+    except (TypeError, ValueError):
+        sep_lines = 5
+
+    out["body_card"] = {
+        "url_labels": url_labels_clean,
+        "fields_before_url": fields_clean,
+        "separator_lines_allowed": sep_lines,
+    }
+
+    # ── filters ──────────────────────────────────────────────────────
+    f_raw = raw.get("filters") or {}
+    if not isinstance(f_raw, dict):
+        f_raw = {}
+    out["filters"] = {
+        "title_blacklist": [
+            str(s)[:200] for s in (f_raw.get("title_blacklist") or [])
+            if isinstance(s, str)
+        ][:50],
+        "company_blacklist_separators": [
+            str(s)[:50] for s in (f_raw.get("company_blacklist_separators") or [])
+            if isinstance(s, str)
+        ][:10],
+    }
+
+    return out
+
+
 def validate_pattern_schema(pattern: dict) -> list[str]:
     """Returns list of validation error messages (empty list if valid).
 
@@ -251,27 +343,68 @@ _SYSTEM_PROMPT = (
 )
 
 
+_EXAMPLE_OUTPUT = {
+    "subject_pattern": {
+        "prefix_optional": True,
+        "prefix_keywords": ["Neue Stelle", "Job alert"],
+        "separator": "bei|at|@",
+    },
+    "body_card": {
+        "url_labels": ["Jobangebot ansehen", "View job"],
+        "fields_before_url": ["title", "company", "location"],
+        "separator_lines_allowed": 5,
+    },
+    "filters": {
+        "title_blacklist": ["Ihre Jobbenachrichtigung", "Top-Jobs"],
+        "company_blacklist_separators": ["----"],
+    },
+}
+
+
 def _build_user_prompt(
     train_samples: list[dict], platform: str, strict: bool = False,
 ) -> str:
     lines = [
         f"Platform: {platform}",
         "",
-        "Schema (must match exactly, no extra fields):",
-        json.dumps(PATTERN_JSON_SCHEMA, indent=2),
+        "Gib EXAKT dieses JSON-Format zurueck — gleiche Top-Level-Keys",
+        "(subject_pattern, body_card, filters), gleiche Sub-Felder.",
+        "KEINE zusaetzlichen Keys wie 'footer', 'header' etc. — werden ignoriert.",
         "",
-        "Sample mails (parse layout from these):",
+        "Beispiel-Output (Struktur exakt einhalten, Werte an deine Mails anpassen):",
+        json.dumps(_EXAMPLE_OUTPUT, indent=2, ensure_ascii=False),
+        "",
+        "Feld-Erklaerung:",
+        "- subject_pattern.prefix_keywords: Wuerter wie 'Neue Stelle', die vor",
+        "  dem Job-Titel im Subject stehen koennen (optional).",
+        "- subject_pattern.separator: Regex-Alternation zwischen Title und Company",
+        "  im Subject (typisch: 'bei|at|@').",
+        "- body_card.url_labels: Label-Strings direkt vor der Job-URL im Body",
+        "  (z.B. 'Jobangebot ansehen', 'View job', 'Show job').",
+        "- body_card.fields_before_url: Reihenfolge der Felder VOR der URL im",
+        "  Body. Erlaubte Werte: 'title', 'company', 'location', 'extra'.",
+        "- body_card.separator_lines_allowed: max. Anzahl Leerzeilen/Trenner",
+        "  zwischen den Feldern und der URL-Zeile.",
+        "- filters.title_blacklist: Phrasen die NIE ein Title sind (z.B.",
+        "  Mail-Header wie 'Ihre Jobbenachrichtigung').",
+        "- filters.company_blacklist_separators: Trenner-Muster die NIE Company",
+        "  sein duerfen (z.B. '----').",
+        "",
+        "Sample-Mails (Layout aus diesen ableiten):",
     ]
     for i, em in enumerate(train_samples):
         subj = (em.get("subject") or "")[:200]
         body = (em.get("body") or "")[:6000]
         lines.append(f"\n--- Mail {i+1} ---\nSubject: {subj}\nBody:\n{body}\n")
-    lines.append("\nReturn ONLY the JSON pattern. No prose, no markdown fences.")
+    lines.append(
+        "\nNur das JSON zurueckgeben, EXAKT mit den 3 Top-Level-Keys "
+        "subject_pattern/body_card/filters. Keine Prose, keine Markdown-Fences."
+    )
     if strict:
         lines.append(
-            "\nIMPORTANT: previous attempt failed schema validation. "
-            "Ensure EVERY required field is present, types correct, "
-            "no extra fields, no markdown."
+            "\nWICHTIG: vorheriger Versuch ist gescheitert. Beachte das "
+            "Beispiel-Output-Format EXAKT — KEINE zusaetzlichen Keys, ALLE "
+            "drei Top-Level-Felder muessen da sein."
         )
     return "\n".join(lines)
 
@@ -338,6 +471,18 @@ def ai_learn_pattern(user, train_samples: list[dict], platform: str) -> dict:
             parsed = json.loads(content)
         except json.JSONDecodeError as exc:
             last_error = f"AI-Output kein valides JSON: {exc}"
+            logger.warning(
+                "ai_learn_pattern attempt %d: %s", attempt, last_error,
+            )
+            continue
+        # Normalize: dropt unbekannte Felder, fuellt Defaults. Schwache LLMs
+        # (Ollama qwen3-coder etc.) halluzinieren oft 'footer' oder benennen
+        # body_card.fields_before_url um zu 'fields'. Statt zu rejecten,
+        # cleanen wir das auf.
+        try:
+            parsed = normalize_pattern(parsed)
+        except ValueError as exc:
+            last_error = f"Normalize-Fehler: {exc}"
             logger.warning(
                 "ai_learn_pattern attempt %d: %s", attempt, last_error,
             )

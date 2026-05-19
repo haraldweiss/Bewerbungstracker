@@ -255,21 +255,64 @@ def test_ai_learn_invalid_json_retries_then_raises(monkeypatch):
     assert fake_chat.call_count == 2  # initial + 1 retry
 
 
-def test_ai_learn_schema_fail_retries_then_raises(monkeypatch):
-    """AI returns valid JSON but wrong schema → 1 retry, then RuntimeError."""
-    invalid_schema = _json.dumps({"random": "structure"})
+def test_ai_learn_normalizes_garbage_to_valid_pattern(monkeypatch):
+    """AI returns wrong schema → Normalizer cleant + befuellt mit Defaults.
+
+    Schwache lokale LLMs liefern oft halluzinierte Keys ('footer') oder
+    fehlende ('filters'). Normalize-Layer macht daraus ein valides Pattern
+    mit safe-Defaults (statt zu rejecten und 2x AI zu verschwenden).
+    """
+    garbage = _json.dumps({"random": "structure"})
     fake_chat = MagicMock(return_value={
-        "content": invalid_schema, "provider": "ollama", "model": "q",
+        "content": garbage, "provider": "ollama", "model": "q",
     })
     monkeypatch.setattr(
         "services.ai_provider_client.AIProviderClient.chat", fake_chat,
     )
     user = MagicMock(id="t", ai_provider="ollama", ai_provider_model="q")
-    with pytest.raises(RuntimeError, match="Schema"):
-        ai_learn_pattern(
-            user, train_samples=[{"subject": "X", "body": "Y"}], platform="linkedin",
-        )
-    assert fake_chat.call_count == 2
+    result = ai_learn_pattern(
+        user, train_samples=[{"subject": "X", "body": "Y"}], platform="linkedin",
+    )
+    # Nur 1 AI-Call — Normalize fix das Problem ohne Retry.
+    assert fake_chat.call_count == 1
+    # Pattern hat alle 3 required keys mit safe defaults.
+    assert set(result.keys()) == {"subject_pattern", "body_card", "filters"}
+    assert result["subject_pattern"]["prefix_optional"] is True
+    assert result["body_card"]["fields_before_url"] == ["title", "company", "location"]
+    assert result["filters"]["title_blacklist"] == []
+
+
+def test_normalize_drops_unknown_top_level_keys():
+    """normalize_pattern dropt 'footer' und 'header' aus AI-Output."""
+    from services.job_sources.pattern_learner import normalize_pattern
+    raw = {
+        "subject_pattern": {"prefix_optional": True, "prefix_keywords": [], "separator": "bei"},
+        "body_card": {"url_labels": ["X"], "fields_before_url": ["title"], "separator_lines_allowed": 3},
+        "filters": {"title_blacklist": [], "company_blacklist_separators": []},
+        "footer": "evil",
+        "header": {"random": "stuff"},
+    }
+    out = normalize_pattern(raw)
+    assert "footer" not in out
+    assert "header" not in out
+    assert set(out.keys()) == {"subject_pattern", "body_card", "filters"}
+
+
+def test_normalize_remaps_fields_synonym():
+    """'fields' → 'fields_before_url' (LLM-Synonym)."""
+    from services.job_sources.pattern_learner import normalize_pattern
+    raw = {
+        "subject_pattern": {"prefix_optional": True, "prefix_keywords": [], "separator": "bei"},
+        "body_card": {
+            "url_labels": ["X"],
+            "fields": ["title", "company"],  # LLM hat den falschen Key benutzt
+            "separator_lines_allowed": 0,
+        },
+        "filters": {"title_blacklist": [], "company_blacklist_separators": []},
+    }
+    out = normalize_pattern(raw)
+    assert out["body_card"]["fields_before_url"] == ["title", "company"]
+    assert "fields" not in out["body_card"]
 
 
 def test_ai_learn_strips_markdown_fences(monkeypatch):
