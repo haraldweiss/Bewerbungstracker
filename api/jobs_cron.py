@@ -1180,8 +1180,16 @@ def url_health_check():
     ok = 0
     skipped_no_url = 0
     last_call_per_domain: dict[str, float] = {}
+    # Hard-Cap auf Total-Run-Time: gunicorn-Timeout ist 180s, wir cappen
+    # konservativ bei 150s. Wer noch nicht durch ist, kommt im naechsten
+    # Cron-Run dran (Sortierung: aelteste-zuletzt-gepruefte zuerst).
+    run_deadline = _time.time() + 150.0
 
     for raw in candidates:
+        if _time.time() > run_deadline:
+            logger.info("url-health-check: deadline reached at %d/%d, deferring rest",
+                        checked, len(candidates))
+            break
         url = (raw.url or '').strip()
         if not url:
             skipped_no_url += 1

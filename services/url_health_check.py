@@ -45,10 +45,12 @@ def check_url(url: str, timeout: int = HTTP_TIMEOUT_S) -> tuple[str, int | None]
         return "invalid_url", None
 
     try:
+        # Separate connect/read timeouts. 'timeout=5' alleine kann bei TLS-
+        # Handshake-Haengern nicht greifen — Tupel (connect, read) ist robust.
         resp = requests.head(
             url,
             allow_redirects=True,
-            timeout=timeout,
+            timeout=(min(timeout, 3), timeout),
             headers={"User-Agent": "BewerbungstrackerHealthCheck/1.0"},
         )
     except requests.Timeout:
