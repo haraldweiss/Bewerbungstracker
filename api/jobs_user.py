@@ -937,8 +937,8 @@ def import_from_email(user, source_id: int):
     src = JobSource.query.get_or_404(source_id)
     if src.user_id != user.id:
         return jsonify({"error": "Forbidden"}), 403
-    if src.type != 'indeed_email':
-        return jsonify({"error": "Source ist nicht vom Typ indeed_email"}), 400
+    if src.type not in _EMAIL_SOURCE_TYPES:
+        return jsonify({"error": f"Source ist kein Email-Typ (ist '{src.type}', erwartet einer von {sorted(_EMAIL_SOURCE_TYPES)})"}), 400
 
     # Modus-Wahl (3-fach):
     #   1) Body {emails:[...]}     → Apps-Script-Mode (Browser hat schon gefetcht)
@@ -1056,8 +1056,8 @@ def approve_email_import(user, source_id: int):
     src = JobSource.query.get_or_404(source_id)
     if src.user_id != user.id:
         return jsonify({"error": "Forbidden"}), 403
-    if src.type != 'indeed_email':
-        return jsonify({"error": "Source ist nicht vom Typ indeed_email"}), 400
+    if src.type not in _EMAIL_SOURCE_TYPES:
+        return jsonify({"error": f"Source ist kein Email-Typ (ist '{src.type}', erwartet einer von {sorted(_EMAIL_SOURCE_TYPES)})"}), 400
 
     data = request.get_json() or {}
     decisions = data.get('decisions') or []
