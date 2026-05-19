@@ -455,3 +455,169 @@ def get_latest_research(user):
             'error_message': log.error_message,
         }
     }), 200
+
+
+# ---------------------------------------------------------------------------
+# URL-Cleanup Admin-Endpoints (Task 5 vom URL-Health-Check-Feature)
+# ---------------------------------------------------------------------------
+# Workflow:
+#   1. /api/jobs/url-health-check (Cron) markiert RawJobs als
+#      crawl_status='marked_for_deletion' bei 404/410 oder 3-Strike-Failure.
+#   2. Admin reviewed die Kandidaten via list_url_cleanup_candidates und
+#      entscheidet pro Job: delete (hard-delete + cascade) oder keep
+#      (reset failures + zurueck zu 'active').
+#   3. bulk-delete fuer Mass-Cleanup. Filtert intern auf
+#      crawl_status='marked_for_deletion', sodass versehentlich
+#      uebergebene aktive IDs ignoriert werden.
+
+@admin_bp.get('/url-cleanup-candidates')
+@token_required
+@admin_required
+def list_url_cleanup_candidates(user):
+    """Listet alle RawJobs mit crawl_status='marked_for_deletion'.
+
+    Response: {candidates: [{id, url, title, company, location,
+                             url_check_status, url_check_failures,
+                             url_last_checked_at, source_id,
+                             source_name, source_type}, ...]}
+    """
+    from models import RawJob
+
+    rows = (
+        RawJob.query
+        .filter(RawJob.crawl_status == 'marked_for_deletion')
+        .order_by(RawJob.url_last_checked_at.desc().nullslast())
+        .all()
+    )
+    candidates = []
+    for rj in rows:
+        src = rj.source  # backref aus JobSource.raw_jobs
+        candidates.append({
+            'id': rj.id,
+            'url': rj.url,
+            'title': rj.title,
+            'company': rj.company,
+            'location': rj.location,
+            'url_check_status': rj.url_check_status,
+            'url_check_failures': rj.url_check_failures,
+            'url_last_checked_at': (
+                rj.url_last_checked_at.isoformat()
+                if rj.url_last_checked_at else None
+            ),
+            'source_id': rj.source_id,
+            'source_name': src.name if src else None,
+            'source_type': src.type if src else None,
+        })
+    return jsonify({'candidates': candidates}), 200
+
+
+def _cascade_delete_raw_jobs(raw_job_ids):
+    """Loescht JobEmbedding + JobMatch + RawJob fuer eine Liste von IDs.
+
+    SQLAlchemy-FKs auf raw_jobs.id haben kein ON DELETE CASCADE
+    (siehe models.py: JobMatch.raw_job_id, JobEmbedding.raw_job_id), darum
+    muessen wir explizit cascaden. Reihenfolge: erst Children, dann Parent.
+    """
+    from models import RawJob, JobMatch, JobEmbedding
+
+    if not raw_job_ids:
+        return 0
+
+    # JobEmbedding: ORM-Delete (Model existiert, sauberer als raw SQL)
+    JobEmbedding.query.filter(
+        JobEmbedding.raw_job_id.in_(raw_job_ids)
+    ).delete(synchronize_session=False)
+
+    # JobMatches
+    JobMatch.query.filter(
+        JobMatch.raw_job_id.in_(raw_job_ids)
+    ).delete(synchronize_session=False)
+
+    # RawJob selbst
+    deleted = RawJob.query.filter(
+        RawJob.id.in_(raw_job_ids)
+    ).delete(synchronize_session=False)
+    return deleted
+
+
+@admin_bp.post('/url-cleanup/<int:raw_job_id>/delete')
+@token_required
+@admin_required
+def delete_url_cleanup_candidate(user, raw_job_id):
+    """Hard-Delete RawJob + Cascade JobMatch + JobEmbedding.
+
+    Nur erlaubt fuer RawJobs mit crawl_status='marked_for_deletion'.
+    """
+    from models import RawJob
+
+    rj = RawJob.query.get(raw_job_id)
+    if not rj:
+        return jsonify({'error': 'RawJob nicht gefunden'}), 404
+    if rj.crawl_status != 'marked_for_deletion':
+        return jsonify({
+            'error': "RawJob nicht marked_for_deletion — bitte zuerst markieren"
+        }), 400
+
+    _cascade_delete_raw_jobs([raw_job_id])
+    db.session.commit()
+    return jsonify({'ok': True, 'deleted_raw_job_id': raw_job_id}), 200
+
+
+@admin_bp.post('/url-cleanup/<int:raw_job_id>/keep')
+@token_required
+@admin_required
+def keep_url_cleanup_candidate(user, raw_job_id):
+    """Un-mark + Reset failures.
+
+    Setzt crawl_status zurueck auf 'raw' (Default) und nullt die
+    Failure-Counter, sodass der Job beim naechsten Crawl-Lauf wieder
+    normal verarbeitet wird.
+    """
+    from models import RawJob
+
+    rj = RawJob.query.get(raw_job_id)
+    if not rj:
+        return jsonify({'error': 'RawJob nicht gefunden'}), 404
+
+    rj.crawl_status = 'raw'
+    rj.url_check_failures = 0
+    rj.url_check_status = None
+    db.session.commit()
+    return jsonify({'ok': True, 'raw_job_id': raw_job_id}), 200
+
+
+@admin_bp.post('/url-cleanup/bulk-delete')
+@token_required
+@admin_required
+def bulk_delete_url_cleanup(user):
+    """Mass-Delete fuer eine Liste von raw_job_ids.
+
+    Body: {ids: [int, ...]}
+
+    Es werden NUR Eintraege geloescht, deren crawl_status aktuell
+    'marked_for_deletion' ist — versehentlich uebergebene aktive IDs
+    werden stillschweigend gefiltert.
+    """
+    from models import RawJob
+
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids') or []
+    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        return jsonify({'error': 'ids muss eine Liste von ints sein'}), 400
+    if not ids:
+        return jsonify({'ok': True, 'deleted': 0}), 200
+
+    valid_ids = [
+        row.id for row in (
+            RawJob.query
+            .filter(RawJob.id.in_(ids))
+            .filter(RawJob.crawl_status == 'marked_for_deletion')
+            .all()
+        )
+    ]
+    if not valid_ids:
+        return jsonify({'ok': True, 'deleted': 0}), 200
+
+    _cascade_delete_raw_jobs(valid_ids)
+    db.session.commit()
+    return jsonify({'ok': True, 'deleted': len(valid_ids)}), 200
