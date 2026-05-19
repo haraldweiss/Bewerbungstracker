@@ -882,6 +882,108 @@ def cleanup():
 
 
 # ---------------------------------------------------------------------------
+# URL-Health-Check (Cron)
+# ---------------------------------------------------------------------------
+
+URL_HEALTH_BATCH_SIZE = 100
+URL_HEALTH_RECHECK_INTERVAL_HOURS = 24
+# Nur Jobs juenger als X Tage pruefen — alte werden bereits durch
+# cleanup() archiviert.
+URL_HEALTH_MAX_AGE_DAYS = 30
+# Per-Domain-Throttle: nach jedem HEAD-Request 2s warten BEVOR der
+# naechste fuer dieselbe Domain rausgeht. Vermeidet IP-Block durch
+# indeed/linkedin bei vielen Checks hintereinander.
+URL_HEALTH_PER_DOMAIN_DELAY_S = 2.0
+
+
+@jobs_cron_bp.post('/url-health-check')
+@require_cron_token
+def url_health_check():
+    """Batch-URL-Check fuer RawJobs. Markiert nicht-erreichbare als
+    'marked_for_deletion' (3-Strike-Logik oder 404/410 sofort).
+
+    Aelteste-zuletzt-gepruefte zuerst (NULL = nie geprueft kommt vor).
+    Max URL_HEALTH_BATCH_SIZE pro Run, nur RawJobs juenger als
+    URL_HEALTH_MAX_AGE_DAYS, nur Status != 'archived'/'marked_for_deletion'.
+
+    Returns: {checked: int, marked: int, ok: int, skipped_no_url: int}
+    """
+    from services import url_health_check as _url_health_check_mod
+    from urllib.parse import urlparse
+    import time as _time
+
+    now = datetime.utcnow()
+    age_cutoff = now - timedelta(days=URL_HEALTH_MAX_AGE_DAYS)
+    recheck_cutoff = now - timedelta(hours=URL_HEALTH_RECHECK_INTERVAL_HOURS)
+
+    # Aelteste-zuletzt-gepruefte zuerst (NULL = nie geprueft kommt vor).
+    candidates = (
+        RawJob.query
+        .filter(
+            RawJob.crawl_status.notin_(['archived', 'marked_for_deletion']),
+            RawJob.created_at >= age_cutoff,
+            db.or_(
+                RawJob.url_last_checked_at.is_(None),
+                RawJob.url_last_checked_at < recheck_cutoff,
+            ),
+        )
+        .order_by(
+            db.case(
+                (RawJob.url_last_checked_at.is_(None), 0),
+                else_=1,
+            ),
+            RawJob.url_last_checked_at.asc(),
+        )
+        .limit(URL_HEALTH_BATCH_SIZE)
+        .all()
+    )
+
+    checked = 0
+    marked = 0
+    ok = 0
+    skipped_no_url = 0
+    last_call_per_domain: dict[str, float] = {}
+
+    for raw in candidates:
+        url = (raw.url or '').strip()
+        if not url:
+            skipped_no_url += 1
+            continue
+
+        # Per-Domain-Throttle
+        try:
+            domain = urlparse(url).netloc.lower()
+        except Exception:
+            domain = ''
+        if domain:
+            last = last_call_per_domain.get(domain, 0.0)
+            wait = URL_HEALTH_PER_DOMAIN_DELAY_S - (_time.time() - last)
+            if wait > 0:
+                _time.sleep(wait)
+            last_call_per_domain[domain] = _time.time()
+
+        status_label, http_code = _url_health_check_mod.check_url(url)
+        was_marked = _url_health_check_mod.update_raw_job_health(
+            raw, status_label, http_code,
+        )
+        checked += 1
+        if was_marked:
+            marked += 1
+            logger.info(
+                'url-health-check: raw_id=%s marked_for_deletion (%s code=%s url=%s)',
+                raw.id, status_label, http_code, url[:80],
+            )
+        if status_label == 'ok':
+            ok += 1
+
+    db.session.commit()
+    return jsonify({
+        'checked': checked, 'marked': marked, 'ok': ok,
+        'skipped_no_url': skipped_no_url,
+    }), 200
+
+
+# ---------------------------------------------------------------------------
 # Indeed-Email Auto-Import (Cron)
 # ---------------------------------------------------------------------------
 
