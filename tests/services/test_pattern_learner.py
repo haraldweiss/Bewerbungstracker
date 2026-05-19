@@ -179,6 +179,31 @@ def test_validate_respects_title_blacklist():
     assert diags[0]["matched"] is False
 
 
+def test_validate_counts_single_job_via_subject_fallback():
+    """Indeed-Stil: kein body_card, aber Subject 'X bei Y' + URL im Body → Hit."""
+    cp = compile_pattern(_valid_pattern_dict())
+    indeed_style = [
+        {
+            "subject": "Senior Engineer bei Acme GmbH",
+            "body": "Schau dir https://de.indeed.com/viewjob?jk=abc123 an",
+        },
+        {
+            "subject": "DevOps Engineer bei Bcorp",
+            "body": "Bewirb dich: https://de.indeed.com/viewjob?jk=def456",
+        },
+        # Newsletter ohne Job-Format
+        {"subject": "Wochen-Newsletter", "body": "kein job"},
+    ]
+    hit_rate, diags = validate_pattern(cp, indeed_style)
+    # 2 von 3 sollten matchen
+    assert hit_rate == pytest.approx(2/3, abs=0.01)
+    # Erste 2 via subject-Pfad
+    assert diags[0]["via"] == "subject"
+    assert diags[1]["via"] == "subject"
+    assert diags[2]["matched"] is False
+    assert diags[2]["via"] == "none"
+
+
 from unittest.mock import MagicMock, patch
 from services.job_sources.pattern_learner import fetch_sample_mails
 

@@ -288,17 +288,27 @@ def fetch_sample_mails(
     return adapter._fetch_emails(host, imap_user, pw, folder, lookback_days, n)
 
 
+# Universelles URL-Fallback-Pattern für Single-Job-Mails (Indeed-Style):
+# subject_re matched → suche IRGENDEINE URL im Body, das reicht als
+# Hit-Indikator. Wird nicht im echten Adapter genutzt, nur in
+# validate_pattern für die Train-Bewertung.
+_ANY_URL_RE = re.compile(r"https?://[^\s\r\n)<>\"']+")
+
+
 def validate_pattern(
     compiled: CompiledPattern, samples: list[dict]
 ) -> tuple[float, list[dict]]:
-    """Wendet compiled.body_card_re auf jede Sample-Mail an, zählt Hits
-    nach Anwendung der Title-Blacklist + Company-Separator-Filter.
+    """Misst Hit-Rate auf Sample-Mails — Hit wenn body_card ODER subject greift.
+
+    Zwei akzeptierte Parsing-Pfade (spiegelt den echten Adapter):
+      1. body_card_re findet ≥1 valide Card (LinkedIn/XING-Digest-Stil)
+      2. subject_re matched + Body enthaelt ≥1 URL (Indeed-Single-Job-Stil)
 
     Returns:
         (hit_rate, diagnostics)
         - hit_rate ∈ [0.0, 1.0]
-        - diagnostics: liste mit {subject, matched: bool, card_count: int}
-          pro Sample-Mail
+        - diagnostics: liste mit {subject, matched: bool, card_count: int,
+          via: str} pro Sample-Mail (via: 'body_card', 'subject', 'none')
     """
     if not samples:
         return 0.0, []
@@ -307,6 +317,9 @@ def validate_pattern(
     matched_count = 0
     for em in samples:
         body = em.get("body") or ""
+        subject = em.get("subject") or ""
+
+        # ── Pfad 1: body_card_re (Multi-Card-Mails) ─────────────────────
         cards = list(compiled.body_card_re.finditer(body))
         valid_cards = []
         for m in cards:
@@ -324,13 +337,33 @@ def validate_pattern(
             ):
                 continue
             valid_cards.append(m)
-        is_match = len(valid_cards) > 0
+
+        via = "none"
+        is_match = False
+        if valid_cards:
+            via = "body_card"
+            is_match = True
+        else:
+            # ── Pfad 2: Subject + URL im Body (Single-Job-Mails) ────────
+            subj_m = compiled.subject_re.match(subject.strip())
+            if subj_m:
+                t = (subj_m.group("title") or "").strip()
+                blacklisted = bool(
+                    compiled.title_blacklist_re
+                    and compiled.title_blacklist_re.search(t)
+                )
+                has_url = bool(_ANY_URL_RE.search(body))
+                if not blacklisted and has_url:
+                    via = "subject"
+                    is_match = True
+
         if is_match:
             matched_count += 1
         diagnostics.append({
-            "subject": (em.get("subject") or "")[:80],
+            "subject": subject[:80],
             "matched": is_match,
             "card_count": len(valid_cards),
+            "via": via,
         })
     return matched_count / len(samples), diagnostics
 
