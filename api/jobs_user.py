@@ -32,7 +32,22 @@ def _get_anthropic_client():
     return Anthropic(api_key=api_key)
 
 
-_VALID_TYPES = {"rss", "adzuna", "bundesagentur", "arbeitnow", "indeed_email"}
+_VALID_TYPES = {
+    "rss", "adzuna", "bundesagentur", "arbeitnow",
+    "indeed_email", "linkedin_email", "xing_email",
+}
+
+# Email-Source-Types, die dieselbe Folder-/Lookback-Validation brauchen
+# wie indeed_email — alle nutzen den gleichen IMAP/Apps-Script-Fetch-Pfad
+# in services.job_sources.email_jobs.
+_EMAIL_SOURCE_TYPES = {"indeed_email", "linkedin_email", "xing_email"}
+
+# Default-Folder pro Email-Source-Type (für leere Configs).
+_EMAIL_DEFAULT_FOLDER = {
+    "indeed_email": "Indeed",
+    "linkedin_email": "[Google Mail]/Alle Nachrichten",
+    "xing_email": "[Google Mail]/Alle Nachrichten",
+}
 
 # Indeed-Email-Folder-Validation: erlaubt alle druckbaren ASCII-Zeichen
 # inkl. Brackets [...] (Gmail-Sonderfolder wie '[Google Mail]/Alle Nachrichten').
@@ -58,13 +73,14 @@ def _validate_config(source_type: str, config: dict) -> str | None:
             return "Bundesagentur-Config benötigt mindestens 'was' oder 'wo'"
     elif source_type == "arbeitnow":
         pass
-    elif source_type == "indeed_email":
-        folder = (config or {}).get("folder", "Indeed")
+    elif source_type in _EMAIL_SOURCE_TYPES:
+        default_folder = _EMAIL_DEFAULT_FOLDER.get(source_type, "INBOX")
+        folder = (config or {}).get("folder", default_folder)
         if not isinstance(folder, str) or not _INDEED_FOLDER_RE.match(folder):
-            return "indeed_email-Config: 'folder' fehlt oder enthält ungültige Zeichen"
+            return f"{source_type}-Config: 'folder' fehlt oder enthält ungültige Zeichen"
         lookback = (config or {}).get("lookback_days", 30)
         if not isinstance(lookback, int) or not (1 <= lookback <= 365):
-            return "indeed_email-Config: 'lookback_days' muss 1-365 sein"
+            return f"{source_type}-Config: 'lookback_days' muss 1-365 sein"
     return None
 
 
@@ -112,6 +128,69 @@ def create_source(user):
     db.session.add(src)
     db.session.commit()
     return jsonify({"source": _serialize_source(src, user.id)}), 201
+
+
+@jobs_user_bp.post('/sources/bulk-email')
+@token_required
+def bulk_email_sources(user):
+    """Legt 1–3 Email-Job-Sources auf einen Schlag an.
+
+    Body:
+      platforms     (list)  required, ≥1, subset of {indeed, linkedin, xing}
+      folder        (str)   default "[Google Mail]/Alle Nachrichten"
+      lookback_days (int)   default 30
+      limit         (int)   default 100
+
+    Idempotent: existiert für (user, type) bereits eine Source, wird sie
+    übersprungen — kein Fehler, kein Duplikat. Antwort enthält nur die
+    neu angelegten Sources (`sources` kann leer sein).
+    """
+    from services.job_sources.email_jobs import PROFILES
+
+    data = request.get_json(silent=True) or {}
+    platforms = data.get("platforms")
+    if not isinstance(platforms, list) or not platforms:
+        return jsonify({"error": "platforms muss eine nicht-leere Liste sein"}), 400
+    unknown = [p for p in platforms if p not in PROFILES]
+    if unknown:
+        return jsonify({"error": f"Unbekannte Plattform(en): {unknown}"}), 400
+
+    folder = data.get("folder") or "[Google Mail]/Alle Nachrichten"
+    try:
+        lookback_days = int(data.get("lookback_days") or 30)
+        limit = int(data.get("limit") or 100)
+    except (TypeError, ValueError):
+        return jsonify({"error": "lookback_days/limit müssen Integer sein"}), 400
+
+    config = {"folder": folder, "lookback_days": lookback_days, "limit": limit}
+
+    # Validation einmalig — Folder/Lookback gelten für alle drei Email-Typen gleich.
+    err = _validate_config("indeed_email", config)
+    if err:
+        return jsonify({"error": err}), 400
+
+    created: list[JobSource] = []
+    for platform in platforms:
+        source_type = f"{platform}_email"
+        existing = JobSource.query.filter_by(
+            user_id=user.id, type=source_type
+        ).first()
+        if existing is not None:
+            continue
+        src = JobSource(
+            user_id=user.id,
+            type=source_type,
+            name=f"{PROFILES[platform].source_label} Email",
+            enabled=True,
+        )
+        src.config = config
+        db.session.add(src)
+        db.session.flush()
+        created.append(src)
+    db.session.commit()
+    return jsonify({
+        "sources": [_serialize_source(s, user.id) for s in created],
+    }), 201
 
 
 @jobs_user_bp.patch('/sources/<int:source_id>')

@@ -729,3 +729,117 @@ def test_cron_endpoint_iterates_all_three_email_types(
     data = resp.get_json()
     assert data["total_sources"] == 3
     assert set(seen_types) == {"indeed", "linkedin", "xing"}
+
+
+# ── Source-Type-Validation: linkedin_email + xing_email ───────────────────
+
+
+def test_create_linkedin_email_source_with_valid_config(client, auth_header):
+    headers, _ = auth_header
+    r = client.post("/api/jobs/sources", json={
+        "name": "LinkedIn Folder",
+        "type": "linkedin_email",
+        "config": {"folder": "[Google Mail]/Alle Nachrichten", "lookback_days": 30},
+    }, headers=headers)
+    assert r.status_code == 201, r.get_json()
+    assert r.get_json()["source"]["type"] == "linkedin_email"
+
+
+def test_create_xing_email_source_with_valid_config(client, auth_header):
+    headers, _ = auth_header
+    r = client.post("/api/jobs/sources", json={
+        "name": "Xing Folder",
+        "type": "xing_email",
+        "config": {"folder": "INBOX", "lookback_days": 14},
+    }, headers=headers)
+    assert r.status_code == 201, r.get_json()
+    assert r.get_json()["source"]["type"] == "xing_email"
+
+
+def test_create_linkedin_email_source_rejects_bad_folder(client, auth_header):
+    headers, _ = auth_header
+    r = client.post("/api/jobs/sources", json={
+        "name": "Bad",
+        "type": "linkedin_email",
+        "config": {"folder": "bad\r\n; DROP TABLE"},
+    }, headers=headers)
+    assert r.status_code == 400
+
+
+def test_create_xing_email_source_rejects_invalid_lookback(client, auth_header):
+    headers, _ = auth_header
+    r = client.post("/api/jobs/sources", json={
+        "name": "Bad",
+        "type": "xing_email",
+        "config": {"folder": "INBOX", "lookback_days": 9999},
+    }, headers=headers)
+    assert r.status_code == 400
+
+
+# ── Bulk-Email Endpoint ───────────────────────────────────────────────────
+
+
+def test_bulk_email_creates_three_sources(client, auth_header):
+    """POST /api/jobs/sources/bulk-email mit 3 Plattformen legt 3 Sources an."""
+    headers, user = auth_header
+    resp = client.post(
+        "/api/jobs/sources/bulk-email",
+        headers=headers,
+        json={
+            "platforms": ["indeed", "linkedin", "xing"],
+            "folder": "[Google Mail]/Alle Nachrichten",
+            "lookback_days": 30,
+            "limit": 100,
+        },
+    )
+    assert resp.status_code == 201, resp.get_json()
+    data = resp.get_json()
+    assert len(data["sources"]) == 3
+    types = {s["type"] for s in data["sources"]}
+    assert types == {"indeed_email", "linkedin_email", "xing_email"}
+    # Idempotent: zweiter Aufruf legt nichts neues an
+    resp2 = client.post(
+        "/api/jobs/sources/bulk-email",
+        headers=headers,
+        json={
+            "platforms": ["indeed", "linkedin", "xing"],
+            "folder": "[Google Mail]/Alle Nachrichten",
+        },
+    )
+    assert resp2.status_code == 201
+    assert resp2.get_json()["sources"] == []
+    # DB hat trotzdem nur 3 Sources für diesen User
+    assert JobSource.query.filter_by(user_id=user.id).count() == 3
+
+
+def test_bulk_email_rejects_empty_platforms(client, auth_header):
+    headers, _ = auth_header
+    resp = client.post(
+        "/api/jobs/sources/bulk-email",
+        headers=headers,
+        json={"platforms": [], "folder": "INBOX"},
+    )
+    assert resp.status_code == 400
+
+
+def test_bulk_email_rejects_unknown_platform(client, auth_header):
+    headers, _ = auth_header
+    resp = client.post(
+        "/api/jobs/sources/bulk-email",
+        headers=headers,
+        json={"platforms": ["facebook"], "folder": "INBOX"},
+    )
+    assert resp.status_code == 400
+
+
+def test_bulk_email_only_one_platform_allowed(client, auth_header):
+    """Auch eine einzelne Plattform ist OK — legt 1 Source an."""
+    headers, _ = auth_header
+    resp = client.post(
+        "/api/jobs/sources/bulk-email",
+        headers=headers,
+        json={"platforms": ["linkedin"], "folder": "INBOX"},
+    )
+    assert resp.status_code == 201
+    assert len(resp.get_json()["sources"]) == 1
+    assert resp.get_json()["sources"][0]["type"] == "linkedin_email"
