@@ -675,3 +675,57 @@ def test_approve_ignores_malformed_decisions(client, auth_header, indeed_source)
     assert body["ignored"] == 3
     assert body["imported"] == 0
     assert body["skipped"] == 0
+
+
+# ── Cron iteriert über alle drei _email-Typen ────────────────────────────
+
+
+def test_cron_endpoint_iterates_all_three_email_types(
+    client, auth_header, monkeypatch,
+):
+    """Cron-Endpoint /api/jobs/indeed-email-import-all verarbeitet
+    indeed_email, linkedin_email, xing_email gleichzeitig."""
+    headers, user = auth_header
+    monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
+    monkeypatch.setenv("ENCRYPTION_KEY", "rYJrSGE_CPN0eL4Z5VYC0YMyhc4FU8X3uVlS8mPWyTw=")
+
+    # IMAP-Creds setzen, damit der Cron-Handler den has_imap-Zweig nimmt
+    # (sonst werden alle drei Sources mit skipped_no_credentials abgebrochen,
+    # bevor EmailJobsAdapter.fetch überhaupt aufgerufen wird).
+    from imap_service import IMAPCredentialManager
+    user.imap_host = "imap.example.com"
+    user.imap_user = "u@example.com"
+    user.imap_password_encrypted = IMAPCredentialManager.encrypt_password("pw")
+    db.session.commit()
+
+    for stype, name in [
+        ("indeed_email", "Indeed"),
+        ("linkedin_email", "LinkedIn"),
+        ("xing_email", "Xing"),
+    ]:
+        src = JobSource(user_id=user.id, type=stype, name=name, enabled=True)
+        src.config = {}
+        db.session.add(src)
+    db.session.commit()
+    # Bestehende indeed_source-Fixture wird hier NICHT verwendet — wir legen
+    # die Sources direkt an, sodass exakt 3 existieren.
+
+    seen_types = []
+
+    def fake_fetch(self):
+        seen_types.append(self.profile.name)
+        return []
+
+    monkeypatch.setattr(
+        "services.job_sources.email_jobs.EmailJobsAdapter.fetch",
+        fake_fetch,
+    )
+
+    resp = client.post(
+        "/api/jobs/indeed-email-import-all",
+        headers={"X-Cron-Token": "test-token"},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total_sources"] == 3
+    assert set(seen_types) == {"indeed", "linkedin", "xing"}

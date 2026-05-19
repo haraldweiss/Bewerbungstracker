@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
 
 jobs_cron_bp = Blueprint('jobs_cron', __name__, url_prefix='/api/jobs')
 
+# Email-basierte Source-Typen werden NICHT vom generischen /crawl-source
+# Round-Robin verarbeitet, sondern ausschließlich vom dedizierten
+# /indeed-email-import-all (Cron) bzw. User-triggered /import-from-email.
+# Grund: sie brauchen User-IMAP-Credentials und sind manuell/per-User.
+EMAIL_SOURCE_TYPES = ("indeed_email", "linkedin_email", "xing_email")
+
 # Tick-Limits
 MAX_NEW_JOBS_PER_TICK = 50
 MAX_PREFILTER_PER_TICK = 100
@@ -127,11 +133,13 @@ def _build_cv_summary(cv_data_json: str) -> str:
 
 
 def _select_due_source() -> JobSource | None:
-    # indeed_email-Sources werden NUR manuell importiert (kein Auto-Crawl),
-    # weil sie User-IMAP-Credentials brauchen und vom User-Action abhängen.
+    # Email-basierte Sources (indeed_email, linkedin_email, xing_email)
+    # werden NUR vom dedizierten /indeed-email-import-all-Cron verarbeitet,
+    # nicht vom generischen Round-Robin: sie brauchen User-IMAP-Credentials
+    # und sind pro-User konfiguriert.
     candidates = JobSource.query.filter(
         JobSource.enabled == True,
-        JobSource.type != 'indeed_email',
+        JobSource.type.notin_(EMAIL_SOURCE_TYPES),
     ).all()
     now = datetime.utcnow()
     due = [
@@ -874,9 +882,15 @@ def cleanup():
 @jobs_cron_bp.post('/indeed-email-import-all')
 @require_cron_token
 def indeed_email_import_all():
-    """Auto-Import für ALLE eligible indeed_email-Sources.
+    """Auto-Import für ALLE eligible Email-Sources (indeed/linkedin/xing).
+
+    Trotz des historischen URL-Pfads ``indeed-email-import-all`` verarbeitet
+    dieser Endpoint alle drei Email-Plattform-Typen (``indeed_email``,
+    ``linkedin_email``, ``xing_email``) in einem Lauf. Pfad ist stabil, damit
+    die VPS-Cron-Zeile unverändert bleibt.
 
     Eligibility:
+    - type in EMAIL_SOURCE_TYPES
     - enabled = True
     - last_crawled_at NULL oder älter als crawl_interval_min
     - Owner-User hat User.imap_password_encrypted ODER state.settings.indeedScriptUrl
@@ -898,7 +912,7 @@ def indeed_email_import_all():
 
     now = datetime.utcnow()
     eligible = JobSource.query.filter(
-        JobSource.type == 'indeed_email',
+        JobSource.type.in_(EMAIL_SOURCE_TYPES),
         JobSource.enabled == True,  # noqa: E712
     ).all()
 
