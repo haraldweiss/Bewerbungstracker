@@ -1701,6 +1701,32 @@
         </div>
     </div>
 
+    <!-- Admin-only: URL-Cleanup-Kandidaten -->
+    <div class="card" style="margin-top:1rem">
+      <div class="card-title" style="margin-bottom:0.75rem">🧹 URL-Cleanup-Kandidaten</div>
+      <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:0.5rem">
+        RawJobs deren URL nicht erreichbar ist (404/410 oder 3× Connection-Fail).
+        Pruefe vor dem Loeschen ob's ein temporaerer Server-Outage war —
+        "Behalten" setzt den Failure-Counter zurueck.
+      </p>
+      <table style="width:100%;font-size:0.85rem">
+        <thead><tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:0.4rem">URL</th>
+          <th style="text-align:left;padding:0.4rem">Title</th>
+          <th style="text-align:left;padding:0.4rem">Status</th>
+          <th style="text-align:left;padding:0.4rem">Geprueft</th>
+          <th style="text-align:left;padding:0.4rem">Aktion</th>
+        </tr></thead>
+        <tbody id="adminUrlCleanupTableBody">
+          <tr><td colspan="5" style="padding:0.6rem;color:var(--text-muted)">Lade...</td></tr>
+        </tbody>
+      </table>
+      <div style="display:flex;gap:0.5rem;margin-top:0.5rem">
+        <button class="btn btn-secondary btn-sm" onclick="AdminUrlCleanup.refresh()">🔄 Aktualisieren</button>
+        <button class="btn btn-danger btn-sm" onclick="AdminUrlCleanup.bulkDeleteAll()">🗑️ Alle Loeschen</button>
+      </div>
+    </div>
+
     <div class="card" style="max-width:600px;">
         <div class="card-title" style="margin-bottom:0.5rem;">ℹ️ Info</div>
         <p style="color:var(--text-muted);font-size:0.85rem;line-height:1.8;">
@@ -4038,6 +4064,109 @@ const JdSourcesUI = (() => {
         testImap, clearImapCreds, loadImapStatus,
         trainPattern, loadLearnedPatterns, rollbackPattern,
     };
+})();
+
+/* ═══════════════════════════════════════════════════════
+   ADMIN URL-CLEANUP UI
+═══════════════════════════════════════════════════════ */
+const AdminUrlCleanup = (() => {
+    let _candidates = [];
+
+    async function refresh() {
+        const tbody = document.getElementById('adminUrlCleanupTableBody');
+        if (!tbody) return;
+        try {
+            const r = await Auth.fetch('/admin/url-cleanup-candidates', { method: 'GET' });
+            _candidates = (r && r.candidates) || [];
+            if (_candidates.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="padding:0.6rem;color:var(--text-muted)">Keine Kandidaten ✨</td></tr>';
+                return;
+            }
+            const rows = _candidates.map(function(c) {
+                const url = c.url || '';
+                const shortUrl = url.length > 60 ? url.slice(0, 57) + '...' : url;
+                const checked = c.url_last_checked_at
+                    ? new Date(c.url_last_checked_at).toLocaleString('de-DE')
+                    : '—';
+                const statusBadge = c.url_check_status
+                    ? c.url_check_status + (c.url_check_failures > 1 ? ' ×' + c.url_check_failures : '')
+                    : '—';
+                return '<tr style="border-bottom:1px solid var(--border)">' +
+                    '<td style="padding:0.4rem"><a href="' + escapeHtml(url) + '" target="_blank" rel="noopener" title="' + escapeHtml(url) + '">' + escapeHtml(shortUrl) + '</a></td>' +
+                    '<td style="padding:0.4rem">' + escapeHtml(c.title || '') + '<br><small style="color:var(--text-muted)">' + escapeHtml(c.company || '') + '</small></td>' +
+                    '<td style="padding:0.4rem">' + escapeHtml(statusBadge) + '</td>' +
+                    '<td style="padding:0.4rem;font-size:0.8rem">' + escapeHtml(checked) + '</td>' +
+                    '<td style="padding:0.4rem;white-space:nowrap">' +
+                        '<button class="btn btn-sm btn-danger" onclick="AdminUrlCleanup.deleteOne(' + c.id + ')" title="Endgueltig loeschen">✗</button> ' +
+                        '<button class="btn btn-sm btn-secondary" onclick="AdminUrlCleanup.keepOne(' + c.id + ')" title="Behalten (Reset Failure-Counter)">↶</button>' +
+                    '</td>' +
+                    '</tr>';
+            });
+            tbody.innerHTML = rows.join('');
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="5" style="padding:0.6rem;color:var(--danger)">Fehler: ' + escapeHtml(e.message || 'unbekannt') + '</td></tr>';
+        }
+    }
+
+    async function deleteOne(rawJobId) {
+        if (!confirm('RawJob #' + rawJobId + ' endgueltig loeschen?\n\nDas loescht auch alle JobMatches + Embeddings. Nicht rueckgaengig machbar.')) return;
+        try {
+            const r = await Auth.fetch('/admin/url-cleanup/' + rawJobId + '/delete', {
+                method: 'POST', body: JSON.stringify({}),
+            });
+            if (r && r.ok) {
+                const showToast = typeof window.showToast === 'function' ? window.showToast : ((m) => alert(m));
+                showToast('✅ Geloescht: RawJob #' + rawJobId, 'success');
+                refresh();
+            } else if (r && r.error) {
+                alert('❌ ' + r.error);
+            }
+        } catch (e) {
+            alert('❌ ' + (e.message || 'Fehler'));
+        }
+    }
+
+    async function keepOne(rawJobId) {
+        try {
+            const r = await Auth.fetch('/admin/url-cleanup/' + rawJobId + '/keep', {
+                method: 'POST', body: JSON.stringify({}),
+            });
+            if (r && r.ok) {
+                const showToast = typeof window.showToast === 'function' ? window.showToast : ((m) => alert(m));
+                showToast('✅ Behalten: RawJob #' + rawJobId + ' (Counter reset)', 'success');
+                refresh();
+            } else if (r && r.error) {
+                alert('❌ ' + r.error);
+            }
+        } catch (e) {
+            alert('❌ ' + (e.message || 'Fehler'));
+        }
+    }
+
+    async function bulkDeleteAll() {
+        if (!_candidates.length) {
+            alert('Keine Kandidaten zum Loeschen.');
+            return;
+        }
+        if (!confirm('ALLE ' + _candidates.length + ' Kandidaten endgueltig loeschen?\n\nInkl. JobMatches + Embeddings. Nicht rueckgaengig.')) return;
+        try {
+            const ids = _candidates.map(function(c) { return c.id; });
+            const r = await Auth.fetch('/admin/url-cleanup/bulk-delete', {
+                method: 'POST', body: JSON.stringify({ ids: ids }),
+            });
+            if (r && r.ok) {
+                const showToast = typeof window.showToast === 'function' ? window.showToast : ((m) => alert(m));
+                showToast('✅ ' + r.deleted + ' Kandidaten geloescht', 'success');
+                refresh();
+            } else if (r && r.error) {
+                alert('❌ ' + r.error);
+            }
+        } catch (e) {
+            alert('❌ ' + (e.message || 'Fehler'));
+        }
+    }
+
+    return { refresh, deleteOne, keepOne, bulkDeleteAll };
 })();
 
 function switchTab(el, tabId) {
@@ -8772,6 +8901,9 @@ function showSettingsSection(name) {
     if (name === 'jobs') {
         if (typeof initLearnSettingsHandlers === 'function') initLearnSettingsHandlers();
         if (typeof loadLearnSettings === 'function') loadLearnSettings();
+    }
+    if (name === 'admin' && typeof AdminUrlCleanup !== 'undefined') {
+        AdminUrlCleanup.refresh();
     }
 }
 
