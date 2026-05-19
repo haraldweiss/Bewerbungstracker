@@ -269,6 +269,27 @@ def prefilter():
             )
 
         raw = RawJob.query.get(match.raw_job_id)
+
+        # Duplikat-Check zuerst: gleiche Title+Company beim selben User
+        # bereits angesehen (imported/dismissed)? Crawl-Source-Cron findet
+        # denselben Job oft ueber verschiedene URLs (RSS/Adzuna/Arbeitnow
+        # geben unterschiedliche URLs fuer gleichen Job zurueck).
+        is_duplicate = False
+        if raw.title and raw.company:
+            dup_exists = (
+                JobMatch.query
+                .join(RawJob, JobMatch.raw_job_id == RawJob.id)
+                .filter(
+                    JobMatch.user_id == match.user_id,
+                    JobMatch.id != match.id,
+                    JobMatch.status.in_(['imported', 'dismissed']),
+                    RawJob.title == raw.title,
+                    RawJob.company == raw.company,
+                )
+                .first()
+            )
+            is_duplicate = dup_exists is not None
+
         score = score_job(
             cv_cache[match.user_id],
             {"title": raw.title, "description": raw.description, "location": raw.location},
@@ -280,7 +301,16 @@ def prefilter():
             embed_raw_job(raw)
         except Exception:
             pass  # Embedding ist optional, prefilter funktioniert auch ohne
-        if score < PREFILTER_DISMISS_THRESHOLD:
+
+        if is_duplicate:
+            # Duplikat dominiert ueber Score — zeigt dem User klar warum
+            # das Item dismissed wurde, auch wenn Score eigentlich OK gewesen
+            # waere.
+            match.status = 'dismissed'
+            if not match.feedback_text:
+                match.feedback_text = 'duplicate_of_other'
+            dismissed += 1
+        elif score < PREFILTER_DISMISS_THRESHOLD:
             match.status = 'dismissed'
             # Markiere den Auto-Dismiss-Grund — UI zeigt das als
             # menschenlesbare Begruendung an. Score selbst ist via
