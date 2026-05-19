@@ -1105,3 +1105,111 @@ def approve_email_import(user, source_id: int):
         "skipped": skipped,
         "ignored": ignored,
     }), 200
+
+
+@jobs_user_bp.post('/sources/<int:source_id>/train-pattern')
+@token_required
+def train_pattern(user, source_id):
+    """AI-Pattern-Train fuer Email-Source.
+
+    Body (optional):
+      sample_size   (int, default 30)
+      train_size    (int, default 5)
+      min_hit_rate  (float, default 0.40)
+
+    Pipeline: fetch -> ai-train -> compile -> validate -> persist.
+    Rate-Limit: 1 Train pro Plattform pro Stunde.
+    """
+    from services.job_sources import pattern_learner as pl
+    from models import LearnedEmailPattern
+    import json as _json
+    import re as _re
+
+    src = JobSource.query.get_or_404(source_id)
+    if src.user_id != user.id:
+        return jsonify({"error": "Forbidden"}), 403
+    if src.type not in _EMAIL_SOURCE_TYPES:
+        return jsonify({"error": "Source ist kein Email-Typ"}), 400
+
+    platform = src.type.removesuffix("_email")
+    data = request.get_json(silent=True) or {}
+    sample_size = int(data.get("sample_size") or 30)
+    train_size = int(data.get("train_size") or 5)
+    min_hit_rate = float(data.get("min_hit_rate") or 0.40)
+
+    # Rate-Limit: 1 Train pro Plattform pro Stunde.
+    one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+    recent = LearnedEmailPattern.query.filter(
+        LearnedEmailPattern.platform == platform,
+        LearnedEmailPattern.trained_at > one_hour_ago,
+    ).first()
+    if recent is not None:
+        return jsonify({
+            "error": "Rate-Limit: max 1 Pattern-Train pro Plattform pro Stunde.",
+            "last_trained_at": recent.trained_at.isoformat(),
+        }), 429
+
+    try:
+        mails = pl.fetch_sample_mails(
+            user,
+            platform=platform,
+            folder=src.config.get("folder", "INBOX"),
+            lookback_days=int(src.config.get("lookback_days", 30)),
+            n=sample_size,
+        )
+    except RuntimeError as exc:
+        return jsonify({"error": f"IMAP-Fetch fehlgeschlagen: {exc}"}), 400
+    if len(mails) < train_size + 1:
+        return jsonify({
+            "error": (
+                f"Zu wenig Mails ({len(mails)}) fuer Training "
+                f"(mind. {train_size + 1} noetig)."
+            )
+        }), 400
+
+    train = mails[:train_size]
+    test = mails[train_size:]
+
+    try:
+        pattern = pl.ai_learn_pattern(user, train_samples=train, platform=platform)
+    except RuntimeError as exc:
+        return jsonify({"error": f"AI-Train fehlgeschlagen: {exc}"}), 502
+
+    try:
+        compiled = pl.compile_pattern(pattern)
+    except (ValueError, _re.error) as exc:
+        return jsonify({"error": f"Pattern-Compile fehlgeschlagen: {exc}"}), 502
+
+    hit_rate, diagnostics = pl.validate_pattern(compiled, test)
+    if hit_rate < min_hit_rate:
+        return jsonify({
+            "error": "Hit-Rate unter Schwelle - Pattern nicht aktiviert.",
+            "hit_rate": hit_rate,
+            "min_hit_rate": min_hit_rate,
+            "sample_count": len(test),
+            "diagnostics": diagnostics[:10],
+        }), 422
+
+    # Persist: alte Patterns deaktivieren + neue als active speichern.
+    LearnedEmailPattern.query.filter_by(
+        platform=platform, is_active=True
+    ).update({"is_active": False})
+    new_row = LearnedEmailPattern(
+        platform=platform,
+        pattern_json=_json.dumps(pattern),
+        sample_count=len(test),
+        hit_rate=hit_rate,
+        trained_at=datetime.utcnow(),
+        trained_by_user_id=user.id,
+        is_active=True,
+    )
+    db.session.add(new_row)
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "hit_rate": hit_rate,
+        "sample_count": len(test),
+        "pattern": pattern,
+        "example_matches": [d for d in diagnostics if d["matched"]][:3],
+    }), 200
