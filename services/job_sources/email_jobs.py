@@ -44,6 +44,11 @@ class PlatformProfile:
     body_location_re: "re.Pattern"
     digest_threshold: int = 3
     ai_hint: str = ""
+    # Optionaler Body-Block-Pattern: matched zusammenhängende Card-Struktur
+    # mit named groups (title, company, location, url). Greift wenn die
+    # einzelnen body_*_re-Label-Pattern nichts finden. Für Plattformen wo
+    # der Body keine "Label:"-Felder nutzt (LinkedIn, XING).
+    body_card_re: "re.Pattern | None" = None
 
 
 # Subject-Patterns für Indeed-Emails (DE + EN).
@@ -114,13 +119,19 @@ PROFILES: dict[str, PlatformProfile] = {
             re.IGNORECASE,
         ),
         subject_patterns=(
+            # Echte LinkedIn-Subjects: "<Title> bei <Company>" ohne Prefix.
+            # Prefix optional für andere Mail-Quellen.
             re.compile(
-                r"(?:New job|Neue Stelle|Job alert)\s*:?\s*"
+                r"^(?:(?:New job|Neue Stelle|Job alert)\s*:?\s*)?"
                 r"(?P<title>.+?)\s+(?:at|bei|@)\s+(?P<company>.+?)"
                 r"(?:\s*[-–|]\s*LinkedIn.*)?$",
                 re.IGNORECASE,
             ),
         ),
+        # LinkedIn Body-Struktur (kein "Label:"-Schema): direkt vor dem
+        # "Jobangebot ansehen:"-URL stehen 3 Zeilen Title/Company/Location,
+        # ggf. mit Whitespace-Padding und CR. Lookahead matched die URL,
+        # die 3 Capture-Gruppen sind die Zeilen davor.
         body_title_re=re.compile(
             r"(?:Position|Job\s*Title|Jobtitel|Stelle)\s*[:\-]\s*([^\n\r]+)",
             re.IGNORECASE,
@@ -132,6 +143,17 @@ PROFILES: dict[str, PlatformProfile] = {
         body_location_re=re.compile(
             r"(?:Location|Standort|Ort|Place)\s*[:\-]\s*([^\n\r]+)",
             re.IGNORECASE,
+        ),
+        # LinkedIn-Card: 3 Zeilen Title / Company / Location, gefolgt von
+        # 0–3 Trenner-Zeilen, dann "Jobangebot ansehen: <URL>".
+        body_card_re=re.compile(
+            r"^[ \t]*(?P<title>\S[^\r\n]{2,200}\S)\s*\r?\n"
+            r"[ \t]*(?P<company>\S[^\r\n]{1,150}\S)\s*\r?\n"
+            r"[ \t]*(?P<location>\S[^\r\n]{1,80}\S)\s*\r?\n"
+            r"(?:[^\r\n]*\r?\n){0,5}?"
+            r"\s*(?:Jobangebot ansehen|View job|Show job)\s*:?\s*"
+            r"(?P<url>https?://(?:www\.)?linkedin\.com/[^\s\r\n)<>\"']+)",
+            re.IGNORECASE | re.MULTILINE,
         ),
         digest_threshold=3,
         ai_hint=(
@@ -152,9 +174,11 @@ PROFILES: dict[str, PlatformProfile] = {
             re.IGNORECASE,
         ),
         subject_patterns=(
+            # Echte XING-Subjects: "<Title> bei <Company>" oft ohne Prefix.
+            # Prefix optional.
             re.compile(
-                r"(?:Neue\s+(?:Stelle|Jobempfehlung)|New\s+job|Stellenangebot)"
-                r"\s*:?\s*(?P<title>.+?)\s+(?:bei|at|@)\s+(?P<company>.+?)"
+                r"^(?:(?:Neue\s+(?:Stelle|Jobempfehlung)|New\s+job|Stellenangebot)"
+                r"\s*:?\s*)?(?P<title>.+?)\s+(?:bei|at|@)\s+(?P<company>.+?)"
                 r"(?:\s*[-–|]\s*XING.*)?$",
                 re.IGNORECASE,
             ),
@@ -386,6 +410,38 @@ class EmailJobsAdapter(JobSourceAdapter):
         if from_addr and self.profile.from_whitelist:
             if not any(re.search(pat, from_addr) for pat in self.profile.from_whitelist):
                 return None
+
+        # Body-Card-Pattern: wenn die Plattform ein structured-card-Pattern
+        # liefert (z.B. LinkedIn/XING: Title/Company/Location/URL-Block),
+        # parse direkt aus dem Body — multiple Cards pro Mail.
+        if self.profile.body_card_re is not None:
+            cards = list(self.profile.body_card_re.finditer(body))
+            if cards:
+                jobs_from_cards = []
+                for m in cards:
+                    t = (m.group('title') or '').strip()
+                    c = (m.group('company') or '').strip()
+                    loc = (m.group('location') or '').strip() or None
+                    u = (m.group('url') or '').strip()
+                    if not t or not u:
+                        continue
+                    jobs_from_cards.append(FetchedJob(
+                        external_id=u[:512],
+                        title=t[:512],
+                        url=u[:1024],
+                        company=(c[:255] if c else None),
+                        location=(loc[:255] if loc else None),
+                        description=body[:2000] if body else None,
+                        posted_at=_parse_date(em.get('date')),
+                        raw={
+                            'message_id': em.get('message_id', ''),
+                            'subject': subject,
+                            'from': em.get('from', ''),
+                            'card_match': True,
+                        },
+                    ))
+                if jobs_from_cards:
+                    return jobs_from_cards
 
         # Multi-URL-Digest-Erkennung: ≥ digest_threshold plattform-spezifische
         # Job-URLs im Body → Digest-Mail (z.B. LinkedIn "Jobs you may be
