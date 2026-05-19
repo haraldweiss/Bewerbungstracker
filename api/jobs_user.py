@@ -1213,3 +1213,24 @@ def train_pattern(user, source_id):
         "pattern": pattern,
         "example_matches": [d for d in diagnostics if d["matched"]][:3],
     }), 200
+
+
+@jobs_user_bp.get('/learned-patterns')
+@token_required
+def list_learned_patterns(user):
+    """Listet aktive gelernte Pattern + History-Counts pro Plattform.
+
+    Response: { "patterns": [<row>.to_dict() + {history_count: int}, ...] }
+    """
+    from models import LearnedEmailPattern
+    active_rows = LearnedEmailPattern.query.filter_by(is_active=True).all()
+    out = []
+    for row in active_rows:
+        history_count = LearnedEmailPattern.query.filter(
+            LearnedEmailPattern.platform == row.platform,
+            LearnedEmailPattern.id != row.id,
+        ).count()
+        d = row.to_dict()
+        d["history_count"] = history_count
+        out.append(d)
+    return jsonify({"patterns": out}), 200

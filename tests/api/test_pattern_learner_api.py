@@ -178,3 +178,45 @@ def test_train_forbidden(client, auth_header, user_factory):
         json={},
     )
     assert resp.status_code == 403
+
+
+def test_get_learned_patterns_lists_active(client, auth_header, db_session):
+    headers, user = auth_header
+    db_session.add(LearnedEmailPattern(
+        platform="linkedin", pattern_json="{}", sample_count=20, hit_rate=0.55,
+        trained_at=datetime.utcnow(), trained_by_user_id=user.id, is_active=True,
+    ))
+    db_session.add(LearnedEmailPattern(
+        platform="xing", pattern_json="{}", sample_count=15, hit_rate=0.70,
+        trained_at=datetime.utcnow(), trained_by_user_id=user.id, is_active=True,
+    ))
+    db_session.commit()
+    resp = client.get("/api/jobs/learned-patterns", headers=headers)
+    assert resp.status_code == 200
+    data = resp.get_json()
+    platforms = {p["platform"] for p in data["patterns"]}
+    assert "linkedin" in platforms
+    assert "xing" in platforms
+    for p in data["patterns"]:
+        assert "history_count" in p
+
+
+def test_get_learned_patterns_history_count(client, auth_header, db_session):
+    """history_count = anzahl rows fuer gleiche plattform die NICHT die aktive sind."""
+    headers, user = auth_header
+    # 1 inactive older + 1 active newer for linkedin
+    db_session.add(LearnedEmailPattern(
+        platform="linkedin", pattern_json='{"v":1}', sample_count=10, hit_rate=0.4,
+        trained_at=datetime.utcnow() - timedelta(days=3),
+        trained_by_user_id=user.id, is_active=False,
+    ))
+    db_session.add(LearnedEmailPattern(
+        platform="linkedin", pattern_json='{"v":2}', sample_count=15, hit_rate=0.6,
+        trained_at=datetime.utcnow(), trained_by_user_id=user.id, is_active=True,
+    ))
+    db_session.commit()
+    resp = client.get("/api/jobs/learned-patterns", headers=headers)
+    assert resp.status_code == 200
+    data = resp.get_json()
+    ln = next(p for p in data["patterns"] if p["platform"] == "linkedin")
+    assert ln["history_count"] == 1
