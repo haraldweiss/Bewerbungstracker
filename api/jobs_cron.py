@@ -637,9 +637,15 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
         cost_usd = _estimate_cost_usd(result.tokens_in, result.tokens_out)
         key_owner = 'server'
 
+    # Bei Fallback echten Modellnamen loggen (ai-provider-service liefert
+    # ChatResponse.model seit 2026-05-19). Bei Primary-Path = Wunschmodell.
+    # Backward-compat: response.model leer falls Service alt → falle auf
+    # Wunschmodell zurueck.
+    logged_model = response.model if (response.fallback_used and response.model) else model
+
     db.session.add(ApiCall(
         user_id=user.id, endpoint='/api/jobs/match',
-        model=model, tokens_in=result.tokens_in,
+        model=logged_model, tokens_in=result.tokens_in,
         tokens_out=result.tokens_out, cost=cost_usd,
         key_owner=key_owner,
     ))

@@ -49,6 +49,10 @@ class ChatResponse:
     usage: ChatUsage
     via: str
     fallback_used: bool = False
+    # Der TATSÄCHLICH genutzte Modellname (= Wunschmodell bei primary,
+    # = fallback_model bei fallback_used=True). Wird vom ai-provider-service
+    # seit 2026-05-19 mitgeliefert; default = Wunschmodell (backward-compat).
+    model: str = ""
 
 
 class AIProviderClient:
@@ -186,6 +190,9 @@ class AIProviderClient:
             ),
             via=result.get('via', provider),
             fallback_used=bool(result.get('fallback_used')),
+            # Service liefert 'model' seit 2026-05-19; default = Wunschmodell
+            # (backward-compat fuer alte Service-Versionen).
+            model=result.get('model') or model,
         )
 
     # ── Queue ────────────────────────────────────────────────────────────────
