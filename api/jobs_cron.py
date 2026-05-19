@@ -12,7 +12,7 @@ from typing import Optional
 from flask import Blueprint, jsonify
 
 from database import db
-from models import User, JobSource, RawJob, JobMatch, ApiCall
+from models import User, JobSource, RawJob, JobMatch, ApiCall, Application
 from services.cron_auth import require_cron_token
 from services.job_sources import get_adapter
 from services.job_matching.cv_tokenizer import tokenize_cv
@@ -335,10 +335,35 @@ def prefilter():
     cv_summary_cache: dict = {}  # user_id → cv_summary string (für AI-Confirm)
     user_cache: dict = {}
     ctx_cache: dict = {}
+    rejected_companies_cache: dict = {}  # user_id → set(lower(company))
     scored = 0
     dismissed = 0
-    ai_confirm_used = 0     # Budget-Counter pro Run
+    ai_confirm_used = 0       # Budget-Counter pro Run
     ai_confirm_overruled = 0  # Items die AI "passt doch" gerettet hat
+    rejected_company_dismissed = 0  # Items wegen Company im Rejection-Fenster
+
+    def _rejected_companies_for(user_id: str, window_days: int) -> set:
+        """Lädt + cached die rejected-companies fuer einen User."""
+        if user_id not in rejected_companies_cache:
+            cutoff_dt = datetime.utcnow() - timedelta(days=window_days)
+            rows = (
+                db.session.query(db.func.lower(Application.company))
+                .filter(
+                    Application.user_id == user_id,
+                    Application.deleted == False,  # noqa: E712
+                    Application.status.in_(['absage', 'rejected']),
+                    Application.company.isnot(None),
+                    db.or_(
+                        Application.applied_date >= cutoff_dt.date(),
+                        db.and_(Application.applied_date.is_(None),
+                                Application.created_at >= cutoff_dt),
+                    ),
+                )
+                .distinct()
+                .all()
+            )
+            rejected_companies_cache[user_id] = {r[0] for r in rows if r[0]}
+        return rejected_companies_cache[user_id]
 
     for match in pending:
         if time.time() - started > HARD_TIME_LIMIT_SEC:
@@ -389,7 +414,26 @@ def prefilter():
         except Exception:
             pass  # Embedding ist optional, prefilter funktioniert auch ohne
 
-        if is_duplicate:
+        # Pruefe ob Firma in den letzten N Tagen abgelehnt hat — wenn ja,
+        # sofort dismissen (egal welcher Score). Spiegelt das UI-Listen-Filter,
+        # aber persistent statt nur view-side. Dominiert ueber alle anderen
+        # Auto-Dismiss-Reasons (Duplikat, Score, AI).
+        is_rejected_company = False
+        if raw.company:
+            user_obj = user_cache.get(match.user_id)
+            if user_obj:
+                window = user_obj.job_reject_window_days or 180
+                rejected_set = _rejected_companies_for(match.user_id, window)
+                if raw.company.lower().strip() in rejected_set:
+                    is_rejected_company = True
+
+        if is_rejected_company:
+            match.status = 'dismissed'
+            if not match.feedback_text:
+                match.feedback_text = 'company_already_rejected'
+            dismissed += 1
+            rejected_company_dismissed += 1
+        elif is_duplicate:
             # Duplikat dominiert ueber Score — zeigt dem User klar warum
             # das Item dismissed wurde, auch wenn Score eigentlich OK gewesen
             # waere.
@@ -436,6 +480,7 @@ def prefilter():
     db.session.commit()
     return jsonify({
         "scored": scored, "dismissed": dismissed,
+        "rejected_company_dismissed": rejected_company_dismissed,
         "ai_confirm_used": ai_confirm_used,
         "ai_confirm_overruled": ai_confirm_overruled,
         "duration_sec": round(time.time() - started, 2),

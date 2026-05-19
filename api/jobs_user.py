@@ -255,6 +255,7 @@ def test_crawl_source(user, source_id: int):
 AUTO_FEEDBACK_CODES = frozenset({
     'auto_blocked_by_rejection',
     'rejection_blocked_skip',
+    'company_already_rejected',
     'prefilter_low_score',
     'prefilter_low_score_ai_confirmed',
     'claude_low_score',
