@@ -216,3 +216,74 @@ def test_fetch_missing_credentials_raises():
     with pytest.raises(RuntimeError, match="IMAP-Credentials"):
         fetch_sample_mails(user, platform="linkedin",
                            folder="INBOX", lookback_days=30, n=10)
+
+
+import json as _json
+from services.job_sources.pattern_learner import ai_learn_pattern
+
+
+def test_ai_learn_success(monkeypatch):
+    """AI returns valid JSON matching schema → parsed dict returned."""
+    valid = _json.dumps(_valid_pattern_dict())
+    fake_chat = MagicMock(return_value={
+        "content": valid, "provider": "ollama", "model": "qwen2.5",
+    })
+    monkeypatch.setattr(
+        "services.ai_provider_client.AIProviderClient.chat", fake_chat,
+    )
+    user = MagicMock(id="test-uid", ai_provider="ollama", ai_provider_model="qwen2.5")
+    result = ai_learn_pattern(
+        user, train_samples=[{"subject": "X", "body": "Y"}], platform="linkedin",
+    )
+    assert result == _valid_pattern_dict()
+    assert fake_chat.called
+
+
+def test_ai_learn_invalid_json_retries_then_raises(monkeypatch):
+    """AI returns invalid JSON → 1 retry, then RuntimeError."""
+    fake_chat = MagicMock(return_value={
+        "content": "not json at all", "provider": "ollama", "model": "q",
+    })
+    monkeypatch.setattr(
+        "services.ai_provider_client.AIProviderClient.chat", fake_chat,
+    )
+    user = MagicMock(id="t", ai_provider="ollama", ai_provider_model="q")
+    with pytest.raises(RuntimeError, match="AI"):
+        ai_learn_pattern(
+            user, train_samples=[{"subject": "X", "body": "Y"}], platform="linkedin",
+        )
+    assert fake_chat.call_count == 2  # initial + 1 retry
+
+
+def test_ai_learn_schema_fail_retries_then_raises(monkeypatch):
+    """AI returns valid JSON but wrong schema → 1 retry, then RuntimeError."""
+    invalid_schema = _json.dumps({"random": "structure"})
+    fake_chat = MagicMock(return_value={
+        "content": invalid_schema, "provider": "ollama", "model": "q",
+    })
+    monkeypatch.setattr(
+        "services.ai_provider_client.AIProviderClient.chat", fake_chat,
+    )
+    user = MagicMock(id="t", ai_provider="ollama", ai_provider_model="q")
+    with pytest.raises(RuntimeError, match="Schema"):
+        ai_learn_pattern(
+            user, train_samples=[{"subject": "X", "body": "Y"}], platform="linkedin",
+        )
+    assert fake_chat.call_count == 2
+
+
+def test_ai_learn_strips_markdown_fences(monkeypatch):
+    """AI wraps response in ```json fences → still parses correctly."""
+    fenced = "```json\n" + _json.dumps(_valid_pattern_dict()) + "\n```"
+    fake_chat = MagicMock(return_value={
+        "content": fenced, "provider": "ollama", "model": "q",
+    })
+    monkeypatch.setattr(
+        "services.ai_provider_client.AIProviderClient.chat", fake_chat,
+    )
+    user = MagicMock(id="t", ai_provider="ollama", ai_provider_model="q")
+    result = ai_learn_pattern(
+        user, train_samples=[{"subject": "X", "body": "Y"}], platform="linkedin",
+    )
+    assert result == _valid_pattern_dict()
+    assert fake_chat.call_count == 1  # success on first try

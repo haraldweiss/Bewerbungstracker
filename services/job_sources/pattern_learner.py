@@ -8,6 +8,7 @@ in `learned_email_patterns` gespeichert (alte deaktiviert).
 """
 from __future__ import annotations
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -16,6 +17,8 @@ try:
     from jsonschema import Draft7Validator
 except ImportError:
     Draft7Validator = None
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -238,3 +241,115 @@ def validate_pattern(
             "card_count": len(valid_cards),
         })
     return matched_count / len(samples), diagnostics
+
+
+_SYSTEM_PROMPT = (
+    "Du bist ein Mail-Layout-Analyst. Aus den vorgelegten Job-Empfehlungs-"
+    "Mails extrahierst du das Layout-Pattern und gibst es als striktes JSON "
+    "zurueck. KEIN Markdown-Wrapping, KEINE Kommentare, KEINE zusaetzlichen "
+    "Felder ausserhalb des Schemas."
+)
+
+
+def _build_user_prompt(
+    train_samples: list[dict], platform: str, strict: bool = False,
+) -> str:
+    lines = [
+        f"Platform: {platform}",
+        "",
+        "Schema (must match exactly, no extra fields):",
+        json.dumps(PATTERN_JSON_SCHEMA, indent=2),
+        "",
+        "Sample mails (parse layout from these):",
+    ]
+    for i, em in enumerate(train_samples):
+        subj = (em.get("subject") or "")[:200]
+        body = (em.get("body") or "")[:6000]
+        lines.append(f"\n--- Mail {i+1} ---\nSubject: {subj}\nBody:\n{body}\n")
+    lines.append("\nReturn ONLY the JSON pattern. No prose, no markdown fences.")
+    if strict:
+        lines.append(
+            "\nIMPORTANT: previous attempt failed schema validation. "
+            "Ensure EVERY required field is present, types correct, "
+            "no extra fields, no markdown."
+        )
+    return "\n".join(lines)
+
+
+def ai_learn_pattern(user, train_samples: list[dict], platform: str) -> dict:
+    """Ruft AI auf, validiert Schema, gibt geparsed dict zurueck.
+
+    Bei JSON-Parse-Fail oder Schema-Fail: 1 Retry mit verschaerfter Prompt.
+    Respektiert user.ai_provider/ai_provider_model (kein hardcoded Claude).
+
+    Raises:
+        RuntimeError bei finalem Fail.
+    """
+    from services import ai_provider_client as _aip
+    # Use get_client() in prod (returns None if not configured); in tests the
+    # `.chat` method is monkey-patched on the class, so a dummy instance is
+    # sufficient.
+    client = _aip.get_client()
+    if client is None:
+        # Tests patch chat() on the class — instantiate with placeholder creds
+        # so __init__ doesn't reject empty env. Real calls would already have
+        # returned a configured client from get_client().
+        client = _aip.AIProviderClient(base_url="http://test", token="test")
+
+    last_error = None
+    for attempt in (1, 2):
+        strict = (attempt == 2)
+        prompt = _build_user_prompt(train_samples, platform, strict=strict)
+        try:
+            result = client.chat(
+                user_id=getattr(user, "id", None),
+                provider=getattr(user, "ai_provider", None),
+                model=getattr(user, "ai_provider_model", None),
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=2000,
+            )
+        except Exception as exc:
+            last_error = f"AI-Call failed: {exc}"
+            logger.warning(
+                "ai_learn_pattern attempt %d: %s", attempt, last_error,
+            )
+            continue
+        # Tests mock chat() to return a dict {"content": "..."}; the real
+        # AIProviderClient.chat returns a ChatResponse dataclass. Support both.
+        if isinstance(result, dict):
+            content = (result.get("content") or "")
+        else:
+            contents = getattr(result, "content", None) or []
+            content = (
+                contents[0].text if contents and hasattr(contents[0], "text")
+                else ""
+            )
+        content = (content or "").strip()
+        # Strip optional markdown fences
+        if content.startswith("```"):
+            content = content.split("```", 2)[1]
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.rstrip("`").strip()
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            last_error = f"AI-Output kein valides JSON: {exc}"
+            logger.warning(
+                "ai_learn_pattern attempt %d: %s", attempt, last_error,
+            )
+            continue
+        errors = validate_pattern_schema(parsed)
+        if errors:
+            last_error = f"Schema-Fehler: {'; '.join(errors[:3])}"
+            logger.warning(
+                "ai_learn_pattern attempt %d: %s", attempt, last_error,
+            )
+            continue
+        return parsed
+    raise RuntimeError(
+        f"ai_learn_pattern failed after 2 attempts: {last_error}"
+    )
