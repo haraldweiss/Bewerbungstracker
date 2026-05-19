@@ -338,6 +338,30 @@ class EmailJobsAdapter(JobSourceAdapter):
                 logger.warning("Email-Jobs-Parse fehlgeschlagen: %s", exc)
                 continue
 
+        # Hit-Rate-Tracking: schreibt eine Markierung in last_error wenn
+        # Trefferquote verdaechtig niedrig. UI rendert das als Warn-Badge.
+        try:
+            from models import JobSource
+            from database import db
+            src_id = getattr(self, '_source_id_for_tracking', None)
+            if src_id and len(emails) >= 10:
+                ratio = len(jobs) / max(len(emails), 1)
+                if ratio < 0.20:
+                    JobSource.query.filter_by(id=src_id).update({
+                        'last_error': (
+                            f'pattern_low_hit_rate: {len(jobs)}/{len(emails)} '
+                            f'({int(ratio*100)}%)'
+                        )
+                    })
+                    db.session.commit()
+                else:
+                    existing = JobSource.query.get(src_id)
+                    if existing and (existing.last_error or '').startswith('pattern_low_hit_rate'):
+                        JobSource.query.filter_by(id=src_id).update({'last_error': None})
+                        db.session.commit()
+        except Exception:
+            logger.exception("Hit-Rate-Tracking schlug fehl (non-fatal)")
+
         return jobs
 
     # ── IMAP-Fetch ─────────────────────────────────────────────────────────

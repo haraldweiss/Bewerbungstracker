@@ -952,6 +952,7 @@ def import_from_email(user, source_id: int):
     cache_hit = False
     try:
         adapter = get_adapter(src.type, src.config, user=user)
+        adapter._source_id_for_tracking = src.id
         if isinstance(provided_emails, list):
             fetched = adapter.parse_emails(provided_emails)
             fetch_mode = 'apps_script'

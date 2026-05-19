@@ -3382,10 +3382,13 @@ const JdSourcesUI = (() => {
                 ? `<tr><td colspan="4" style="padding:0.6rem;color:var(--text-muted)">Keine Quellen.</td></tr>`
                 : list.map(s => {
                     const last = s.last_crawled_at ? new Date(s.last_crawled_at).toLocaleString('de-DE') : 'noch nicht';
+                    const isPatternIssue = s.last_error && s.last_error.startsWith('pattern_low_hit_rate');
                     const status = s.enabled
-                        ? (s.last_error
-                            ? `⚠️ <span title="${escapeHtml(s.last_error)}">Fehler</span>`
-                            : '✅ Aktiv')
+                        ? (isPatternIssue
+                            ? `⚠️ <span title="${escapeHtml(s.last_error)} — Klick 🧠 Lernen fuer Pattern-Train" style="color:var(--warning,#c97e00)">Pattern veraltet?</span>`
+                            : (s.last_error
+                                ? `⚠️ <span title="${escapeHtml(s.last_error)}">Fehler</span>`
+                                : '✅ Aktiv'))
                         : '⏸️ Aus';
                     const ownership = s.is_global ? '🌐 Global' : '👤 Du';
                     return `
