@@ -294,10 +294,20 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
                  tone: str = 'professional', length: str = 'medium',
                  focus: str = 'balanced', user_id: Optional[str] = None,
                  applicant_name: Optional[str] = None,
+                 letterhead: Optional[Dict[str, str]] = None,
+                 job_description: Optional[str] = None,
                  provider: str = 'claude',
                  model: Optional[str] = None,
                  fallback_kwargs: Optional[Dict[str, Any]] = None) -> str:
         """Phase 2: Anschreiben-Text basierend auf Analyse generieren.
+
+        Args:
+            letterhead: optional dict mit {full_name, street, zip, city,
+                phone, website, email} — wird oben im Anschreiben als
+                DIN-Briefkopf eingebaut. Felder die fehlen werden weggelassen.
+            job_description: optional, zur Extraktion der Arbeitgeber-Adresse
+                im Briefkopf. Wenn keine erkannt wird, bleibt der
+                Empfaenger-Block weg.
 
         Returns: HTML-String mit <p data-confidence="0.XX">…</p>-Absätzen.
         """
@@ -305,19 +315,72 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
         analysis_json = json.dumps(analysis, ensure_ascii=False, indent=2)
         applicant_line = f"Bewerber: {applicant_name}" if applicant_name else ""
 
+        # Briefkopf-Block fuer den Prompt — nur Felder die nicht leer sind.
+        letterhead_block = ""
+        if letterhead:
+            parts = []
+            if letterhead.get('full_name'):
+                parts.append(f"Name: {letterhead['full_name']}")
+            addr_parts = [letterhead.get('street'), letterhead.get('zip'),
+                          letterhead.get('city')]
+            addr = " ".join(p for p in addr_parts if p)
+            if addr.strip():
+                parts.append(f"Adresse: {addr}")
+            if letterhead.get('phone'):
+                parts.append(f"Telefon: {letterhead['phone']}")
+            if letterhead.get('website'):
+                parts.append(f"Webseite: {letterhead['website']}")
+            if letterhead.get('email'):
+                parts.append(f"E-Mail: {letterhead['email']}")
+            if parts:
+                letterhead_block = (
+                    "\nMEINE BRIEFKOPF-DATEN (oben im Anschreiben als "
+                    "DIN-Block einsetzen, je ein Feld pro Zeile):\n"
+                    + "\n".join(parts) + "\n"
+                )
+
+        # Optional: Job-Beschreibung fuer Empfaenger-Adress-Extraktion.
+        job_desc_block = ""
+        if job_description and letterhead_block:
+            job_desc_block = (
+                "\nJOB-BESCHREIBUNG (fuer Empfaenger-Adress-Extraktion):\n"
+                f"{job_description[:3000]}\n\n"
+                "Falls die Job-Beschreibung eine Firmenadresse, einen "
+                "Ansprechpartner oder eine Strasse enthaelt, baue diese als "
+                "Empfaenger-Adressblock LINKS oben in den Briefkopf. Wenn nur "
+                "der Firmenname bekannt ist, nutze nur den Firmennamen. "
+                "Wenn nichts erkennbar ist, lass den Empfaenger-Block ganz weg.\n"
+            )
+
+        briefkopf_instruction = ""
+        if letterhead_block:
+            briefkopf_instruction = (
+                "\nWICHTIG — BRIEFKOPF-AUFBAU (erster Absatz mit confidence 1.0):\n"
+                "1. <p data-confidence=\"1.0\">-Absatz mit meinen Briefkopf-Daten "
+                "(siehe MEINE BRIEFKOPF-DATEN), Felder durch <br> getrennt.\n"
+                "2. Zweiter <p data-confidence=\"1.0\">-Absatz mit Empfaenger-Adresse "
+                "(Firmenname + ggf. Strasse/PLZ/Stadt aus der Job-Beschreibung).\n"
+                "3. Dritter <p data-confidence=\"1.0\">-Absatz mit dem Datum (heutiges "
+                "Datum, deutsches Format DD. Monat YYYY).\n"
+                "4. Vierter <p data-confidence=\"1.0\">-Absatz mit <strong>Betreff: "
+                "Bewerbung als {Job-Titel}</strong>.\n"
+                "5. DANN beginnt das eigentliche Anschreiben mit 'Sehr geehrte ...'.\n"
+            )
+
         user_prompt = f"""Schreibe ein deutsches Anschreiben für {company_name} ({job_title}).
 
 {applicant_line}
-
+{letterhead_block}{job_desc_block}{briefkopf_instruction}
 Nutze AUSSCHLIESSLICH diese Fakten aus der Analyse:
 {analysis_json}
 
 ANFORDERUNGEN:
 - Ton: {tone} (professional|casual|technical)
-- Länge: {word_count} Wörter
+- Länge: {word_count} Wörter (NUR Anschreiben-Text, Briefkopf separat)
 - Fokus: {focus} (technical|leadership|projects|balanced)
 - KEINE Items mit confidence < 0.3 verwenden
 - Jeder <p>-Absatz beginnt mit <!-- confidence: 0.XX --> (entspricht höchster verwendeter confidence im Absatz)
+- Briefkopf-Absätze haben confidence 1.0
 - Format: nur HTML, keine Markdown-Codefences
 
 BEISPIEL:

@@ -1318,6 +1318,48 @@
               onclick="JdSourcesUI.loadLearnedPatterns()">🔄 Aktualisieren</button>
     </div>
 
+    <div class="card" style="max-width:600px;margin-top:1rem">
+        <div class="card-title" style="margin-bottom:0.75rem">📋 Briefkopf-Daten</div>
+        <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:0.75rem">
+            Wird automatisch in jedes generierte Anschreiben als DIN-Briefkopf eingebaut.
+            Felder die leer sind, werden weggelassen.
+        </p>
+        <div class="form-group" style="margin-bottom:0.5rem">
+            <label>Vor- und Nachname:</label>
+            <input type="text" id="lhFullName" placeholder="z.B. Harald Weiss" style="width:100%">
+        </div>
+        <div class="form-group" style="margin-bottom:0.5rem">
+            <label>Straße + Hausnummer:</label>
+            <input type="text" id="lhStreet" placeholder="z.B. Musterstraße 12" style="width:100%">
+        </div>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
+            <div class="form-group" style="flex:0 0 100px;margin:0">
+                <label>PLZ:</label>
+                <input type="text" id="lhZip" placeholder="44141" style="width:100%">
+            </div>
+            <div class="form-group" style="flex:1;margin:0">
+                <label>Stadt:</label>
+                <input type="text" id="lhCity" placeholder="Dortmund" style="width:100%">
+            </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0.5rem">
+            <label>Telefon:</label>
+            <input type="text" id="lhPhone" placeholder="z.B. +49 170 1234567" style="width:100%">
+        </div>
+        <div class="form-group" style="margin-bottom:0.5rem">
+            <label>Webseite:</label>
+            <input type="url" id="lhWebsite" placeholder="z.B. https://wolfinisoftware.de" style="width:100%">
+        </div>
+        <div class="form-group" style="margin-bottom:0.5rem">
+            <label>E-Mail (für Briefkopf):</label>
+            <input type="email" id="lhEmail" placeholder="leer = Login-E-Mail" style="width:100%">
+        </div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.5rem">
+            <button class="btn btn-primary btn-sm" onclick="saveLetterheadData()">💾 Speichern</button>
+            <span id="lhStatus" style="align-self:center;font-size:0.85rem;color:var(--text-muted)"></span>
+        </div>
+    </div>
+
     <div class="card" style="max-width:600px;margin-bottom:1rem;">
         <div class="card-title" style="margin-bottom:1rem;">🔔 Benachrichtigungen</div>
         <div class="form-group" style="margin-bottom:1rem;">
@@ -3175,6 +3217,7 @@ function showView(name) {
         if (typeof JdSourcesUI !== 'undefined' && JdSourcesUI.loadLearnedPatterns) {
             JdSourcesUI.loadLearnedPatterns();
         }
+        if (typeof loadLetterheadData === 'function') loadLetterheadData();
         initSettingsSection();
         if (typeof initLearnSettingsHandlers === 'function') initLearnSettingsHandlers();
         if (typeof loadLearnSettings === 'function') loadLearnSettings();
@@ -6845,6 +6888,54 @@ function checkGhosting() {
         showToast(`Keine neuen Ghosting-Fälle (${skippedClosed} abgeschlossene übersprungen)`, 'info');
     }
 }
+
+/* ═══════════════════════════════════════════════════════
+   BRIEFKOPF-DATEN (Cover-Letter Letterhead)
+═══════════════════════════════════════════════════════ */
+function loadLetterheadData() {
+    const lh = (state && state.settings && state.settings.letterhead) || {};
+    const setVal = (id, v) => {
+        const el = document.getElementById(id);
+        if (el) el.value = v || '';
+    };
+    setVal('lhFullName', lh.full_name);
+    setVal('lhStreet',   lh.street);
+    setVal('lhZip',      lh.zip);
+    setVal('lhCity',     lh.city);
+    setVal('lhPhone',    lh.phone);
+    setVal('lhWebsite',  lh.website);
+    setVal('lhEmail',    lh.email);
+}
+
+
+async function saveLetterheadData() {
+    const getVal = (id) => (document.getElementById(id)?.value || '').trim();
+    const letterhead = {
+        full_name: getVal('lhFullName'),
+        street:    getVal('lhStreet'),
+        zip:       getVal('lhZip'),
+        city:      getVal('lhCity'),
+        phone:     getVal('lhPhone'),
+        website:   getVal('lhWebsite'),
+        email:     getVal('lhEmail'),
+    };
+    const statusEl = document.getElementById('lhStatus');
+    if (statusEl) statusEl.textContent = '⏳ speichere...';
+    try {
+        const r = await Auth.fetch('/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({ letterhead }),
+        });
+        if (r && r.settings) {
+            state.settings = { ...state.settings, ...r.settings };
+            if (statusEl) statusEl.textContent = '✓ gespeichert';
+            setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+        }
+    } catch (e) {
+        if (statusEl) statusEl.textContent = '❌ ' + (e.message || 'Fehler');
+    }
+}
+
 
 /* ═══════════════════════════════════════════════════════
    SETTINGS
@@ -11089,10 +11180,17 @@ async function exportCoverLetter(format) {
 
 function copyCoverLetterText() {
     const container = document.getElementById('clContent');
-    const text = container.innerText || '';
-    if (!text.trim()) { _clShowAlert('Nichts zu kopieren', 'error'); return; }
+    if (!container || !(container.innerText || '').trim()) {
+        _clShowAlert('Nichts zu kopieren', 'error'); return;
+    }
+    // Confidence-Badges (z.B. "97%") sind UI-only — beim Kopieren raus.
+    // Wir clonen das DOM, entfernen die Badge-Spans, lesen dann den
+    // sauberen innerText aus.
+    const clone = container.cloneNode(true);
+    clone.querySelectorAll('.cl-confidence-badge').forEach(b => b.remove());
+    const text = (clone.innerText || '').trim();
     navigator.clipboard.writeText(text).then(
-        () => _clShowAlert('In Zwischenablage kopiert ✓', 'success'),
+        () => _clShowAlert('In Zwischenablage kopiert ✓ (ohne Confidence-Prozente)', 'success'),
         () => _clShowAlert('Kopieren fehlgeschlagen', 'error')
     );
 }

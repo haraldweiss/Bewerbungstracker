@@ -130,10 +130,24 @@ def generate_cover_letter(user, cover_letter_id):
             provider=provider, model=model,
             fallback_kwargs=fallback_kwargs,
         )
+        # Letterhead aus user.settings_json.letterhead — Briefkopf wird
+        # AI-side in den ersten paar Anschreiben-Absaetzen eingebaut.
+        # Empfaenger-Adresse extrahiert die AI aus job_description.
+        letterhead = None
+        try:
+            import json as _json
+            settings = _json.loads(user.settings_json or '{}')
+            letterhead = settings.get('letterhead') or None
+            if letterhead and not letterhead.get('email'):
+                letterhead['email'] = user.email
+        except (TypeError, ValueError):
+            letterhead = None
+
         content = svc.generate(
             company_name=cl.company_name, job_title=cl.job_title,
             analysis=analysis, tone=cl.tone, length=cl.length, focus=cl.focus,
             user_id=user.id, applicant_name=applicant_name,
+            letterhead=letterhead, job_description=cl.job_description,
             provider=provider, model=model,
             fallback_kwargs=fallback_kwargs,
         )
