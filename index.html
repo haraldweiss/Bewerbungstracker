@@ -5056,9 +5056,17 @@ const JobsView = (() => {
                 if (alerts) {
                     const hint = document.createElement('div');
                     hint.style.cssText = 'padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.5rem;font-size:0.9rem;background:#eef;color:#33c;border:1px solid #ccf;';
-                    hint.textContent = `📋 Felder aus Job-Vorschlag "${company} — ${title}" übernommen. Jetzt "⚡ Anschreiben generieren" klicken.`;
+                    hint.textContent = `📋 Felder aus Job-Vorschlag "${company} — ${title}" übernommen.`;
                     alerts.appendChild(hint);
                     setTimeout(() => hint.remove(), 8000);
+                }
+                // Bei uebernommenen Jobs (status='imported') direkt Generate
+                // klicken — sonst muesste der User extra einen Button druecken
+                // obwohl alle Daten schon stehen.
+                if (match.status === 'imported' && typeof generateCoverLetter === 'function') {
+                    setTimeout(() => {
+                        try { generateCoverLetter(); } catch (e) { console.warn(e); }
+                    }, 200);
                 }
             }, 50);
         },

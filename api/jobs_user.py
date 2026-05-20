@@ -358,7 +358,12 @@ def list_matches(user):
     origin_filter = request.args.get('origin', '').strip().lower()
     # Default: bereits beworbene Stellen (Treffer in Applications-Tabelle)
     # ausblenden. ?include_applied=true zeigt sie wieder an.
+    # Ausnahme: wenn 'imported' im status_filter → implizit True, sonst
+    # waere Status='Uebernommen' immer leer (imported = hat Application,
+    # also wird normalerweise vom Filter ausgeschlossen).
     include_applied = (request.args.get('include_applied', '').lower() in ('1', 'true', 'yes'))
+    if 'imported' in status_filter:
+        include_applied = True
     # Reject-Filter: per-User konfigurierbar (Settings → Job-Vorschläge Filter).
     # Query-Param ?include_rejected=true überschreibt für ad-hoc-Debug.
     include_rejected_param = request.args.get('include_rejected', '').lower()
