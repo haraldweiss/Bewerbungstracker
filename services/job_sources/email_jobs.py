@@ -288,23 +288,44 @@ _GENERIC_SUBJECT_PATTERN = re.compile(
 def _build_profile_from_row(row) -> PlatformProfile:
     """Konstruiert PlatformProfile aus DB-Row. Auto-Generation aus domain
     wenn url_pattern_override / from_whitelist_override nicht gesetzt sind.
+
+    Defensive: ungültige Regex-Overrides fallen auf Auto-Generation zurück
+    (mit Warn-Log), damit ein malformed override nicht den gesamten
+    IMAP-Fetch crasht.
     """
     import json as _json
     domain = row.domain
     domain_esc = re.escape(domain)
 
+    auto_url_pattern_str = (
+        rf"https?://(?:[a-z0-9.-]+\.)?{domain_esc}/[^\s)<>\"'\\]+"
+    )
     if row.url_pattern_override:
-        url_pattern_str = row.url_pattern_override
+        try:
+            url_pattern = re.compile(row.url_pattern_override, re.IGNORECASE)
+        except re.error as exc:
+            logger.warning(
+                "PlatformProfile slug=%s: url_pattern_override ungültig (%s) "
+                "— fallback auf auto-generated", row.slug, exc,
+            )
+            url_pattern = re.compile(auto_url_pattern_str, re.IGNORECASE)
     else:
-        url_pattern_str = (
-            rf"https?://(?:[a-z0-9.-]+\.)?{domain_esc}/[^\s)<>\"'\\]+"
-        )
-    url_pattern = re.compile(url_pattern_str, re.IGNORECASE)
+        url_pattern = re.compile(auto_url_pattern_str, re.IGNORECASE)
 
+    auto_from_whitelist = (rf"@(?:[a-z0-9.-]+\.)?{domain_esc}$",)
     if row.from_whitelist_override:
-        from_whitelist = (row.from_whitelist_override,)
+        # Validate by compiling — fall back if invalid
+        try:
+            re.compile(row.from_whitelist_override)
+            from_whitelist = (row.from_whitelist_override,)
+        except re.error as exc:
+            logger.warning(
+                "PlatformProfile slug=%s: from_whitelist_override ungültig (%s) "
+                "— fallback auf auto-generated", row.slug, exc,
+            )
+            from_whitelist = auto_from_whitelist
     else:
-        from_whitelist = (rf"@(?:[a-z0-9.-]+\.)?{domain_esc}$",)
+        from_whitelist = auto_from_whitelist
 
     # Robust JSON-parse: malformed → []
     try:

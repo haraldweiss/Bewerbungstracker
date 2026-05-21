@@ -91,3 +91,44 @@ def test_build_profile_url_pattern_override(app, user_factory):
     assert p.url_pattern.pattern == custom
     assert p.url_pattern.search("https://stepstone.de/stellenangebote/123")
     assert not p.url_pattern.search("https://stepstone.de/news/foo")
+
+
+def test_build_profile_falls_back_on_invalid_url_override(app, user_factory, caplog):
+    """If url_pattern_override is malformed, fall back to auto-gen + warn-log."""
+    import logging
+    from database import db
+    from models import PlatformProfileRow
+    user = user_factory()
+    row = PlatformProfileRow(
+        slug="stepstone", display_name="Stepstone", domain="stepstone.de",
+        subject_must_contain="[]",
+        url_pattern_override="[invalid(regex",
+        created_by_user_id=user.id,
+    )
+    db.session.add(row); db.session.commit()
+    with caplog.at_level(logging.WARNING):
+        p = _build_profile_from_row(row)
+    # Falls back: auto-generated url_pattern matches stepstone.de
+    assert p.url_pattern.search("https://stepstone.de/job/1")
+    assert any("url_pattern_override" in rec.message for rec in caplog.records)
+
+
+def test_build_profile_falls_back_on_invalid_from_whitelist_override(app, user_factory, caplog):
+    """If from_whitelist_override is malformed, fall back to auto-gen."""
+    import logging
+    import re as _re
+    from database import db
+    from models import PlatformProfileRow
+    user = user_factory()
+    row = PlatformProfileRow(
+        slug="stepstone", display_name="Stepstone", domain="stepstone.de",
+        subject_must_contain="[]",
+        from_whitelist_override="[bad(regex",
+        created_by_user_id=user.id,
+    )
+    db.session.add(row); db.session.commit()
+    with caplog.at_level(logging.WARNING):
+        p = _build_profile_from_row(row)
+    # Falls back: auto-generated from_whitelist matches *@stepstone.de
+    assert _re.compile(p.from_whitelist[0]).search("noreply@stepstone.de")
+    assert any("from_whitelist_override" in rec.message for rec in caplog.records)
