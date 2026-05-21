@@ -9,7 +9,7 @@ Quelle: neueste verknüpfte Email mit Interview-Keyword, sonst Application.notes
 import re
 from flask import Blueprint, jsonify, Response
 from api.auth import token_required
-from models import Application, Email
+from models import Application
 from services.calendar_parser import parse_interview_event
 from services.calendar_ics import build_ics
 
