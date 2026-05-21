@@ -621,3 +621,158 @@ def bulk_delete_url_cleanup(user):
     _cascade_delete_raw_jobs(valid_ids)
     db.session.commit()
     return jsonify({'ok': True, 'deleted': len(valid_ids)}), 200
+
+
+# ── Platform Profiles ──────────────────────────────────────────────────────
+
+import re as _re_pp
+import json as _json_pp
+from models import PlatformProfileRow
+
+_SLUG_RE = _re_pp.compile(r"^[a-z0-9_-]{2,64}$")
+_DOMAIN_RE = _re_pp.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$", _re_pp.IGNORECASE)
+
+
+def _validate_payload(payload: dict, partial: bool = False) -> tuple[dict, str | None]:
+    """Validate platform-profile payload. Returns (cleaned, error_msg)."""
+    from services.job_sources.email_jobs import PROFILES
+
+    cleaned: dict = {}
+
+    if "slug" in payload or not partial:
+        slug = (payload.get("slug") or "").strip().lower()
+        if not _SLUG_RE.match(slug):
+            return {}, "slug muss [a-z0-9_-]{2,64} sein"
+        if slug in PROFILES:
+            return {}, f"Slug '{slug}' ist reserviert (hardcoded Plattform)"
+        cleaned["slug"] = slug
+
+    if "display_name" in payload or not partial:
+        name = (payload.get("display_name") or "").strip()
+        if not name or len(name) > 120:
+            return {}, "display_name muss 1-120 Zeichen sein"
+        cleaned["display_name"] = name
+
+    if "domain" in payload or not partial:
+        domain = (payload.get("domain") or "").strip().lower()
+        if not _DOMAIN_RE.match(domain):
+            return {}, "domain muss ein gültiger Hostname sein"
+        cleaned["domain"] = domain
+
+    if "subject_must_contain" in payload or not partial:
+        smc = payload.get("subject_must_contain") or []
+        if not isinstance(smc, list) or not (1 <= len(smc) <= 20):
+            return {}, "subject_must_contain muss 1-20 Strings enthalten"
+        if any(not isinstance(s, str) or len(s) > 80 for s in smc):
+            return {}, "subject_must_contain: Strings ≤80 Zeichen"
+        cleaned["subject_must_contain"] = _json_pp.dumps(smc)
+
+    if "ai_schema_hint" in payload:
+        hint = (payload.get("ai_schema_hint") or "").strip()
+        if len(hint) > 2000:
+            return {}, "ai_schema_hint ≤2000 Zeichen"
+        cleaned["ai_schema_hint"] = hint or None
+
+    if "digest_threshold" in payload:
+        try:
+            dt = int(payload["digest_threshold"])
+            if not (1 <= dt <= 20):
+                raise ValueError()
+        except (TypeError, ValueError):
+            return {}, "digest_threshold muss 1-20 sein"
+        cleaned["digest_threshold"] = dt
+
+    if "url_pattern_override" in payload:
+        v = (payload.get("url_pattern_override") or "").strip()
+        if v:
+            if len(v) > 500:
+                return {}, "url_pattern_override ≤500 Zeichen"
+            try:
+                _re_pp.compile(v)
+            except _re_pp.error as exc:
+                return {}, f"url_pattern_override ungültig: {exc}"
+            cleaned["url_pattern_override"] = v
+        else:
+            cleaned["url_pattern_override"] = None
+
+    if "from_whitelist_override" in payload:
+        v = (payload.get("from_whitelist_override") or "").strip()
+        if v:
+            if len(v) > 500:
+                return {}, "from_whitelist_override ≤500 Zeichen"
+            try:
+                _re_pp.compile(v)
+            except _re_pp.error as exc:
+                return {}, f"from_whitelist_override ungültig: {exc}"
+            cleaned["from_whitelist_override"] = v
+        else:
+            cleaned["from_whitelist_override"] = None
+
+    return cleaned, None
+
+
+@admin_bp.get('/platforms')
+@token_required
+@admin_required
+def list_platforms(user):
+    rows = PlatformProfileRow.query.order_by(PlatformProfileRow.slug).all()
+    return jsonify({"platforms": [r.to_dict() for r in rows]}), 200
+
+
+@admin_bp.post('/platforms')
+@token_required
+@admin_required
+def create_platform(user):
+    payload = request.get_json() or {}
+    cleaned, err = _validate_payload(payload, partial=False)
+    if err:
+        return jsonify({"error": err}), 400
+    if PlatformProfileRow.query.filter_by(slug=cleaned["slug"]).first():
+        return jsonify({"error": f"Slug '{cleaned['slug']}' existiert bereits"}), 400
+    dt = cleaned.pop("digest_threshold", 3)
+    row = PlatformProfileRow(
+        **cleaned,
+        digest_threshold=dt,
+        created_by_user_id=user.id,
+    )
+    db.session.add(row)
+    db.session.commit()
+    return jsonify(row.to_dict()), 201
+
+
+@admin_bp.patch('/platforms/<string:slug>')
+@token_required
+@admin_required
+def update_platform(user, slug):
+    row = PlatformProfileRow.query.filter_by(slug=slug).first()
+    if not row:
+        return jsonify({"error": "Plattform nicht gefunden"}), 404
+    payload = request.get_json() or {}
+    if "slug" in payload and payload["slug"] != slug:
+        return jsonify({"error": "Slug nicht änderbar"}), 400
+    payload.pop("slug", None)
+    cleaned, err = _validate_payload(payload, partial=True)
+    if err:
+        return jsonify({"error": err}), 400
+    for k, v in cleaned.items():
+        setattr(row, k, v)
+    db.session.commit()
+    return jsonify(row.to_dict()), 200
+
+
+@admin_bp.delete('/platforms/<string:slug>')
+@token_required
+@admin_required
+def delete_platform(user, slug):
+    from models import JobSource
+    row = PlatformProfileRow.query.filter_by(slug=slug).first()
+    if not row:
+        return jsonify({"error": "Plattform nicht gefunden"}), 404
+    ref_count = JobSource.query.filter_by(type=f"{slug}_email").count()
+    if ref_count > 0:
+        return jsonify({
+            "error": f"Plattform wird von {ref_count} JobSource(s) genutzt"
+        }), 409
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({"deleted": slug}), 200
