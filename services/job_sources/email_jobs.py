@@ -204,8 +204,12 @@ PROFILES: dict[str, PlatformProfile] = {
         from_whitelist=(
             r"@(?:[a-z0-9.-]+\.)?xing\.com$",
         ),
+        # XING-Mail-URLs nutzen drei Formate:
+        #   /jobs/<slug>      — Web-UI-Direktlinks
+        #   /app/jobs/<id>    — Legacy
+        #   /m/<short-token>  — Mail-Tracker (Short-URL, Hauptformat in Job-Mails)
         url_pattern=re.compile(
-            r"https?://(?:www\.)?xing\.com/(?:jobs|app/jobs)/[^\s)<>\"'\\]+",
+            r"https?://(?:www\.)?xing\.com/(?:jobs|app/jobs|m)/[^\s)<>\"'\\]+",
             re.IGNORECASE,
         ),
         subject_patterns=(
