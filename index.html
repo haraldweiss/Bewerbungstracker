@@ -1345,13 +1345,13 @@
       </div>
     </div>
 
-    <div id="platformModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
-      <div style="background:var(--bg-card);padding:1.5rem;border-radius:8px;max-width:560px;width:90%;max-height:85vh;overflow-y:auto;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-          <h3 id="platformModalTitle" style="margin:0;">Neue Plattform anlegen</h3>
-          <button class="btn btn-secondary btn-sm" onclick="PlatformsUI.closeModal()">×</button>
+    <div class="modal-overlay" id="platformModal">
+      <div class="modal" style="max-width:560px;">
+        <div class="modal-header">
+          <h3 id="platformModalTitle" class="modal-title">Neue Plattform anlegen</h3>
+          <button class="modal-close" onclick="PlatformsUI.closeModal()">×</button>
         </div>
-        <div>
+        <div class="modal-body">
           <div class="form-group">
             <label>Anzeige-Name *</label>
             <input type="text" id="pfName" placeholder="z.B. Stepstone" style="width:100%">
@@ -1387,7 +1387,7 @@
           </details>
           <div id="pfError" style="color:#dc3545;margin-top:0.5rem;font-size:0.85rem"></div>
         </div>
-        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem;">
+        <div class="modal-footer">
           <button class="btn btn-secondary" onclick="PlatformsUI.closeModal()">Abbrechen</button>
           <button class="btn btn-primary" onclick="PlatformsUI.save()">Speichern</button>
         </div>
@@ -4286,7 +4286,7 @@ const PlatformsUI = (() => {
         });
         document.getElementById('pfSlug').disabled = false;
         document.getElementById('pfError').textContent = '';
-        document.getElementById('platformModal').style.display = 'flex';
+        openModal('platformModal');
         document.getElementById('pfName').oninput = (e) => {
             if (!_editingSlug) {
                 document.getElementById('pfSlug').value = slugFromName(e.target.value);
@@ -4310,14 +4310,14 @@ const PlatformsUI = (() => {
             document.getElementById('pfUrlOverride').value = p.url_pattern_override || '';
             document.getElementById('pfFromOverride').value = p.from_whitelist_override || '';
             document.getElementById('pfError').textContent = '';
-            document.getElementById('platformModal').style.display = 'flex';
+            openModal('platformModal');
         } catch (e) {
             alert('Fehler: ' + (e && e.message ? e.message : e));
         }
     }
 
-    function closeModal() {
-        document.getElementById('platformModal').style.display = 'none';
+    function _close() {
+        closeModal('platformModal');
         document.getElementById('pfSlug').disabled = false;
         _editingSlug = null;
     }
@@ -4340,7 +4340,7 @@ const PlatformsUI = (() => {
             const method = _editingSlug ? 'PATCH' : 'POST';
             const r = await Auth.fetch(url, { method, body: JSON.stringify(payload) });
             if (r && (r.slug || r.display_name)) {
-                closeModal();
+                _close();
                 await load();
             } else if (r && r.error) {
                 document.getElementById('pfError').textContent = r.error;
@@ -4364,7 +4364,7 @@ const PlatformsUI = (() => {
         }
     }
 
-    return { load, openCreate, edit, closeModal, save, remove };
+    return { load, openCreate, edit, closeModal: _close, save, remove };
 })();
 
 /* ═══════════════════════════════════════════════════════
