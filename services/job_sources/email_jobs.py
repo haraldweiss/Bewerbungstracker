@@ -55,6 +55,14 @@ class PlatformProfile:
     # offensichtlichen Marketing-Headers die LinkedIn/XING in jeder Mail
     # nutzen (Section-Header vor Job-Gruppen etc.).
     hard_title_blacklist_re: "re.Pattern | None" = None
+    # Subject must contain AT LEAST one of these substrings (case-insensitive).
+    # Default empty → no subject filter applied (backward-compatible).
+    # Use for platforms that emit mixed mail (jobs + news + birthdays etc.)
+    # from the same domain, e.g. XING.
+    subject_must_contain: tuple[str, ...] = ()
+    # Optional platform-specific hint added to the AI-pattern-learner prompt.
+    # Tells the AI about structural quirks (e.g. XING uses title-in-link cards).
+    ai_schema_hint: str = ""
 
 
 # Subject-Patterns für Indeed-Emails (DE + EN).
@@ -228,8 +236,34 @@ PROFILES: dict[str, PlatformProfile] = {
             "xing.com/jobs/<slug>-Link. "
             "Extrahiere {title, company, location, url} pro Job als JSON-Array."
         ),
+        subject_must_contain=(
+            "stelle", "stellenangebot", "stellenvorschlag",
+            "neue jobs", "jobs für", "job alert", "jobempfehlung",
+        ),
+        ai_schema_hint=(
+            "XING-Job-Cards verwenden ein anderes Layout als LinkedIn: "
+            "der Titel steht IM Markdown-Link, fett-formatiert (`** [Titel](URL) **`), "
+            "gefolgt von Company und Location auf je eigener Zeile. "
+            "Erkennst du dieses Muster, setze body_card.title_in_url_link=true und "
+            'body_card.fields_after_url=["company", "location"]. '
+            "body_card.url_labels bleibt dann leer, body_card.fields_before_url ebenfalls."
+        ),
     ),
 }
+
+
+def _apply_subject_filter(
+    mails: list[dict], must_contain: tuple[str, ...],
+) -> list[dict]:
+    """Filter mails: keep only those whose subject (case-insensitive) contains
+    at least one of `must_contain`. Empty tuple → no filter."""
+    if not must_contain:
+        return list(mails)
+    needles = tuple(s.lower() for s in must_contain)
+    return [
+        m for m in mails
+        if any(n in (m.get("subject") or "").lower() for n in needles)
+    ]
 
 
 class EmailJobsAdapter(JobSourceAdapter):
@@ -460,6 +494,10 @@ class EmailJobsAdapter(JobSourceAdapter):
                     'date': msg.get('Date', ''),
                     'body': _extract_body(msg),
                 })
+            # Subject-Filter: für Plattformen wie XING die unter derselben
+            # Domain auch Birthdays/Newsletter/News rausschicken. Default
+            # tuple() → no-op (Indeed/LinkedIn unverändert).
+            out = _apply_subject_filter(out, self.profile.subject_must_contain)
             return out
         finally:
             try:

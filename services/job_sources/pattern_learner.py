@@ -559,8 +559,16 @@ def _build_user_prompt(
         "- filters.company_blacklist_separators: Trenner-Muster, die NIE Company",
         "  sein duerfen (typisch reine Strichlinien als Card-Trenner).",
         "",
-        "Sample-Mails (Layout aus diesen ableiten):",
     ]
+    # Plattform-spezifischer Hinweis (z.B. XING-Card-Layout).
+    try:
+        from services.job_sources.email_jobs import PROFILES
+        hint = PROFILES.get(platform).ai_schema_hint if platform in PROFILES else ""
+    except Exception:
+        hint = ""
+    if hint:
+        lines.append(f"\nPlattform-Hinweis ({platform.upper()}):\n{hint}\n")
+    lines.append("Sample-Mails (Layout aus diesen ableiten):")
     for i, em in enumerate(train_samples):
         subj = (em.get("subject") or "")[:200]
         body = (em.get("body") or "")[:6000]
