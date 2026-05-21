@@ -16,6 +16,7 @@ Ein datenschutzfreundliches Tool zur Verwaltung von Bewerbungen mit automatische
 - 🔔 **Benachrichtigungen** - Desktop & Browser Push-Benachrichtigungen
 - 🎯 **Bewerbungsverfolgung** - Status, Datum, Gehalt, Notizen, Ghosting-Erkennung
 - 🗂️ **Kanban-Board** - Visuelle Übersicht nach Status
+- 📅 **Kalender-Export (.ics)** - Im Detail-Modal jeder Bewerbung mit Status `antwort`/`interview`/`zusage`: ein Klick lädt eine `.ics`-Datei mit Interview-Termin, Teams-/Zoom-Link, Passcode und Teilnehmer. Importierbar in Apple Calendar, Google Calendar, Outlook. Termin wird aus den Notizen oder zugeordneten Email-Bodies geparsed (Datum, Link, Passcode), keine DB-Migration, keine OAuth
 - 📋 **CV Vergleich** - Vergleiche deine CV mit Bewerbungsanforderungen — direkte Analyse via konfiguriertem KI-Provider (mit Fallback) oder Copy-Paste an Web-Plattformen
 - ✍️ **Anschreiben-Generator** - Generiert deutsche Anschreiben aus CV + Stellenausschreibung. Confidence-Scoring pro Absatz (grün = faktisch / gelb = überwiegend faktisch / orange = interpretiert), Export als PDF oder DOCX, Detailanalyse mit Skill-Matching, Pre-Fill aus Job-Vorschlägen. Erfindet keine Skills — nutzt nur was im CV/Job-Posting steht
 - 🤖 **Multi-Provider AI** - Claude (Anthropic), lokales Ollama, ChatGPT/OpenAI, Mammouth, eigener OpenAI-kompatibler Endpoint. Per-User-Konfiguration mit verschlüsselten API-Keys. Optional: Fallback-Provider und Queue-Persistenz bei Nicht-Erreichbarkeit (z.B. lokales Ollama)
@@ -121,6 +122,7 @@ A privacy-friendly job application tracker with automated email monitoring, stat
 - 🔔 **Notifications** - Desktop & browser push notifications
 - 🎯 **Application Tracking** - Status, dates, salary, notes, ghosting detection
 - 🗂️ **Kanban Board** - Visual overview by status
+- 📅 **Calendar Export (.ics)** - In the detail modal of any application with status `antwort`/`interview`/`zusage`: one click downloads an `.ics` file with the interview slot, Teams/Zoom link, passcode and attendees. Imports into Apple Calendar, Google Calendar, Outlook. The event is parsed from notes or the linked email body (date, link, passcode), no DB migration, no OAuth required
 - 📋 **CV Comparison** - Compare your CV against job requirements — direct analysis via your configured AI provider (with fallback) or copy-paste to web platforms
 - ✍️ **Cover-Letter Generator** - Generates German cover letters from CV + job posting. Per-paragraph confidence scoring (green = factual / yellow = mostly factual / orange = interpreted), PDF/DOCX export, detail analysis with skill matching, pre-fill from job suggestions. Does not invent skills — only uses what's in CV/job posting
 - 🤖 **Multi-Provider AI** - Claude (Anthropic), local Ollama, ChatGPT/OpenAI, Mammouth, custom OpenAI-compatible endpoints. Per-user configuration with encrypted API keys. Optional: fallback provider and queue persistence for unavailable providers (e.g. local Ollama)
