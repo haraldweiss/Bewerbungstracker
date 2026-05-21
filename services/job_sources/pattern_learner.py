@@ -387,7 +387,7 @@ def fetch_sample_mails(
     from services.job_sources.email_jobs import EmailJobsAdapter, get_profile
     # Validiere via get_profile — wirft KeyError wenn weder hardcoded noch in DB.
     try:
-        get_profile(platform)
+        profile = get_profile(platform)
     except KeyError:
         raise ValueError(f"Unknown platform: {platform}")
 
@@ -400,7 +400,7 @@ def fetch_sample_mails(
     adapter = EmailJobsAdapter(
         config={"folder": folder, "lookback_days": lookback_days, "limit": n},
         user=user,
-        platform_profile=get_profile(platform),
+        platform_profile=profile,
     )
     return adapter._fetch_emails(host, imap_user, pw, folder, lookback_days, n)
 

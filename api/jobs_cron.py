@@ -1265,7 +1265,7 @@ def indeed_email_import_all():
     die VPS-Cron-Zeile unverändert bleibt.
 
     Eligibility:
-    - type in EMAIL_SOURCE_TYPES
+    - type in _email_source_types() (hardcoded PROFILES + DB-PlatformProfiles)
     - enabled = True
     - last_crawled_at NULL oder älter als crawl_interval_min
     - Owner-User hat User.imap_password_encrypted ODER state.settings.indeedScriptUrl
@@ -1287,7 +1287,7 @@ def indeed_email_import_all():
 
     now = datetime.utcnow()
     eligible = JobSource.query.filter(
-        JobSource.type.in_(EMAIL_SOURCE_TYPES),
+        JobSource.type.in_(_email_source_types()),
         JobSource.enabled == True,  # noqa: E712
     ).all()
 

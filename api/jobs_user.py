@@ -151,7 +151,12 @@ def bulk_email_sources(user):
     platforms = data.get("platforms")
     if not isinstance(platforms, list) or not platforms:
         return jsonify({"error": "platforms muss eine nicht-leere Liste sein"}), 400
-    unknown = [p for p in platforms if p not in PROFILES]
+    unknown = []
+    for p in platforms:
+        try:
+            get_profile(p)
+        except KeyError:
+            unknown.append(p)
     if unknown:
         return jsonify({"error": f"Unbekannte Plattform(en): {unknown}"}), 400
 
@@ -1216,13 +1221,14 @@ def train_pattern(user, source_id):
         # Plattform-URL-Pattern (hardcoded) als Constraint einflechten —
         # verhindert dass AI-gelernte url_labels Marketing-Links matchen.
         from services.job_sources.email_jobs import PROFILES, get_profile
-        url_pattern_str = get_profile(platform).url_pattern.pattern
+        profile = get_profile(platform)
+        url_pattern_str = profile.url_pattern.pattern
         compiled = pl.compile_pattern(pattern, url_pattern_str=url_pattern_str)
     except (ValueError, _re.error) as exc:
         return jsonify({"error": f"Pattern-Compile fehlgeschlagen: {exc}"}), 502
 
     hit_rate, diagnostics = pl.validate_pattern(
-        compiled, test, url_check_re=get_profile(platform).url_pattern,
+        compiled, test, url_check_re=profile.url_pattern,
     )
     if hit_rate < min_hit_rate:
         return jsonify({

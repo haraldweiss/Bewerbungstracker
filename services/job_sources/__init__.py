@@ -35,7 +35,7 @@ def get_adapter(source_type: str, config: dict, **kwargs) -> JobSourceAdapter:
     IMAP-Credentials).
 
     `*_email`-Typen werden generisch auf den EmailJobsAdapter mit dem passenden
-    PlatformProfile gemappt (z.B. `linkedin_email` → PROFILES["linkedin"]).
+    PlatformProfile gemappt (z.B. `linkedin_email` → get_profile("linkedin")).
     """
     # Generischer Dispatch für alle Email-basierten Sources.
     if source_type.endswith("_email"):

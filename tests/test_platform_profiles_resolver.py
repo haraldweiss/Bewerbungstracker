@@ -167,8 +167,7 @@ def test_fetch_sample_mails_accepts_db_platform(app, user_factory):
 
     # Wichtig: pattern_learner soll die Plattform akzeptieren — wenn IMAP-creds
     # fehlen, RuntimeError. ValueError "Unknown platform" wäre der alte Bug.
-    import pytest as _pytest
-    with _pytest.raises(RuntimeError, match="IMAP-Credentials"):
+    with pytest.raises(RuntimeError, match="IMAP-Credentials"):
         pl.fetch_sample_mails(user, platform="stepstone", folder="INBOX", lookback_days=30, n=10)
 
 
@@ -177,6 +176,5 @@ def test_fetch_sample_mails_rejects_unknown_platform(app, user_factory):
     from services.job_sources import pattern_learner as pl
     user = user_factory()
     user.imap_host = "host"; user.imap_user = "u"
-    import pytest as _pytest
-    with _pytest.raises(ValueError, match="Unknown platform"):
+    with pytest.raises(ValueError, match="Unknown platform"):
         pl.fetch_sample_mails(user, platform="does_not_exist", folder="INBOX", lookback_days=30, n=10)
