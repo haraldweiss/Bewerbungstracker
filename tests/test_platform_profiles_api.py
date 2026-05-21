@@ -172,3 +172,88 @@ def test_delete_blocked_when_jobsource_references_it(client, user_factory):
     r = client.delete("/api/admin/platforms/stepstone", headers=headers)
     assert r.status_code == 409
     assert "JobSource" in r.get_json().get("error", "")
+
+
+def test_update_nonexistent_platform_returns_404(client, user_factory):
+    headers, _ = _admin_headers(client, user_factory)
+    r = client.patch(
+        "/api/admin/platforms/nonexistent",
+        json={"display_name": "X"},
+        headers=headers,
+    )
+    assert r.status_code == 404
+
+
+def test_delete_nonexistent_platform_returns_404(client, user_factory):
+    headers, _ = _admin_headers(client, user_factory)
+    r = client.delete("/api/admin/platforms/nonexistent", headers=headers)
+    assert r.status_code == 404
+
+
+def test_create_requires_admin(client, user_factory):
+    headers, _ = _user_headers(client, user_factory)
+    r = client.post(
+        "/api/admin/platforms",
+        json={"slug": "xy", "display_name": "X", "domain": "x.de",
+              "subject_must_contain": ["x"]},
+        headers=headers,
+    )
+    assert r.status_code == 403
+
+
+def test_update_requires_admin(client, user_factory):
+    headers, _ = _user_headers(client, user_factory)
+    r = client.patch(
+        "/api/admin/platforms/any", json={"display_name": "X"},
+        headers=headers,
+    )
+    assert r.status_code == 403
+
+
+def test_delete_requires_admin(client, user_factory):
+    headers, _ = _user_headers(client, user_factory)
+    r = client.delete("/api/admin/platforms/any", headers=headers)
+    assert r.status_code == 403
+
+
+def test_create_rejects_empty_subject_must_contain(client, user_factory):
+    headers, _ = _admin_headers(client, user_factory)
+    r = client.post(
+        "/api/admin/platforms",
+        json={"slug": "xy", "display_name": "X", "domain": "x.de",
+              "subject_must_contain": []},
+        headers=headers,
+    )
+    assert r.status_code == 400
+    assert "subject_must_contain" in r.get_json().get("error", "")
+
+
+def test_patch_slug_change_rejected(client, user_factory):
+    """PATCH mit slug-Änderung muss 400 zurückgeben (slug ist immutable)."""
+    headers, _ = _admin_headers(client, user_factory)
+    client.post(
+        "/api/admin/platforms",
+        json={"slug": "stepstone", "display_name": "Stepstone", "domain": "stepstone.de",
+              "subject_must_contain": ["x"]},
+        headers=headers,
+    )
+    r = client.patch(
+        "/api/admin/platforms/stepstone",
+        json={"slug": "newslug"},  # versuch slug zu ändern
+        headers=headers,
+    )
+    assert r.status_code == 400
+    assert "Slug" in r.get_json().get("error", "")
+
+
+def test_create_rejects_slug_too_long(client, user_factory):
+    """Slug > 26 chars wird abgelehnt (JobSource.type ist String(32))."""
+    headers, _ = _admin_headers(client, user_factory)
+    long_slug = "x" * 27
+    r = client.post(
+        "/api/admin/platforms",
+        json={"slug": long_slug, "display_name": "X", "domain": "x.de",
+              "subject_must_contain": ["x"]},
+        headers=headers,
+    )
+    assert r.status_code == 400

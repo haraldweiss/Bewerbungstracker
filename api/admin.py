@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # © 2026 Harald Weiss
+import json
+import re
 import secrets
 from datetime import datetime, timedelta
 
@@ -7,7 +9,7 @@ from flask import Blueprint, request, jsonify, current_app
 from functools import wraps
 
 from api.auth import token_required, admin_required
-from models import User, Application, EmailConfirmationToken, ApiCall, AIWordsResearchLog
+from models import User, Application, EmailConfirmationToken, ApiCall, AIWordsResearchLog, PlatformProfileRow
 from database import db
 from sqlalchemy import func
 from services.email_service import send_approval_notification, send_confirmation_email
@@ -625,12 +627,9 @@ def bulk_delete_url_cleanup(user):
 
 # ── Platform Profiles ──────────────────────────────────────────────────────
 
-import re as _re_pp
-import json as _json_pp
-from models import PlatformProfileRow
-
-_SLUG_RE = _re_pp.compile(r"^[a-z0-9_-]{2,64}$")
-_DOMAIN_RE = _re_pp.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$", _re_pp.IGNORECASE)
+# Slug-Limit: 26 Zeichen (JobSource.type ist String(32), wir reservieren 6 für "_email")
+_SLUG_RE = re.compile(r"^[a-z0-9_-]{2,26}$")
+_DOMAIN_RE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$", re.IGNORECASE)
 
 
 def _validate_payload(payload: dict, partial: bool = False) -> tuple[dict, str | None]:
@@ -642,7 +641,7 @@ def _validate_payload(payload: dict, partial: bool = False) -> tuple[dict, str |
     if "slug" in payload or not partial:
         slug = (payload.get("slug") or "").strip().lower()
         if not _SLUG_RE.match(slug):
-            return {}, "slug muss [a-z0-9_-]{2,64} sein"
+            return {}, "slug muss [a-z0-9_-]{2,26} sein"
         if slug in PROFILES:
             return {}, f"Slug '{slug}' ist reserviert (hardcoded Plattform)"
         cleaned["slug"] = slug
@@ -665,7 +664,7 @@ def _validate_payload(payload: dict, partial: bool = False) -> tuple[dict, str |
             return {}, "subject_must_contain muss 1-20 Strings enthalten"
         if any(not isinstance(s, str) or len(s) > 80 for s in smc):
             return {}, "subject_must_contain: Strings ≤80 Zeichen"
-        cleaned["subject_must_contain"] = _json_pp.dumps(smc)
+        cleaned["subject_must_contain"] = json.dumps(smc)
 
     if "ai_schema_hint" in payload:
         hint = (payload.get("ai_schema_hint") or "").strip()
@@ -688,8 +687,8 @@ def _validate_payload(payload: dict, partial: bool = False) -> tuple[dict, str |
             if len(v) > 500:
                 return {}, "url_pattern_override ≤500 Zeichen"
             try:
-                _re_pp.compile(v)
-            except _re_pp.error as exc:
+                re.compile(v)
+            except re.error as exc:
                 return {}, f"url_pattern_override ungültig: {exc}"
             cleaned["url_pattern_override"] = v
         else:
@@ -701,8 +700,8 @@ def _validate_payload(payload: dict, partial: bool = False) -> tuple[dict, str |
             if len(v) > 500:
                 return {}, "from_whitelist_override ≤500 Zeichen"
             try:
-                _re_pp.compile(v)
-            except _re_pp.error as exc:
+                re.compile(v)
+            except re.error as exc:
                 return {}, f"from_whitelist_override ungültig: {exc}"
             cleaned["from_whitelist_override"] = v
         else:
