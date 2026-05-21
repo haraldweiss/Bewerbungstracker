@@ -278,6 +278,78 @@ def _apply_subject_filter(
     ]
 
 
+# Generic defaults für auto-generated Plattformen (DB-resolved).
+_GENERIC_SUBJECT_PATTERN = re.compile(
+    r"^(?P<title>.+?)\s+(?:bei|at|@)\s+(?P<company>.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _build_profile_from_row(row) -> PlatformProfile:
+    """Konstruiert PlatformProfile aus DB-Row. Auto-Generation aus domain
+    wenn url_pattern_override / from_whitelist_override nicht gesetzt sind.
+    """
+    import json as _json
+    domain = row.domain
+    domain_esc = re.escape(domain)
+
+    if row.url_pattern_override:
+        url_pattern_str = row.url_pattern_override
+    else:
+        url_pattern_str = (
+            rf"https?://(?:[a-z0-9.-]+\.)?{domain_esc}/[^\s)<>\"'\\]+"
+        )
+    url_pattern = re.compile(url_pattern_str, re.IGNORECASE)
+
+    if row.from_whitelist_override:
+        from_whitelist = (row.from_whitelist_override,)
+    else:
+        from_whitelist = (rf"@(?:[a-z0-9.-]+\.)?{domain_esc}$",)
+
+    # Robust JSON-parse: malformed → []
+    try:
+        smc = _json.loads(row.subject_must_contain or "[]")
+        if not isinstance(smc, list):
+            smc = []
+    except (ValueError, TypeError):
+        smc = []
+    subject_must_contain = tuple(s for s in smc if isinstance(s, str))
+
+    return PlatformProfile(
+        name=row.slug,
+        source_label=row.display_name,
+        from_filter=f"from:{domain}",
+        from_whitelist=from_whitelist,
+        url_pattern=url_pattern,
+        subject_patterns=(_GENERIC_SUBJECT_PATTERN,),
+        body_title_re=_BODY_TITLE_RE,
+        body_company_re=_BODY_COMPANY_RE,
+        body_location_re=_BODY_LOCATION_RE,
+        digest_threshold=row.digest_threshold,
+        ai_hint="",
+        body_card_re=None,
+        hard_title_blacklist_re=None,
+        subject_must_contain=subject_must_contain,
+        ai_schema_hint=row.ai_schema_hint or "",
+    )
+
+
+def get_profile(slug: str) -> PlatformProfile:
+    """Resolve Plattform-Slug zu PlatformProfile.
+
+    1. Hardcoded PROFILES-Dict (legacy, getestet — Vorrang).
+    2. DB-Tabelle platform_profiles (user-defined).
+    3. KeyError wenn nichts gefunden.
+    """
+    if slug in PROFILES:
+        return PROFILES[slug]
+    from models import PlatformProfileRow
+    row = PlatformProfileRow.query.filter_by(slug=slug).first()
+    if row is None:
+        raise KeyError(f"Unknown platform: {slug}")
+    return _build_profile_from_row(row)
+
+
 class EmailJobsAdapter(JobSourceAdapter):
     """Liest Job-Empfehlungs-Emails (Indeed, LinkedIn, XING, …) aus einem
     IMAP-Folder des Users.
