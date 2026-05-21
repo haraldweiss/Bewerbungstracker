@@ -170,7 +170,10 @@ PATTERN_JSON_SCHEMA: dict[str, Any] = {
             "required": ["url_labels", "fields_before_url", "separator_lines_allowed"],
             "properties": {
                 "url_labels": {
-                    "type": "array", "minItems": 1, "maxItems": 10,
+                    # minItems=0 erlaubt: AI hat keine echten Labels gefunden
+                    # (z.B. Indeed = single-job ohne Card-Schema). Adapter
+                    # faellt dann auf subject+URL-Pfad zurueck.
+                    "type": "array", "minItems": 0, "maxItems": 10,
                     "items": {"type": "string", "maxLength": 80},
                 },
                 "fields_before_url": {
@@ -259,8 +262,11 @@ def normalize_pattern(raw: dict) -> dict:
     url_labels_clean = [
         str(lbl)[:80] for lbl in url_labels if isinstance(lbl, str)
     ][:10]
-    if not url_labels_clean:
-        url_labels_clean = ["Jobangebot ansehen", "View job"]
+    # Bewusst KEIN LinkedIn-Default einsetzen wenn die AI nichts liefert.
+    # Frühere Default-Werte ("Jobangebot ansehen", "View job") leakten in
+    # Indeed-/XING-Pattern weil die AI bei fehlendem Card-Schema gar nichts
+    # generierte → Default griff → falsche Phrasen wurden persistiert.
+    # Siehe Memory: incident_pattern_learner_prompt_leak_2026_05_21.
 
     sep_lines_raw = bc_raw.get("separator_lines_allowed", 5)
     try:
