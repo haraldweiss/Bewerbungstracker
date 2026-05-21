@@ -150,3 +150,33 @@ def test_get_adapter_with_db_platform(app, user_factory):
     adapter = get_adapter("stepstone_email", config={}, user=user)
     assert isinstance(adapter, EmailJobsAdapter)
     assert adapter.profile.name == "stepstone"
+
+
+def test_fetch_sample_mails_accepts_db_platform(app, user_factory):
+    """fetch_sample_mails muss DB-Plattformen akzeptieren (Spec-Intent: 🧠 Lernen)."""
+    from database import db
+    from models import PlatformProfileRow
+    from services.job_sources import pattern_learner as pl
+    user = user_factory()
+    user.imap_host = None  # IMAP-Credentials fehlen → RuntimeError, NICHT ValueError
+    row = PlatformProfileRow(
+        slug="stepstone", display_name="Stepstone", domain="stepstone.de",
+        subject_must_contain="[]", created_by_user_id=user.id,
+    )
+    db.session.add(row); db.session.commit()
+
+    # Wichtig: pattern_learner soll die Plattform akzeptieren — wenn IMAP-creds
+    # fehlen, RuntimeError. ValueError "Unknown platform" wäre der alte Bug.
+    import pytest as _pytest
+    with _pytest.raises(RuntimeError, match="IMAP-Credentials"):
+        pl.fetch_sample_mails(user, platform="stepstone", folder="INBOX", lookback_days=30, n=10)
+
+
+def test_fetch_sample_mails_rejects_unknown_platform(app, user_factory):
+    """Unknown platform: weder hardcoded noch in DB → ValueError."""
+    from services.job_sources import pattern_learner as pl
+    user = user_factory()
+    user.imap_host = "host"; user.imap_user = "u"
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="Unknown platform"):
+        pl.fetch_sample_mails(user, platform="does_not_exist", folder="INBOX", lookback_days=30, n=10)

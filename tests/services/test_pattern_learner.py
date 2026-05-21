@@ -229,7 +229,8 @@ def test_fetch_delegates_to_adapter():
     assert m.called
 
 
-def test_fetch_unknown_platform_raises():
+def test_fetch_unknown_platform_raises(app):
+    # app-fixture nötig: get_profile() greift auf DB für nicht-hardcoded slugs zu.
     user = MagicMock()
     with pytest.raises(ValueError, match="Unknown platform"):
         fetch_sample_mails(user, platform="myspace",

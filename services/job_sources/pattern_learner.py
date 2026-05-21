@@ -381,11 +381,14 @@ def fetch_sample_mails(
     """Holt N Email-Samples via IMAP (delegiert an EmailJobsAdapter).
 
     Raises:
-        ValueError wenn platform nicht in PROFILES.
+        ValueError wenn platform nicht in PROFILES und nicht in DB-Tabelle.
         RuntimeError wenn User keine IMAP-Credentials hat.
     """
-    from services.job_sources.email_jobs import EmailJobsAdapter, PROFILES, get_profile
-    if platform not in PROFILES:
+    from services.job_sources.email_jobs import EmailJobsAdapter, get_profile
+    # Validiere via get_profile — wirft KeyError wenn weder hardcoded noch in DB.
+    try:
+        get_profile(platform)
+    except KeyError:
         raise ValueError(f"Unknown platform: {platform}")
 
     host = user.imap_host
