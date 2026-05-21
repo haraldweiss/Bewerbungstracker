@@ -77,6 +77,9 @@ def _valid_pattern_dict():
         "body_card": {
             "url_labels": ["Jobangebot ansehen", "View job"],
             "fields_before_url": ["title", "company", "location"],
+            # XING-Schema-Defaults (backward-compat: LinkedIn-Mode bleibt unverändert)
+            "fields_after_url": [],
+            "title_in_url_link": False,
             "separator_lines_allowed": 5,
         },
         "filters": {

@@ -85,24 +85,49 @@ def compile_pattern(pattern: dict, url_pattern_str: str | None = None) -> Compil
         re.error wenn ein gebautes Regex syntaktisch ungültig ist.
     """
     body_card = pattern["body_card"]
-    parts = []
-    for field in body_card["fields_before_url"]:
+    title_in_link = body_card.get("title_in_url_link", False)
+    url_re_inner = url_pattern_str or r"https?://[^\s\r\n)<>\"']+"
+    n_sep = body_card["separator_lines_allowed"]
+
+    parts: list[str] = []
+
+    if title_in_link:
+        # Mode B (XING-Style): `** [title-text](URL) **`. fields_before_url is
+        # ignored (title comes from the link text). url_labels likewise unused
+        # (no separate label phrase). `**` ist REQUIRED — XING-Job-Cards sind
+        # immer bold. Optional zu machen würde auch CTA-Links wie
+        # `[Zu den Ersten gehören](URL)` matchen, die ohne ** vor jeder echten
+        # Card stehen. Wenn ein künftiges XING-Format non-bold-Cards emittiert,
+        # können wir das hier später lockern.
+        parts.append(
+            rf"[ \t]*\*\*\s*\[(?P<title>[^\]\r\n]{{2,200}})\]\((?P<url>{url_re_inner})\)\s*\*\*\s*\r?\n"
+        )
+    else:
+        # Mode A (LinkedIn-Style, default).
+        for field in body_card["fields_before_url"]:
+            if field not in _FIELD_BUILDERS:
+                raise ValueError(f"Unknown field: {field}")
+            parts.append(_FIELD_BUILDERS[field])
+        # Separator lines + optional URL-label + URL.
+        parts.append(rf"(?:[^\r\n]*\r?\n){{0,{n_sep}}}?")
+        labels_alt = "|".join(re.escape(lbl) for lbl in body_card["url_labels"])
+        if labels_alt:
+            parts.append(rf"\s*(?:{labels_alt})\s*:?\s*")
+        else:
+            # No labels → just consume optional whitespace before URL. Cleaner
+            # than emitting an empty `(?:)` non-capturing group.
+            parts.append(r"\s*")
+        # Plattform-spezifisches URL-Pattern (hardcoded, Security-Grenze) ODER
+        # generic Fallback fuer Tests/Old-Callers.
+        parts.append(rf"(?P<url>{url_re_inner})")
+
+    # fields_after_url (both modes — typical XING use case: company+location
+    # on separate lines AFTER the title-link line).
+    for field in body_card.get("fields_after_url", []):
         if field not in _FIELD_BUILDERS:
             raise ValueError(f"Unknown field: {field}")
         parts.append(_FIELD_BUILDERS[field])
-    n_sep = body_card["separator_lines_allowed"]
-    parts.append(rf"(?:[^\r\n]*\r?\n){{0,{n_sep}}}?")
-    labels_alt = "|".join(re.escape(lbl) for lbl in body_card["url_labels"])
-    parts.append(rf"\s*(?:{labels_alt})\s*:?\s*")
-    # Plattform-spezifisches URL-Pattern (hardcoded, Security-Grenze) ODER
-    # generic Fallback fuer Tests/Old-Callers.
-    if url_pattern_str:
-        # url_pattern_str ist bereits ein vollstaendiger Regex (z.B.
-        # 'https?://(?:www\\.)?linkedin\\.com/(?:jobs/view|...)/\\d+[^\\s)<>"\\\']*').
-        # Wrap in named group.
-        parts.append(rf"(?P<url>{url_pattern_str})")
-    else:
-        parts.append(r"(?P<url>https?://[^\s\r\n)<>\"']+)")
+
     body_card_re = re.compile(
         "^" + "".join(parts),
         re.IGNORECASE | re.MULTILINE,
@@ -167,6 +192,9 @@ PATTERN_JSON_SCHEMA: dict[str, Any] = {
         "body_card": {
             "type": "object",
             "additionalProperties": False,
+            # title_in_url_link und fields_after_url sind optional (Defaults
+            # werden in normalize_pattern gesetzt). Nicht in `required` damit
+            # alte Pattern (vor dieser Schema-Erweiterung) weiter validieren.
             "required": ["url_labels", "fields_before_url", "separator_lines_allowed"],
             "properties": {
                 "url_labels": {
@@ -177,9 +205,17 @@ PATTERN_JSON_SCHEMA: dict[str, Any] = {
                     "items": {"type": "string", "maxLength": 80},
                 },
                 "fields_before_url": {
-                    "type": "array", "minItems": 1, "maxItems": 5,
+                    # minItems=0 weil XING-Mode (title_in_url_link=True) den
+                    # Titel aus dem Markdown-Link zieht und keine Felder VOR
+                    # der URL braucht.
+                    "type": "array", "minItems": 0, "maxItems": 5,
                     "items": {"enum": ["title", "company", "location", "extra"]},
                 },
+                "fields_after_url": {
+                    "type": "array", "minItems": 0, "maxItems": 5,
+                    "items": {"enum": ["title", "company", "location", "extra"]},
+                },
+                "title_in_url_link": {"type": "boolean"},
                 "separator_lines_allowed": {
                     "type": "integer", "minimum": 0, "maximum": 20,
                 },
@@ -253,7 +289,10 @@ def normalize_pattern(raw: dict) -> dict:
         f for f in fields_raw
         if isinstance(f, str) and f in allowed_field_values
     ][:5]
-    if not fields_clean:
+    # LinkedIn-Default nur wenn KEIN title_in_url_link (Mode A). In Mode B
+    # (XING) ist fields_before_url legitim leer, weil der Titel im
+    # Markdown-Link steckt.
+    if not fields_clean and not bool(bc_raw.get("title_in_url_link", False)):
         fields_clean = ["title", "company", "location"]
 
     url_labels = bc_raw.get("url_labels")
@@ -275,9 +314,22 @@ def normalize_pattern(raw: dict) -> dict:
     except (TypeError, ValueError):
         sep_lines = 5
 
+    # XING-Schema-Erweiterung (backward-compat: Defaults LinkedIn-äquivalent).
+    title_in_url_link = bool(bc_raw.get("title_in_url_link", False))
+
+    fields_after_raw = bc_raw.get("fields_after_url") or []
+    if not isinstance(fields_after_raw, list):
+        fields_after_raw = []
+    fields_after_clean = [
+        f for f in fields_after_raw
+        if isinstance(f, str) and f in allowed_field_values
+    ][:5]
+
     out["body_card"] = {
         "url_labels": url_labels_clean,
         "fields_before_url": fields_clean,
+        "fields_after_url": fields_after_clean,
+        "title_in_url_link": title_in_url_link,
         "separator_lines_allowed": sep_lines,
     }
 
@@ -450,6 +502,8 @@ _EXAMPLE_OUTPUT = {
     "body_card": {
         "url_labels": ["<LABEL_VOR_JOB_URL_AUS_MAIL>"],
         "fields_before_url": ["title", "company", "location"],
+        "fields_after_url": [],
+        "title_in_url_link": False,
         "separator_lines_allowed": 5,
     },
     "filters": {
@@ -491,6 +545,15 @@ def _build_user_prompt(
         "  Body. Erlaubte Werte: 'title', 'company', 'location', 'extra'.",
         "- body_card.separator_lines_allowed: max. Anzahl Leerzeilen/Trenner",
         "  zwischen den Feldern und der URL-Zeile.",
+        "- body_card.title_in_url_link: TRUE wenn der Job-Titel der Text",
+        "  eines Markdown-Links ist, z.B. '** [Senior Engineer](url) **'.",
+        "  FALSE wenn der Titel auf einer separaten Zeile VOR der URL steht.",
+        "  Im title_in_url_link=TRUE Modus wird fields_before_url ignoriert",
+        "  und url_labels nicht genutzt.",
+        "- body_card.fields_after_url: Felder die NACH der URL-Zeile kommen",
+        "  (typisch bei XING: title-in-link, dann company und location",
+        "  jeweils auf eigener Zeile). Erlaubte Werte: 'title','company',",
+        "  'location','extra'.",
         "- filters.title_blacklist: Phrasen die NIE ein Title sind — typisch",
         "  Mail-Header oder Section-Ueberschriften. Aus den Mails ableiten.",
         "- filters.company_blacklist_separators: Trenner-Muster, die NIE Company",
