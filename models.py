@@ -372,7 +372,7 @@ class RawJob(db.Model):
     title = db.Column(db.String(512), nullable=False)
     company = db.Column(db.String(255))
     location = db.Column(db.String(255))
-    url = db.Column(db.String(1024), nullable=False)
+    url = db.Column(db.Text, nullable=False)
     description = db.Column(db.Text)
     posted_at = db.Column(db.DateTime, nullable=True)
     _raw_payload = db.Column('raw_payload', db.Text, nullable=True)

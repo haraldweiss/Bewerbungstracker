@@ -550,7 +550,7 @@ class EmailJobsAdapter(JobSourceAdapter):
                     jobs_from_cards.append(FetchedJob(
                         external_id=u[:512],
                         title=t[:512],
-                        url=u[:1024],
+                        url=u[:4096],
                         company=(c[:255] if c else None),
                         location=(loc[:255] if loc else None),
                         description=body[:2000] if body else None,
@@ -643,7 +643,7 @@ class EmailJobsAdapter(JobSourceAdapter):
         return FetchedJob(
             external_id=url[:512],
             title=title[:512],
-            url=url[:1024],
+            url=url[:4096],
             company=company[:255] if company else None,
             location=location[:255] if location else None,
             description=body[:2000] if body else None,
@@ -699,7 +699,7 @@ class EmailJobsAdapter(JobSourceAdapter):
             out.append(FetchedJob(
                 external_id=url[:512],
                 title=title[:512],
-                url=url[:1024],
+                url=url[:4096],
                 company=(company[:255] if company else None),
                 location=(location[:255] if location else None),
                 description=body[:2000] if body else None,
