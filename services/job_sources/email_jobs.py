@@ -245,12 +245,20 @@ PROFILES: dict[str, PlatformProfile] = {
             "neue jobs", "jobs für", "job alert", "jobempfehlung",
         ),
         ai_schema_hint=(
-            "XING-Job-Cards verwenden ein anderes Layout als LinkedIn: "
-            "der Titel steht IM Markdown-Link, fett-formatiert (`** [Titel](URL) **`), "
-            "gefolgt von Company und Location auf je eigener Zeile. "
-            "Erkennst du dieses Muster, setze body_card.title_in_url_link=true und "
-            'body_card.fields_after_url=["company", "location"]. '
-            "body_card.url_labels bleibt dann leer, body_card.fields_before_url ebenfalls."
+            "XING-Job-Mails sind PLAIN TEXT (kein Markdown). Jede Job-Card hat "
+            "diese Struktur auf separaten Zeilen:\n"
+            "  1. <optional Hook-Zeile> (z.B. 'Bis 35% mehr Gehalt', 'Zu den Ersten gehören')\n"
+            "  2. <Title>\n"
+            "  3. => <URL>\n"
+            "  4. <leere Zeile>\n"
+            "  5. <Company>\n"
+            "  6. <Location>\n"
+            "Setze:\n"
+            "  body_card.fields_before_url = ['title']\n"
+            "  body_card.url_labels = ['=>']\n"
+            "  body_card.fields_after_url = ['company', 'location']\n"
+            "  body_card.title_in_url_link = false\n"
+            "  body_card.separator_lines_allowed = 3"
         ),
     ),
 }

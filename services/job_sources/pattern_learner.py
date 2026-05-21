@@ -102,6 +102,10 @@ def compile_pattern(pattern: dict, url_pattern_str: str | None = None) -> Compil
         parts.append(
             rf"[ \t]*\*\*\s*\[(?P<title>[^\]\r\n]{{2,200}})\]\((?P<url>{url_re_inner})\)\s*\*\*\s*\r?\n"
         )
+        # Mode B ended the URL line with `\r?\n` already; if fields_after_url
+        # are configured, allow optional separator/blank lines before them.
+        if body_card.get("fields_after_url"):
+            parts.append(rf"(?:[^\r\n]*\r?\n){{0,{n_sep}}}?")
     else:
         # Mode A (LinkedIn-Style, default).
         for field in body_card["fields_before_url"]:
@@ -120,6 +124,12 @@ def compile_pattern(pattern: dict, url_pattern_str: str | None = None) -> Compil
         # Plattform-spezifisches URL-Pattern (hardcoded, Security-Grenze) ODER
         # generic Fallback fuer Tests/Old-Callers.
         parts.append(rf"(?P<url>{url_re_inner})")
+        # If fields_after_url is non-empty, close the URL line and permit
+        # the same number of separator lines as before the URL. XING-mails
+        # have a blank line between URL and Company; LinkedIn typically has
+        # no fields_after_url at all (so this is skipped for LinkedIn).
+        if body_card.get("fields_after_url"):
+            parts.append(rf"\s*\r?\n(?:[^\r\n]*\r?\n){{0,{n_sep}}}?")
 
     # fields_after_url (both modes — typical XING use case: company+location
     # on separate lines AFTER the title-link line).
