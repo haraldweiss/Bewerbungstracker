@@ -257,8 +257,11 @@ def test_ai_learn_success(monkeypatch):
         "services.ai_provider_client.AIProviderClient.chat", fake_chat,
     )
     user = MagicMock(id="test-uid", ai_provider="ollama", ai_provider_model="qwen2.5")
+    # Sample body must contain both url_labels so the hallucination filter
+    # keeps them — otherwise body_card.url_labels gets stripped to [].
+    sample_body = "Jobangebot ansehen: https://example.com/a\nView job: https://example.com/b"
     result = ai_learn_pattern(
-        user, train_samples=[{"subject": "X", "body": "Y"}], platform="linkedin",
+        user, train_samples=[{"subject": "X", "body": sample_body}], platform="linkedin",
     )
     assert result == _valid_pattern_dict()
     assert fake_chat.called
@@ -350,8 +353,11 @@ def test_ai_learn_strips_markdown_fences(monkeypatch):
         "services.ai_provider_client.AIProviderClient.chat", fake_chat,
     )
     user = MagicMock(id="t", ai_provider="ollama", ai_provider_model="q")
+    # Sample body must contain both url_labels so the hallucination filter
+    # keeps them — otherwise body_card.url_labels gets stripped to [].
+    sample_body = "Jobangebot ansehen: https://example.com/a\nView job: https://example.com/b"
     result = ai_learn_pattern(
-        user, train_samples=[{"subject": "X", "body": "Y"}], platform="linkedin",
+        user, train_samples=[{"subject": "X", "body": sample_body}], platform="linkedin",
     )
     assert result == _valid_pattern_dict()
     assert fake_chat.call_count == 1  # success on first try

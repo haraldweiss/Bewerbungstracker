@@ -39,6 +39,36 @@ _FIELD_BUILDERS = {
 }
 
 
+def _filter_hallucinated_url_labels(
+    pattern: dict, samples: list[dict],
+) -> dict:
+    """Remove url_labels that do not appear in any sample-mail body.
+
+    Small AI models hallucinate plausible-sounding label phrases (e.g.
+    'Jobangebot ansehen' for Indeed-mails which use no Card-Schema at all).
+    These break body_card_re. We strip them post-hoc: a label must appear
+    as a case-insensitive substring in at least one sample's body, otherwise
+    it's removed.
+
+    Mutates and returns `pattern` for convenience. No-op if pattern has no
+    body_card.url_labels.
+    """
+    bc = pattern.get("body_card") or {}
+    labels = bc.get("url_labels") or []
+    if not labels:
+        return pattern
+    bodies_lower = [(s.get("body") or "").lower() for s in samples]
+    kept = []
+    for lbl in labels:
+        needle = (lbl or "").lower()
+        if not needle:
+            continue
+        if any(needle in b for b in bodies_lower):
+            kept.append(lbl)
+    bc["url_labels"] = kept
+    return pattern
+
+
 def compile_pattern(pattern: dict, url_pattern_str: str | None = None) -> CompiledPattern:
     """Baut Regex-Objekte aus dem JSON-Pattern.
 
@@ -564,6 +594,12 @@ def ai_learn_pattern(user, train_samples: list[dict], platform: str) -> dict:
                 "ai_learn_pattern attempt %d: %s", attempt, last_error,
             )
             continue
+        # Hallucination filter: strip url_labels the AI invented out of thin air
+        # (substrings that don't actually occur in any sample mail body).
+        # Runs AFTER schema validation: an empty url_labels list is fine here —
+        # the downstream body_card_re will simply not match, and the runtime
+        # adapter falls back to subject+URL parsing.
+        parsed = _filter_hallucinated_url_labels(parsed, train_samples)
         return parsed
     raise RuntimeError(
         f"ai_learn_pattern failed after 2 attempts: {last_error}"
