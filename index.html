@@ -1318,6 +1318,82 @@
               onclick="JdSourcesUI.loadLearnedPatterns()">🔄 Aktualisieren</button>
     </div>
 
+    <div class="card" style="max-width:900px;margin-top:1rem;">
+      <div class="card-title" style="margin-bottom:0.75rem">🌐 Plattformen (Email-Quellen)</div>
+      <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;">
+        Neue Email-Plattformen anlegen ohne Code-Push. Indeed/LinkedIn/XING sind
+        hardcoded und nicht editierbar. AI-Pattern-Learning übernimmt das Layout
+        beim ersten 🧠 Lernen.
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+        <thead>
+          <tr style="text-align:left;color:var(--text-muted)">
+            <th style="padding:0.4rem">Slug</th>
+            <th>Anzeige-Name</th>
+            <th>Domain</th>
+            <th>Subject-Keywords</th>
+            <th>Aktion</th>
+          </tr>
+        </thead>
+        <tbody id="platformTableBody">
+          <tr><td colspan="5" style="color:var(--text-muted)">Lädt...</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:0.75rem">
+        <button class="btn btn-primary btn-sm" onclick="PlatformsUI.openCreate()">+ Neue Plattform</button>
+        <button class="btn btn-secondary btn-sm" onclick="PlatformsUI.load()">🔄 Aktualisieren</button>
+      </div>
+    </div>
+
+    <div id="platformModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:var(--bg-card);padding:1.5rem;border-radius:8px;max-width:560px;width:90%;max-height:85vh;overflow-y:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <h3 id="platformModalTitle" style="margin:0;">Neue Plattform anlegen</h3>
+          <button class="btn btn-secondary btn-sm" onclick="PlatformsUI.closeModal()">×</button>
+        </div>
+        <div>
+          <div class="form-group">
+            <label>Anzeige-Name *</label>
+            <input type="text" id="pfName" placeholder="z.B. Stepstone" style="width:100%">
+          </div>
+          <div class="form-group">
+            <label>Domain *</label>
+            <input type="text" id="pfDomain" placeholder="stepstone.de" style="width:100%">
+            <div style="font-size:0.75rem;color:var(--text-muted)">Nur Hostname, ohne https://</div>
+          </div>
+          <div class="form-group">
+            <label>Slug *</label>
+            <input type="text" id="pfSlug" placeholder="stepstone" style="width:100%">
+            <div style="font-size:0.75rem;color:var(--text-muted)">Identifier — JobSource-Type wird "&lt;slug&gt;_email"</div>
+          </div>
+          <div class="form-group">
+            <label>Subject-Keywords (kommagetrennt) *</label>
+            <input type="text" id="pfKeywords" placeholder="stelle, job, stellenangebot" style="width:100%">
+          </div>
+          <div class="form-group">
+            <label>AI-Hint (optional)</label>
+            <textarea id="pfHint" rows="3" placeholder="Layout-Hinweis für AI-Pattern-Learner..." style="width:100%;resize:vertical"></textarea>
+          </div>
+          <details style="margin-top:0.75rem">
+            <summary style="cursor:pointer;color:var(--text-muted)">⚙️ Advanced (Regex-Overrides)</summary>
+            <div class="form-group" style="margin-top:0.5rem">
+              <label>URL-Pattern-Override</label>
+              <input type="text" id="pfUrlOverride" placeholder="(auto aus Domain)" style="width:100%">
+            </div>
+            <div class="form-group">
+              <label>From-Whitelist-Override</label>
+              <input type="text" id="pfFromOverride" placeholder="(auto aus Domain)" style="width:100%">
+            </div>
+          </details>
+          <div id="pfError" style="color:#dc3545;margin-top:0.5rem;font-size:0.85rem"></div>
+        </div>
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem;">
+          <button class="btn btn-secondary" onclick="PlatformsUI.closeModal()">Abbrechen</button>
+          <button class="btn btn-primary" onclick="PlatformsUI.save()">Speichern</button>
+        </div>
+      </div>
+    </div>
+
     <div class="card" style="max-width:600px;margin-top:1rem">
         <div class="card-title" style="margin-bottom:0.75rem">📋 Briefkopf-Daten</div>
         <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:0.75rem">
@@ -3217,6 +3293,9 @@ function showView(name) {
         if (typeof JdSourcesUI !== 'undefined' && JdSourcesUI.loadLearnedPatterns) {
             JdSourcesUI.loadLearnedPatterns();
         }
+        if (typeof PlatformsUI !== 'undefined' && PlatformsUI.load) {
+            PlatformsUI.load();
+        }
         if (typeof loadLetterheadData === 'function') loadLetterheadData();
         initSettingsSection();
         if (typeof initLearnSettingsHandlers === 'function') initLearnSettingsHandlers();
@@ -4107,6 +4186,185 @@ const JdSourcesUI = (() => {
         testImap, clearImapCreds, loadImapStatus,
         trainPattern, loadLearnedPatterns, rollbackPattern,
     };
+})();
+
+/* ═══════════════════════════════════════════════════════
+   USER-DEFINED PLATTFORMEN (Admin)
+═══════════════════════════════════════════════════════ */
+const PlatformsUI = (() => {
+    let _editingSlug = null;
+    const _hardcoded = ['indeed', 'linkedin', 'xing'];
+
+    function slugFromName(name) {
+        return (name || '').toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 26);
+    }
+
+    function _addCell(row, text) {
+        const td = document.createElement('td');
+        td.style.padding = '0.4rem';
+        td.textContent = text == null ? '' : String(text);
+        return row.appendChild(td);
+    }
+
+    function _addActionButtons(row, slug) {
+        const td = document.createElement('td');
+        td.style.padding = '0.4rem';
+        const btnEdit = document.createElement('button');
+        btnEdit.className = 'btn btn-sm';
+        btnEdit.textContent = '✏️';
+        btnEdit.addEventListener('click', () => edit(slug));
+        const btnDel = document.createElement('button');
+        btnDel.className = 'btn btn-sm';
+        btnDel.textContent = '🗑️';
+        btnDel.addEventListener('click', () => remove(slug));
+        td.appendChild(btnEdit);
+        td.appendChild(document.createTextNode(' '));
+        td.appendChild(btnDel);
+        row.appendChild(td);
+    }
+
+    function _renderTable(rows) {
+        const tbody = document.getElementById('platformTableBody');
+        if (!tbody) return;
+        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+        _hardcoded.forEach(slug => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid var(--border)';
+            tr.style.color = 'var(--text-muted)';
+            _addCell(tr, slug);
+            _addCell(tr, slug.charAt(0).toUpperCase() + slug.slice(1));
+            _addCell(tr, '—');
+            _addCell(tr, '—');
+            _addCell(tr, '(Hardcoded)');
+            tbody.appendChild(tr);
+        });
+
+        rows.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid var(--border)';
+            _addCell(tr, p.slug);
+            _addCell(tr, p.display_name);
+            _addCell(tr, p.domain);
+            _addCell(tr, (p.subject_must_contain || []).join(', '));
+            _addActionButtons(tr, p.slug);
+            tbody.appendChild(tr);
+        });
+    }
+
+    function _renderError(msg) {
+        const tbody = document.getElementById('platformTableBody');
+        if (!tbody) return;
+        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.style.color = '#dc3545';
+        td.textContent = 'Fehler: ' + msg;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+    }
+
+    async function load() {
+        try {
+            const r = await Auth.fetch('/admin/platforms', { method: 'GET' });
+            const list = (r && r.platforms) || [];
+            _renderTable(list);
+        } catch (e) {
+            _renderError(e && e.message ? e.message : String(e));
+        }
+    }
+
+    function openCreate() {
+        _editingSlug = null;
+        document.getElementById('platformModalTitle').textContent = 'Neue Plattform anlegen';
+        ['pfName','pfDomain','pfSlug','pfKeywords','pfHint','pfUrlOverride','pfFromOverride'].forEach(id => {
+            document.getElementById(id).value = '';
+        });
+        document.getElementById('pfSlug').disabled = false;
+        document.getElementById('pfError').textContent = '';
+        document.getElementById('platformModal').style.display = 'flex';
+        document.getElementById('pfName').oninput = (e) => {
+            if (!_editingSlug) {
+                document.getElementById('pfSlug').value = slugFromName(e.target.value);
+            }
+        };
+    }
+
+    async function edit(slug) {
+        _editingSlug = slug;
+        try {
+            const r = await Auth.fetch('/admin/platforms', { method: 'GET' });
+            const p = ((r && r.platforms) || []).find(x => x.slug === slug);
+            if (!p) { alert('Plattform nicht gefunden'); return; }
+            document.getElementById('platformModalTitle').textContent = 'Plattform bearbeiten: ' + slug;
+            document.getElementById('pfName').value = p.display_name || '';
+            document.getElementById('pfDomain').value = p.domain || '';
+            document.getElementById('pfSlug').value = p.slug || '';
+            document.getElementById('pfSlug').disabled = true;
+            document.getElementById('pfKeywords').value = (p.subject_must_contain || []).join(', ');
+            document.getElementById('pfHint').value = p.ai_schema_hint || '';
+            document.getElementById('pfUrlOverride').value = p.url_pattern_override || '';
+            document.getElementById('pfFromOverride').value = p.from_whitelist_override || '';
+            document.getElementById('pfError').textContent = '';
+            document.getElementById('platformModal').style.display = 'flex';
+        } catch (e) {
+            alert('Fehler: ' + (e && e.message ? e.message : e));
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('platformModal').style.display = 'none';
+        document.getElementById('pfSlug').disabled = false;
+        _editingSlug = null;
+    }
+
+    async function save() {
+        const payload = {
+            slug: document.getElementById('pfSlug').value.trim(),
+            display_name: document.getElementById('pfName').value.trim(),
+            domain: document.getElementById('pfDomain').value.trim(),
+            subject_must_contain: document.getElementById('pfKeywords').value
+                .split(',').map(s => s.trim()).filter(Boolean),
+            ai_schema_hint: document.getElementById('pfHint').value.trim(),
+            url_pattern_override: document.getElementById('pfUrlOverride').value.trim() || null,
+            from_whitelist_override: document.getElementById('pfFromOverride').value.trim() || null,
+        };
+        try {
+            const url = _editingSlug
+                ? '/admin/platforms/' + encodeURIComponent(_editingSlug)
+                : '/admin/platforms';
+            const method = _editingSlug ? 'PATCH' : 'POST';
+            const r = await Auth.fetch(url, { method, body: JSON.stringify(payload) });
+            if (r && (r.slug || r.display_name)) {
+                closeModal();
+                await load();
+            } else if (r && r.error) {
+                document.getElementById('pfError').textContent = r.error;
+            }
+        } catch (e) {
+            document.getElementById('pfError').textContent = e && e.message ? e.message : String(e);
+        }
+    }
+
+    async function remove(slug) {
+        if (!confirm('Plattform "' + slug + '" wirklich löschen?')) return;
+        try {
+            const r = await Auth.fetch('/admin/platforms/' + encodeURIComponent(slug), { method: 'DELETE' });
+            if (r && r.deleted) {
+                await load();
+            } else if (r && r.error) {
+                alert('❌ ' + r.error);
+            }
+        } catch (e) {
+            alert('❌ ' + (e && e.message ? e.message : e));
+        }
+    }
+
+    return { load, openCreate, edit, closeModal, save, remove };
 })();
 
 /* ═══════════════════════════════════════════════════════
