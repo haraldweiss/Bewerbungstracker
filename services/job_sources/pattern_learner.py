@@ -400,20 +400,25 @@ _SYSTEM_PROMPT = (
 )
 
 
+# Placeholder values use the form "<UPPER_SNAKE>" so they CANNOT occur in
+# real emails. Past bug: small AI models copied concrete examples (e.g.
+# "Jobangebot ansehen") verbatim into the learned pattern instead of
+# extracting from the actual mail samples — see git log for the prompt-
+# leakage incident on 2026-05-21.
 _EXAMPLE_OUTPUT = {
     "subject_pattern": {
         "prefix_optional": True,
-        "prefix_keywords": ["Neue Stelle", "Job alert"],
-        "separator": "bei|at|@",
+        "prefix_keywords": ["<PREFIX_AUS_MAIL_1>", "<PREFIX_AUS_MAIL_2>"],
+        "separator": "<TRENNER_AUS_MAIL>",
     },
     "body_card": {
-        "url_labels": ["Jobangebot ansehen", "View job"],
+        "url_labels": ["<LABEL_VOR_JOB_URL_AUS_MAIL>"],
         "fields_before_url": ["title", "company", "location"],
         "separator_lines_allowed": 5,
     },
     "filters": {
-        "title_blacklist": ["Ihre Jobbenachrichtigung", "Top-Jobs"],
-        "company_blacklist_separators": ["----"],
+        "title_blacklist": ["<NICHT_JOB_TITLE_AUS_MAIL>"],
+        "company_blacklist_separators": ["<TRENNER_NIE_COMPANY>"],
     },
 }
 
@@ -431,21 +436,29 @@ def _build_user_prompt(
         "Beispiel-Output (Struktur exakt einhalten, Werte an deine Mails anpassen):",
         json.dumps(_EXAMPLE_OUTPUT, indent=2, ensure_ascii=False),
         "",
+        "WICHTIG — PLATZHALTER-WERTE: Im Beispiel oben stehen Werte in",
+        "spitzen Klammern wie '<LABEL_VOR_JOB_URL_AUS_MAIL>'. Diese sind",
+        "REINE PLATZHALTER und kommen NIEMALS in echten Mails vor. Du",
+        "MUSST sie durch Werte ersetzen, die du WOERTLICH aus den unten",
+        "stehenden Sample-Mails extrahierst. Wenn du Platzhalter aus dem",
+        "Beispiel uebernimmst, ist das Pattern unbrauchbar.",
+        "",
         "Feld-Erklaerung:",
-        "- subject_pattern.prefix_keywords: Wuerter wie 'Neue Stelle', die vor",
-        "  dem Job-Titel im Subject stehen koennen (optional).",
+        "- subject_pattern.prefix_keywords: Wuerter, die vor dem Job-Titel",
+        "  im Subject stehen koennen (optional) — extrahiere aus den Mails.",
         "- subject_pattern.separator: Regex-Alternation zwischen Title und Company",
         "  im Subject (typisch: 'bei|at|@').",
-        "- body_card.url_labels: Label-Strings direkt vor der Job-URL im Body",
-        "  (z.B. 'Jobangebot ansehen', 'View job', 'Show job').",
+        "- body_card.url_labels: Label-Strings direkt vor der Job-URL im Body —",
+        "  diese stehen unmittelbar vor dem Job-Link in JEDER Card. Extrahiere",
+        "  sie WORTWOERTLICH aus den vorgelegten Mails.",
         "- body_card.fields_before_url: Reihenfolge der Felder VOR der URL im",
         "  Body. Erlaubte Werte: 'title', 'company', 'location', 'extra'.",
         "- body_card.separator_lines_allowed: max. Anzahl Leerzeilen/Trenner",
         "  zwischen den Feldern und der URL-Zeile.",
-        "- filters.title_blacklist: Phrasen die NIE ein Title sind (z.B.",
-        "  Mail-Header wie 'Ihre Jobbenachrichtigung').",
-        "- filters.company_blacklist_separators: Trenner-Muster die NIE Company",
-        "  sein duerfen (z.B. '----').",
+        "- filters.title_blacklist: Phrasen die NIE ein Title sind — typisch",
+        "  Mail-Header oder Section-Ueberschriften. Aus den Mails ableiten.",
+        "- filters.company_blacklist_separators: Trenner-Muster, die NIE Company",
+        "  sein duerfen (typisch reine Strichlinien als Card-Trenner).",
         "",
         "Sample-Mails (Layout aus diesen ableiten):",
     ]
