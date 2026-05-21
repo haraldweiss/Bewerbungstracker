@@ -5961,8 +5961,56 @@ function showDetail(id) {
                 <div class="detail-label">Notizen</div>
                 <div class="detail-value" style="white-space:pre-wrap;">${escHtml(b.notizen)}</div>
             </div>` : ''}
+            ${['antwort','interview','zusage'].includes(b.status) ? `
+            <div class="detail-section" style="grid-column:1/-1;">
+                <button onclick="exportInterviewCalendar('${id}', ${JSON.stringify(b.firma || 'Bewerbung')})"
+                        class="btn btn-secondary"
+                        style="display:inline-flex;align-items:center;gap:0.5rem;">
+                    📅 In Kalender exportieren (.ics)
+                </button>
+                <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.4rem;">
+                    Erzeugt eine Kalender-Datei aus Termin/Link in den Notizen.
+                </div>
+            </div>` : ''}
         </div>`;
     openModal('detailModal');
+}
+
+async function exportInterviewCalendar(id, firma) {
+    function toast(msg, type) {
+        if (typeof showToast === 'function') {
+            showToast(msg, type);
+        } else {
+            console.log(`[${type}] ${msg}`);
+        }
+    }
+    try {
+        // Auth.fetch parses JSON automatically — for binary blob downloads use fetchAPI
+        // which returns a raw Response with Authorization header attached.
+        const response = await fetchAPI(`/api/applications/${id}/calendar-event.ics`);
+        if (response.status === 400) {
+            toast('Kein Termin in den Notizen erkannt — bitte ergänzen und erneut versuchen.', 'warning');
+            return;
+        }
+        if (!response.ok) {
+            toast(`Export fehlgeschlagen: ${response.status}`, 'error');
+            return;
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const safeFirma = String(firma || 'Bewerbung').replace(/[^A-Za-z0-9_-]+/g, '-').slice(0, 50);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Interview-${safeFirma}.ics`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast('Kalender-Datei heruntergeladen.', 'success');
+    } catch (err) {
+        console.error('Calendar export failed', err);
+        toast('Export fehlgeschlagen — siehe Konsole.', 'error');
+    }
 }
 
 async function quickStatusChange(id, newStatus) {
