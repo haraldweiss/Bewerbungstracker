@@ -546,3 +546,52 @@ class LearnedEmailPattern(db.Model):
             'rolled_back_at': self.rolled_back_at.isoformat() if self.rolled_back_at else None,
             'rolled_back_by_user_id': self.rolled_back_by_user_id,
         }
+
+
+class PlatformProfileRow(db.Model):
+    """User-defined Email-Plattform.
+
+    Resolution-Priorität: hardcoded `PROFILES`-Dict zuerst (Indeed/LinkedIn/
+    XING), dann diese Tabelle. Siehe `services/job_sources/email_jobs.py::
+    get_profile`.
+    """
+    __tablename__ = 'platform_profiles'
+
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(64), nullable=False, unique=True)
+    display_name = db.Column(db.String(120), nullable=False)
+    domain = db.Column(db.String(120), nullable=False)
+    # JSON-Array von Subject-Substrings (case-insensitive)
+    subject_must_contain = db.Column(db.Text, nullable=False, default='[]')
+    ai_schema_hint = db.Column(db.Text, nullable=True)
+    digest_threshold = db.Column(db.Integer, nullable=False, default=3)
+    # Optionale Regex-Overrides — wenn NULL, wird aus `domain` auto-generiert.
+    url_pattern_override = db.Column(db.Text, nullable=True)
+    from_whitelist_override = db.Column(db.Text, nullable=True)
+    # Audit
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow,
+        onupdate=datetime.utcnow, nullable=False,
+    )
+    created_by_user_id = db.Column(
+        db.String(36), db.ForeignKey('users.id'), nullable=False,
+    )
+
+    def to_dict(self) -> dict:
+        import json as _json
+        return {
+            "slug": self.slug,
+            "display_name": self.display_name,
+            "domain": self.domain,
+            "subject_must_contain": _json.loads(self.subject_must_contain or "[]"),
+            "ai_schema_hint": self.ai_schema_hint or "",
+            "digest_threshold": self.digest_threshold,
+            "url_pattern_override": self.url_pattern_override,
+            "from_whitelist_override": self.from_whitelist_override,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self):
+        return f'<PlatformProfileRow {self.slug}>'
