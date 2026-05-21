@@ -43,6 +43,28 @@ jobs_cron_bp = Blueprint('jobs_cron', __name__, url_prefix='/api/jobs')
 # Grund: sie brauchen User-IMAP-Credentials und sind manuell/per-User.
 EMAIL_SOURCE_TYPES = ("indeed_email", "linkedin_email", "xing_email")
 
+
+def _email_source_types() -> tuple[str, ...]:
+    """Dynamische Liste aller Email-Plattform-Types (hardcoded + DB).
+
+    Wird in `_select_due_source` genutzt um Email-Sources vom auto-crawl
+    auszuschließen (sie laufen nur per manuellem Import-Button).
+    """
+    from services.job_sources.email_jobs import PROFILES
+    from models import PlatformProfileRow
+    hardcoded = tuple(f"{slug}_email" for slug in PROFILES.keys())
+    try:
+        db_slugs = tuple(
+            f"{r.slug}_email"
+            for r in PlatformProfileRow.query.with_entities(
+                PlatformProfileRow.slug
+            ).all()
+        )
+    except Exception:
+        # Tabelle existiert noch nicht (z.B. erste Migration)
+        db_slugs = ()
+    return hardcoded + db_slugs
+
 # Tick-Limits
 MAX_NEW_JOBS_PER_TICK = 50
 MAX_PREFILTER_PER_TICK = 100
@@ -255,7 +277,7 @@ def _select_due_source() -> JobSource | None:
     # und sind pro-User konfiguriert.
     candidates = JobSource.query.filter(
         JobSource.enabled == True,
-        JobSource.type.notin_(EMAIL_SOURCE_TYPES),
+        JobSource.type.notin_(_email_source_types()),
     ).all()
     now = datetime.utcnow()
     due = [

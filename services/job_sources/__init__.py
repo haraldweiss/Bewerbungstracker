@@ -39,14 +39,16 @@ def get_adapter(source_type: str, config: dict, **kwargs) -> JobSourceAdapter:
     """
     # Generischer Dispatch für alle Email-basierten Sources.
     if source_type.endswith("_email"):
-        from services.job_sources.email_jobs import EmailJobsAdapter, PROFILES
+        from services.job_sources.email_jobs import EmailJobsAdapter, get_profile
         platform = source_type[: -len("_email")]
-        if platform not in PROFILES:
+        try:
+            profile = get_profile(platform)
+        except KeyError:
             raise ValueError(f"Unbekannte Email-Plattform: {platform}")
         return EmailJobsAdapter(
             config=config,
             user=kwargs.get("user"),
-            platform_profile=PROFILES[platform],
+            platform_profile=profile,
         )
 
     registry = {

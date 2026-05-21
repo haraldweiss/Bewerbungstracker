@@ -384,7 +384,7 @@ def fetch_sample_mails(
         ValueError wenn platform nicht in PROFILES.
         RuntimeError wenn User keine IMAP-Credentials hat.
     """
-    from services.job_sources.email_jobs import EmailJobsAdapter, PROFILES
+    from services.job_sources.email_jobs import EmailJobsAdapter, PROFILES, get_profile
     if platform not in PROFILES:
         raise ValueError(f"Unknown platform: {platform}")
 
@@ -397,7 +397,7 @@ def fetch_sample_mails(
     adapter = EmailJobsAdapter(
         config={"folder": folder, "lookback_days": lookback_days, "limit": n},
         user=user,
-        platform_profile=PROFILES[platform],
+        platform_profile=get_profile(platform),
     )
     return adapter._fetch_emails(host, imap_user, pw, folder, lookback_days, n)
 

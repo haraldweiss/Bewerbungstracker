@@ -145,7 +145,7 @@ def bulk_email_sources(user):
     übersprungen — kein Fehler, kein Duplikat. Antwort enthält nur die
     neu angelegten Sources (`sources` kann leer sein).
     """
-    from services.job_sources.email_jobs import PROFILES
+    from services.job_sources.email_jobs import PROFILES, get_profile
 
     data = request.get_json(silent=True) or {}
     platforms = data.get("platforms")
@@ -180,7 +180,7 @@ def bulk_email_sources(user):
         src = JobSource(
             user_id=user.id,
             type=source_type,
-            name=f"{PROFILES[platform].source_label} Email",
+            name=f"{get_profile(platform).source_label} Email",
             enabled=True,
         )
         src.config = config
@@ -1215,14 +1215,14 @@ def train_pattern(user, source_id):
     try:
         # Plattform-URL-Pattern (hardcoded) als Constraint einflechten —
         # verhindert dass AI-gelernte url_labels Marketing-Links matchen.
-        from services.job_sources.email_jobs import PROFILES
-        url_pattern_str = PROFILES[platform].url_pattern.pattern
+        from services.job_sources.email_jobs import PROFILES, get_profile
+        url_pattern_str = get_profile(platform).url_pattern.pattern
         compiled = pl.compile_pattern(pattern, url_pattern_str=url_pattern_str)
     except (ValueError, _re.error) as exc:
         return jsonify({"error": f"Pattern-Compile fehlgeschlagen: {exc}"}), 502
 
     hit_rate, diagnostics = pl.validate_pattern(
-        compiled, test, url_check_re=PROFILES[platform].url_pattern,
+        compiled, test, url_check_re=get_profile(platform).url_pattern,
     )
     if hit_rate < min_hit_rate:
         return jsonify({

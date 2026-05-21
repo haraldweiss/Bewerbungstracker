@@ -132,3 +132,21 @@ def test_build_profile_falls_back_on_invalid_from_whitelist_override(app, user_f
     # Falls back: auto-generated from_whitelist matches *@stepstone.de
     assert _re.compile(p.from_whitelist[0]).search("noreply@stepstone.de")
     assert any("from_whitelist_override" in rec.message for rec in caplog.records)
+
+
+def test_get_adapter_with_db_platform(app, user_factory):
+    """get_adapter() für 'stepstone_email' findet die Plattform in der DB."""
+    from database import db
+    from models import PlatformProfileRow
+    from services.job_sources import get_adapter
+    from services.job_sources.email_jobs import EmailJobsAdapter
+    user = user_factory()
+    row = PlatformProfileRow(
+        slug="stepstone", display_name="Stepstone", domain="stepstone.de",
+        subject_must_contain="[]", created_by_user_id=user.id,
+    )
+    db.session.add(row); db.session.commit()
+
+    adapter = get_adapter("stepstone_email", config={}, user=user)
+    assert isinstance(adapter, EmailJobsAdapter)
+    assert adapter.profile.name == "stepstone"
