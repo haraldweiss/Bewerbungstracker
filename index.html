@@ -5963,7 +5963,7 @@ function showDetail(id) {
             </div>` : ''}
             ${['antwort','interview','zusage'].includes(b.status) ? `
             <div class="detail-section" style="grid-column:1/-1;">
-                <button onclick="exportInterviewCalendar('${id}', ${JSON.stringify(b.firma || 'Bewerbung')})"
+                <button onclick="exportInterviewCalendar('${escJs(id)}', '${escJs(b.firma || 'Bewerbung')}')"
                         class="btn btn-secondary"
                         style="display:inline-flex;align-items:center;gap:0.5rem;">
                     📅 In Kalender exportieren (.ics)
@@ -5998,15 +5998,18 @@ async function exportInterviewCalendar(id, firma) {
         }
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
-        const safeFirma = String(firma || 'Bewerbung').replace(/[^A-Za-z0-9_-]+/g, '-').slice(0, 50);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Interview-${safeFirma}.ics`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        toast('Kalender-Datei heruntergeladen.', 'success');
+        try {
+            const safeFirma = String(firma || 'Bewerbung').replace(/[^A-Za-z0-9_-]+/g, '-').slice(0, 50);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Interview-${safeFirma}.ics`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            toast('Kalender-Datei heruntergeladen.', 'success');
+        } finally {
+            URL.revokeObjectURL(url);
+        }
     } catch (err) {
         console.error('Calendar export failed', err);
         toast('Export fehlgeschlagen — siehe Konsole.', 'error');
