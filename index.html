@@ -3558,6 +3558,7 @@ const JdSourcesUI = (() => {
             const r = await Auth.fetch('/jobs/sources', { method: 'GET' });
             const list = (r && r.sources) || [];
             _sourcesCache = list;
+            await _loadDynamicPlatforms();
             tbody.innerHTML = list.length === 0
                 ? `<tr><td colspan="4" style="padding:0.6rem;color:var(--text-muted)">Keine Quellen.</td></tr>`
                 : list.map(s => {
@@ -3658,6 +3659,8 @@ const JdSourcesUI = (() => {
         const el = document.createElement('div');
         el.innerHTML = html;
         document.body.appendChild(el.firstElementChild);
+        // Populate DB platforms dynamically (in addition to hardcoded options)
+        _loadDynamicPlatforms();
         renderTypeFields();
     }
 
@@ -3701,13 +3704,47 @@ const JdSourcesUI = (() => {
                 <div class="form-group" style="font-size:0.8rem;color:var(--text-muted)">
                     Legt eine Source pro angehakter Plattform an (idempotent). Import dann per 📧-Button.
                 </div>`;
-        } else if (t === 'indeed_email') {
-            c.innerHTML = `
-                <div class="form-group"><label>IMAP-Folder:</label>
-                    <input type="text" id="jdCfgFolder" value="Indeed" placeholder="Indeed" style="width:100%"></div>
-                <div class="form-group"><label>Lookback (Tage):</label>
-                    <input type="number" id="jdCfgLookback" value="30" min="1" max="365" style="width:120px"></div>
-                <div class="form-group" style="font-size:0.8rem;color:var(--text-muted)">Nur manueller Import via 📧 Button. User-IMAP-Credentials müssen gesetzt sein.</div>`;
+        } else if (t.endsWith('_email')) {
+            // Generic Email-Source form: works for all hardcoded + DB platforms.
+            const platform = t.slice(0, -'_email'.length);
+            const folderDefault = platform.charAt(0).toUpperCase() + platform.slice(1);
+            while (c.firstChild) c.removeChild(c.firstChild);
+
+            const grp1 = document.createElement('div');
+            grp1.className = 'form-group';
+            const lbl1 = document.createElement('label');
+            lbl1.textContent = 'IMAP-Folder:';
+            grp1.appendChild(lbl1);
+            const inp1 = document.createElement('input');
+            inp1.type = 'text';
+            inp1.id = 'jdCfgFolder';
+            inp1.value = folderDefault;
+            inp1.placeholder = folderDefault;
+            inp1.style.width = '100%';
+            grp1.appendChild(inp1);
+            c.appendChild(grp1);
+
+            const grp2 = document.createElement('div');
+            grp2.className = 'form-group';
+            const lbl2 = document.createElement('label');
+            lbl2.textContent = 'Lookback (Tage):';
+            grp2.appendChild(lbl2);
+            const inp2 = document.createElement('input');
+            inp2.type = 'number';
+            inp2.id = 'jdCfgLookback';
+            inp2.value = '30';
+            inp2.min = '1';
+            inp2.max = '365';
+            inp2.style.width = '120px';
+            grp2.appendChild(inp2);
+            c.appendChild(grp2);
+
+            const note = document.createElement('div');
+            note.className = 'form-group';
+            note.style.fontSize = '0.8rem';
+            note.style.color = 'var(--text-muted)';
+            note.textContent = 'Nur manueller Import via 📧 Button. User-IMAP-Credentials müssen gesetzt sein.';
+            c.appendChild(note);
         }
     }
 
@@ -3727,8 +3764,8 @@ const JdSourcesUI = (() => {
         if (t === 'arbeitnow') return {
             tags: ($('jdCfgTags').value || '').split(',').map(s => s.trim()).filter(Boolean),
         };
-        if (t === 'indeed_email') return {
-            folder: ($('jdCfgFolder').value || 'Indeed').trim(),
+        if (t.endsWith('_email')) return {
+            folder: ($('jdCfgFolder').value || '').trim() || 'INBOX',
             lookback_days: parseInt($('jdCfgLookback').value, 10) || 30,
         };
         return {};
@@ -4175,6 +4212,26 @@ const JdSourcesUI = (() => {
             box.style.display = 'block';
         } else {
             box.style.display = 'none';
+        }
+    }
+
+    async function _loadDynamicPlatforms() {
+        try {
+            const r = await Auth.fetch('/admin/platforms', { method: 'GET' });
+            const list = (r && r.platforms) || [];
+            const sel = document.getElementById('jdNewType');
+            if (!sel) return;
+            // Remove old dynamic options first
+            Array.from(sel.querySelectorAll('option[data-dynamic="true"]')).forEach(o => o.remove());
+            list.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.slug + '_email';
+                opt.textContent = p.display_name + ' Email (DB)';
+                opt.setAttribute('data-dynamic', 'true');
+                sel.appendChild(opt);
+            });
+        } catch (e) {
+            console.warn('[JdSources] Konnte DB-Plattformen nicht laden:', e);
         }
     }
 
