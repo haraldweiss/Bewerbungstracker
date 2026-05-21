@@ -580,11 +580,17 @@ class PlatformProfileRow(db.Model):
 
     def to_dict(self) -> dict:
         import json as _json
+        try:
+            subjects = _json.loads(self.subject_must_contain or "[]")
+            if not isinstance(subjects, list):
+                subjects = []
+        except (ValueError, TypeError):
+            subjects = []
         return {
             "slug": self.slug,
             "display_name": self.display_name,
             "domain": self.domain,
-            "subject_must_contain": _json.loads(self.subject_must_contain or "[]"),
+            "subject_must_contain": subjects,
             "ai_schema_hint": self.ai_schema_hint or "",
             "digest_threshold": self.digest_threshold,
             "url_pattern_override": self.url_pattern_override,
