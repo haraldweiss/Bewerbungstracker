@@ -32,22 +32,56 @@ def _get_anthropic_client():
     return Anthropic(api_key=api_key)
 
 
-_VALID_TYPES = {
-    "rss", "adzuna", "bundesagentur", "arbeitnow",
-    "indeed_email", "linkedin_email", "xing_email",
-}
+# Statische Non-Email-Types (RSS, API-basiert). Email-Types werden
+# dynamisch via get_profile aufgelöst (hardcoded PROFILES + DB-Plattformen).
+_NON_EMAIL_TYPES = {"rss", "adzuna", "bundesagentur", "arbeitnow"}
 
-# Email-Source-Types, die dieselbe Folder-/Lookback-Validation brauchen
-# wie indeed_email — alle nutzen den gleichen IMAP/Apps-Script-Fetch-Pfad
-# in services.job_sources.email_jobs.
-_EMAIL_SOURCE_TYPES = {"indeed_email", "linkedin_email", "xing_email"}
 
-# Default-Folder pro Email-Source-Type (für leere Configs).
-_EMAIL_DEFAULT_FOLDER = {
-    "indeed_email": "Indeed",
-    "linkedin_email": "[Google Mail]/Alle Nachrichten",
-    "xing_email": "[Google Mail]/Alle Nachrichten",
-}
+def _is_valid_source_type(source_type: str) -> bool:
+    """True wenn source_type ein bekannter Adapter-Type ist.
+
+    Für *_email-Types wird via get_profile geprüft — deckt hardcoded
+    PROFILES + DB-Tabelle platform_profiles ab.
+    """
+    if source_type in _NON_EMAIL_TYPES:
+        return True
+    if source_type.endswith("_email"):
+        from services.job_sources.email_jobs import get_profile
+        slug = source_type[:-len("_email")]
+        try:
+            get_profile(slug)
+            return True
+        except KeyError:
+            return False
+    return False
+
+
+def _is_email_source_type(source_type: str) -> bool:
+    """True wenn source_type ein Email-Adapter ist (egal ob hardcoded oder DB)."""
+    if not source_type.endswith("_email"):
+        return False
+    from services.job_sources.email_jobs import get_profile
+    slug = source_type[:-len("_email")]
+    try:
+        get_profile(slug)
+        return True
+    except KeyError:
+        return False
+
+
+def _email_default_folder(source_type: str) -> str:
+    """Default-Folder pro Email-Source-Type. INBOX als Fallback.
+
+    Hardcoded defaults für historische Sources (für UX-Konsistenz mit
+    bestehenden Setups — der User hat möglicherweise diese Folder schon
+    in seinem Mail-Account angelegt).
+    """
+    defaults = {
+        "indeed_email": "Indeed",
+        "linkedin_email": "[Google Mail]/Alle Nachrichten",
+        "xing_email": "[Google Mail]/Alle Nachrichten",
+    }
+    return defaults.get(source_type, "INBOX")
 
 # Indeed-Email-Folder-Validation: erlaubt alle druckbaren ASCII-Zeichen
 # inkl. Brackets [...] (Gmail-Sonderfolder wie '[Google Mail]/Alle Nachrichten').
@@ -73,8 +107,8 @@ def _validate_config(source_type: str, config: dict) -> str | None:
             return "Bundesagentur-Config benötigt mindestens 'was' oder 'wo'"
     elif source_type == "arbeitnow":
         pass
-    elif source_type in _EMAIL_SOURCE_TYPES:
-        default_folder = _EMAIL_DEFAULT_FOLDER.get(source_type, "INBOX")
+    elif _is_email_source_type(source_type):
+        default_folder = _email_default_folder(source_type)
         folder = (config or {}).get("folder", default_folder)
         if not isinstance(folder, str) or not _INDEED_FOLDER_RE.match(folder):
             return f"{source_type}-Config: 'folder' fehlt oder enthält ungültige Zeichen"
@@ -108,8 +142,8 @@ def list_sources(user):
 @token_required
 def create_source(user):
     data = request.get_json() or {}
-    if data.get("type") not in _VALID_TYPES:
-        return jsonify({"error": f"type muss eines von {_VALID_TYPES} sein"}), 400
+    if not _is_valid_source_type(data.get("type", "")):
+        return jsonify({"error": f"type '{data.get('type')}' ist nicht zugelassen"}), 400
     if not data.get("name"):
         return jsonify({"error": "name fehlt"}), 400
 
@@ -978,8 +1012,8 @@ def import_from_email(user, source_id: int):
     src = JobSource.query.get_or_404(source_id)
     if src.user_id != user.id:
         return jsonify({"error": "Forbidden"}), 403
-    if src.type not in _EMAIL_SOURCE_TYPES:
-        return jsonify({"error": f"Source ist kein Email-Typ (ist '{src.type}', erwartet einer von {sorted(_EMAIL_SOURCE_TYPES)})"}), 400
+    if not _is_email_source_type(src.type):
+        return jsonify({"error": f"Source ist kein Email-Typ (ist '{src.type}')"}), 400
 
     # Modus-Wahl (3-fach):
     #   1) Body {emails:[...]}     → Apps-Script-Mode (Browser hat schon gefetcht)
@@ -1098,8 +1132,8 @@ def approve_email_import(user, source_id: int):
     src = JobSource.query.get_or_404(source_id)
     if src.user_id != user.id:
         return jsonify({"error": "Forbidden"}), 403
-    if src.type not in _EMAIL_SOURCE_TYPES:
-        return jsonify({"error": f"Source ist kein Email-Typ (ist '{src.type}', erwartet einer von {sorted(_EMAIL_SOURCE_TYPES)})"}), 400
+    if not _is_email_source_type(src.type):
+        return jsonify({"error": f"Source ist kein Email-Typ (ist '{src.type}')"}), 400
 
     data = request.get_json() or {}
     decisions = data.get('decisions') or []
@@ -1170,7 +1204,7 @@ def train_pattern(user, source_id):
     src = JobSource.query.get_or_404(source_id)
     if src.user_id != user.id:
         return jsonify({"error": "Forbidden"}), 403
-    if src.type not in _EMAIL_SOURCE_TYPES:
+    if not _is_email_source_type(src.type):
         return jsonify({"error": "Source ist kein Email-Typ"}), 400
 
     platform = src.type.removesuffix("_email")
