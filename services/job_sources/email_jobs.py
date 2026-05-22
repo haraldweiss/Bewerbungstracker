@@ -399,6 +399,12 @@ class EmailJobsAdapter(JobSourceAdapter):
         self.user = user
         self.profile = platform_profile if platform_profile is not None else PROFILES["indeed"]
         self._ai_calls_used = 0
+        # Wenn ein AI-Call innerhalb DIESES fetch()-Laufs fehlschlaegt
+        # (Timeout, Parse-Fehler), schalten wir AI fuer den Rest des Laufs ab.
+        # Verhindert dass mehrere langsame Digest-Mails nacheinander den
+        # gunicorn-Worker-Timeout (180s) hochaddieren und die ganze Import-
+        # Runde mit Apache-HTML-500 abschmiert.
+        self._ai_disabled_for_run = False
         self._learned_compiled = None
         self._learned_lookup_done = False
 
@@ -447,6 +453,7 @@ class EmailJobsAdapter(JobSourceAdapter):
             raise ValueError("emails muss eine Liste sein")
 
         self._ai_calls_used = 0  # AI-Budget pro Lauf zurücksetzen
+        self._ai_disabled_for_run = False
         jobs: list[FetchedJob] = []
         for em in emails:
             if not isinstance(em, dict):
@@ -496,6 +503,7 @@ class EmailJobsAdapter(JobSourceAdapter):
         emails = self._fetch_emails(host, imap_user, password, folder, lookback_days, limit)
 
         self._ai_calls_used = 0  # AI-Budget pro Lauf zurücksetzen
+        self._ai_disabled_for_run = False
         jobs: list[FetchedJob] = []
         for em in emails:
             try:
@@ -761,9 +769,15 @@ class EmailJobsAdapter(JobSourceAdapter):
                 or platform_name in from_addr
                 or platform_name in subject.lower()
             )
-            if looks_like_platform and self._ai_calls_used < self.AI_FALLBACK_BUDGET:
+            if (
+                looks_like_platform
+                and not self._ai_disabled_for_run
+                and self._ai_calls_used < self.AI_FALLBACK_BUDGET
+            ):
                 self._ai_calls_used += 1
                 ai_data = _ai_extract(self.user, subject, body)
+                if not ai_data:
+                    self._ai_disabled_for_run = True
                 if ai_data:
                     title = title or ai_data.get('title')
                     company = company or ai_data.get('company')
@@ -818,6 +832,8 @@ class EmailJobsAdapter(JobSourceAdapter):
         """
         if self.user is None:
             return []
+        if self._ai_disabled_for_run:
+            return []
         if self._ai_calls_used >= self.AI_FALLBACK_BUDGET:
             return []
         self._ai_calls_used += 1
@@ -827,6 +843,10 @@ class EmailJobsAdapter(JobSourceAdapter):
 
         items = _ai_extract_digest(self.user, subject, body, self.profile)
         if not items:
+            # Failure (Timeout / Parse-Fehler / leeres Ergebnis): AI fuer
+            # den Rest dieses Laufs deaktivieren. Verhindert kumulierte
+            # Timeouts wenn Ollama gerade lahm ist.
+            self._ai_disabled_for_run = True
             return []
 
         out: list[FetchedJob] = []
