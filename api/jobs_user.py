@@ -955,10 +955,38 @@ def _create_raw_job_and_match(
     job_data: dict,
     match_status: str,
     feedback_text: str | None = None,
-) -> tuple[RawJob, JobMatch]:
-    """Erstellt RawJob + JobMatch in einer Transaktion. Caller commit()et."""
+) -> tuple[RawJob | None, JobMatch | None]:
+    """Erstellt RawJob + JobMatch in einer Transaktion. Caller commit()et.
+
+    Idempotent: existiert bereits ein RawJob mit gleichem (source_id, external_id)
+    UND ein JobMatch fuer denselben User, gibt die Funktion (None, None) zurueck
+    statt einen IntegrityError zu werfen. Existiert nur der RawJob (anderer User),
+    wird nur ein neuer JobMatch angelegt.
+    """
     url = (job_data.get('url') or '').strip()
     external_id = (job_data.get('external_id') or url or '')[:512]
+
+    # Idempotenz-Check: RawJob mit gleichem Schluessel schon vorhanden?
+    existing_raw = RawJob.query.filter_by(
+        source_id=src.id, external_id=external_id
+    ).first()
+    if existing_raw is not None:
+        existing_match = JobMatch.query.filter_by(
+            raw_job_id=existing_raw.id, user_id=user_id
+        ).first()
+        if existing_match is not None:
+            # Vollstaendiges Duplikat: nichts zu tun
+            return None, None
+        # RawJob existiert (z.B. von anderem User importiert) — nur Match anlegen
+        match = JobMatch(
+            raw_job_id=existing_raw.id,
+            user_id=user_id,
+            status=match_status,
+            feedback_text=feedback_text,
+        )
+        db.session.add(match)
+        return existing_raw, match
+
     raw = RawJob(
         source_id=src.id,
         external_id=external_id,
@@ -1091,11 +1119,18 @@ def import_from_email(user, source_id: int):
         else:
             new_for_dialog.append(payload)
 
-    # Non-blocked: sofort als RawJob + JobMatch erstellen
+    # Non-blocked: sofort als RawJob + JobMatch erstellen.
+    # Funktion ist idempotent — (None, None) bedeutet "bereits vorhanden,
+    # nichts angelegt" und zaehlt nicht als imported.
     imported_count = 0
     for payload in new_for_dialog:
-        _create_raw_job_and_match(src, user.id, payload, match_status='new')
-        imported_count += 1
+        raw, match = _create_raw_job_and_match(
+            src, user.id, payload, match_status='new'
+        )
+        if raw is not None and match is not None:
+            imported_count += 1
+        else:
+            duplicates_count += 1
 
     src.last_crawled_at = datetime.utcnow()
     db.session.commit()

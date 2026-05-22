@@ -1046,3 +1046,44 @@ def test_get_learn_profile_empty_user(client, auth_header):
     assert data['top_reasons'] == []
     assert data['min_samples'] == 3
     assert data['weight_pct'] == 30
+
+
+def test_create_raw_job_and_match_is_idempotent(app, user_factory):
+    """Re-creating RawJob with same (source_id, external_id) must not raise IntegrityError.
+
+    Repro: Indeed liefert dieselben Jobs bei wiederholten Imports; URL-Dedup
+    upstream verfehlt manche Faelle (Tracking-Suffixe in URL). Die innere
+    Funktion muss defensiv sein.
+    """
+    from api.jobs_user import _create_raw_job_and_match
+
+    user = user_factory()
+    src = JobSource(name="indeed-test", type="indeed_email",
+                    user_id=user.id, config={})
+    db.session.add(src)
+    db.session.commit()
+
+    long_url = "https://de.indeed.com/pagead/clk?jrtk=abc-" + ("x" * 600)
+    payload = {
+        "title": "Test Cybersecurity Job",
+        "company": "TestCo",
+        "url": long_url,
+        "external_id": long_url,
+    }
+
+    # 1. Lauf: neu, soll RawJob + JobMatch anlegen
+    raw1, match1 = _create_raw_job_and_match(src, user.id, payload, match_status='new')
+    db.session.commit()
+    assert raw1 is not None
+    assert match1 is not None
+
+    # 2. Lauf mit IDENTISCHEN Daten: darf KEINEN IntegrityError werfen.
+    # Erwartet: (None, None) signalisiert "schon vorhanden, nichts angelegt".
+    raw2, match2 = _create_raw_job_and_match(src, user.id, payload, match_status='new')
+    db.session.commit()
+    assert raw2 is None
+    assert match2 is None
+
+    # DB-Invariante: nur ein RawJob + ein JobMatch
+    assert RawJob.query.filter_by(source_id=src.id).count() == 1
+    assert JobMatch.query.filter_by(user_id=user.id).count() == 1
