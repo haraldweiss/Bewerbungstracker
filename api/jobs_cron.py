@@ -785,12 +785,17 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
     client = ai_provider_client.get_client()
     fallback_kwargs = ai_provider_client.build_fallback_kwargs(user)
 
+    # Phase B: User-Feedback-Historie einmalig laden, im closure
+    # `call_match` mehrfach wiederverwendet (Match + ggf. Summary-Retry).
+    from services.job_matching.feedback_context import get_user_feedback_context
+    feedback_context = get_user_feedback_context(user.id)
+
     def call_match(description: str):
         # System+User-Message: Anweisungen separiert von unvertrauten Daten.
         # Der ai-provider-service / Anthropic-SDK extrahiert role='system' korrekt.
         user_msg = _build_user_message(cv_summary, {
             "title": raw.title, "description": description, "location": raw.location,
-        })
+        }, feedback_context=feedback_context)
         return client.chat(
             user_id=user.id, provider=provider, model=model,
             messages=[
@@ -930,9 +935,15 @@ def _run_match_via_local_factory(user: User, match: JobMatch, raw: RawJob, cv_su
                 user_config = {**user_config, 'api_key': api_key}
 
         user_client = ProviderFactory.get_client(provider, user_config)
+        # Phase B: User-Feedback-Historie als Prompt-Kontext injecten.
+        # Bei leerer History (Neu-User): get_user_feedback_context()=='' →
+        # match_job_with_claude fällt auf legacy single-prompt zurück.
+        from services.job_matching.feedback_context import get_user_feedback_context
+        feedback_context = get_user_feedback_context(user.id)
         result = match_job_with_claude(
             client=user_client, model=model, cv_summary=cv_summary,
             job={"title": raw.title, "description": raw.description, "location": raw.location},
+            feedback_context=feedback_context,
         )
     except Exception as e:
         logger.warning(

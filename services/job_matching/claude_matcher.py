@@ -42,22 +42,31 @@ Antworte AUSSCHLIESSLICH mit einem gültigen JSON-Objekt:
 Keine Erläuterungen drum herum. Nur das JSON-Objekt."""
 
 
-def _build_user_message(cv_summary: str, job: dict) -> str:
-    """Baut die User-Message mit untrusted_data Tags.
+def _build_user_message(cv_summary: str, job: dict, feedback_context: str = "") -> str:
+    """Baut die User-Message mit untrusted_data Tags + optionalem
+    User-Feedback-Historie-Kontext (Phase B).
 
     CV ist self-supplied und damit halb-vertraut, aber wir wrappen ihn trotzdem
     in Tags damit das Modell konsistente Strukturerkennung hat.
     Job-Description ist potentiell aus externen Quellen (RSS/Adzuna/etc.) und
     explizit untrusted.
+
+    Backward-compat: ohne `feedback_context` kein zusätzlicher Block (verhalten
+    identisch zur Phase-A-Version).
     """
-    return (
-        f"<untrusted_cv>\n{(cv_summary or '')[:3000]}\n</untrusted_cv>\n\n"
+    parts = [
+        f"<untrusted_cv>\n{(cv_summary or '')[:3000]}\n</untrusted_cv>",
+    ]
+    if feedback_context:
+        parts.append(feedback_context)
+    parts.append(
         f"<untrusted_job>\n"
         f"Titel: {job.get('title', '')}\n"
         f"Standort: {job.get('location', '')}\n"
         f"Beschreibung: {(job.get('description') or '')[:5000]}\n"
         f"</untrusted_job>"
     )
+    return "\n\n".join(parts)
 
 
 @dataclass
@@ -83,18 +92,32 @@ def _build_prompt(cv_summary: str, job: dict) -> str:
     )
 
 
-def match_job_with_claude(client, model: str, cv_summary: str, job: dict) -> MatchResult:
+def match_job_with_claude(client, model: str, cv_summary: str, job: dict,
+                          feedback_context: str = "") -> MatchResult:
     """Ruft Claude auf, parst Antwort, gibt MatchResult zurück.
 
     Bei ungültiger JSON-Antwort: Fallback auf score=0, reasoning="fehlgeschlagen".
     Tokens werden immer geloggt (auch bei Fehler).
+
+    Phase B: bei `feedback_context != ""` wird der gehärtete System-Message-
+    Pfad genutzt (SYSTEM_MESSAGE_MATCH + _build_user_message mit
+    User-History-Block). Sonst: legacy single-prompt (Backward-compat).
     """
-    prompt = _build_prompt(cv_summary, job)
-    response = client.messages.create(
-        model=model,
-        max_tokens=600,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    if feedback_context:
+        user_msg = _build_user_message(cv_summary, job, feedback_context)
+        response = client.messages.create(
+            model=model,
+            max_tokens=600,
+            system=SYSTEM_MESSAGE_MATCH,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+    else:
+        prompt = _build_prompt(cv_summary, job)
+        response = client.messages.create(
+            model=model,
+            max_tokens=600,
+            messages=[{"role": "user", "content": prompt}],
+        )
     text = response.content[0].text.strip()
     tokens_in = getattr(response.usage, "input_tokens", 0)
     tokens_out = getattr(response.usage, "output_tokens", 0)
