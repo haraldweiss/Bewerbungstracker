@@ -181,6 +181,19 @@ def update_application(user, app_id):
     app.updated_at = datetime.utcnow()
     db.session.commit()
 
+    # Phase A: Bridge Application.notes → JobMatch.feedback_text bei
+    # terminalem Status. Existing learner.py greift dann auf das
+    # gespiegelte feedback zu.
+    try:
+        from services.job_matching.feedback_bridge import maybe_bridge_to_feedback
+        maybe_bridge_to_feedback(app)
+    except Exception as exc:
+        # Bridge-Fehler dürfen das Update nicht blocken
+        import logging
+        logging.getLogger(__name__).warning(
+            "feedback_bridge fehlgeschlagen für app %s: %s", app.id, exc,
+        )
+
     _safe_auto_backup(user)
     return _serialize(app), 200
 
