@@ -80,3 +80,23 @@ def test_chat_primary_path_returns_requested_model():
         )
     assert r.model == "qwen:latest"
     assert r.via == "ollama"
+
+
+def test_get_client_passes_timeout_override():
+    """get_client(timeout=N) erzeugt Client mit angepasstem Timeout — wichtig
+    fuer Best-Effort-AI-Calls innerhalb eines Request-Handlers, damit
+    requests.Timeout greift bevor gunicorn-Worker stirbt."""
+    from unittest.mock import patch
+    from services.ai_provider_client import get_client
+
+    with patch('services.ai_provider_client.Config') as mock_config:
+        mock_config.AI_PROVIDER_SERVICE_URL = "http://test"
+        mock_config.AI_PROVIDER_SERVICE_TOKEN = "tok"
+
+        default_client = get_client()
+        assert default_client is not None
+        assert default_client.timeout == 180  # alter Default bleibt
+
+        fast_client = get_client(timeout=60)
+        assert fast_client is not None
+        assert fast_client.timeout == 60

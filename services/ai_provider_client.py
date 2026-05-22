@@ -209,11 +209,19 @@ class AIProviderClient:
         return self._get('/queue', params=params or None).get('items', [])
 
 
-def get_client() -> Optional[AIProviderClient]:
+def get_client(timeout: Optional[int] = None) -> Optional[AIProviderClient]:
     """Singleton-Helper. Returns None wenn der Service nicht konfiguriert ist
-    (für Local-Dev ohne Service)."""
+    (für Local-Dev ohne Service).
+
+    ``timeout``: optionaler HTTP-Timeout pro Call. Default = 180s. Caller, die
+    schneller fail-fast brauchen (z.B. Best-Effort-AI-Calls innerhalb eines
+    Request-Handlers mit eigener Frist), sollten einen niedrigeren Wert
+    setzen, damit die requests.Timeout-Exception greift bevor der gunicorn-
+    Worker-Timeout den Worker abschiesst."""
     if not Config.AI_PROVIDER_SERVICE_URL or not Config.AI_PROVIDER_SERVICE_TOKEN:
         return None
+    if timeout is not None:
+        return AIProviderClient(timeout=timeout)
     return AIProviderClient()
 
 

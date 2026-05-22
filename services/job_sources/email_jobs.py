@@ -993,7 +993,11 @@ def _ai_extract(user, subject: str, body: str) -> Optional[dict]:
 
     if not ai_provider_client.is_enabled():
         return None
-    client = ai_provider_client.get_client()
+    # Best-Effort-Call: bei langsamen Mails (riesiger Body, Ollama zaeht)
+    # lieber nach 60s aufgeben statt den gunicorn-Worker bei 180s killen
+    # zu lassen — Worker-Tot kann eine ganze Import-Runde killen, weil
+    # Apache dann eine HTML-Errorpage liefert ("Unexpected token '<'").
+    client = ai_provider_client.get_client(timeout=60)
     if not client:
         return None
 
@@ -1059,7 +1063,11 @@ def _ai_extract_digest(
 
     if not ai_provider_client.is_enabled():
         return None
-    client = ai_provider_client.get_client()
+    # Best-Effort-Call: bei langsamen Mails (riesiger Body, Ollama zaeht)
+    # lieber nach 60s aufgeben statt den gunicorn-Worker bei 180s killen
+    # zu lassen — Worker-Tot kann eine ganze Import-Runde killen, weil
+    # Apache dann eine HTML-Errorpage liefert ("Unexpected token '<'").
+    client = ai_provider_client.get_client(timeout=60)
     if not client:
         return None
 
