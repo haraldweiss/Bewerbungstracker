@@ -143,6 +143,13 @@ def generate_cover_letter(user, cover_letter_id):
         except (TypeError, ValueError):
             letterhead = None
 
+        # Phase C: Erfolgreiche Bewerbungen (interview/zusage) als
+        # Inspirations-Kontext durchreichen — System-Prompt im
+        # CoverLetterService stellt sicher dass NUR Ton/Schwerpunkte
+        # daraus übernommen werden, keine Fakten.
+        from services.job_matching.success_context import get_user_success_context
+        success_context = get_user_success_context(user.id)
+
         content = svc.generate(
             company_name=cl.company_name, job_title=cl.job_title,
             analysis=analysis, tone=cl.tone, length=cl.length, focus=cl.focus,
@@ -150,6 +157,7 @@ def generate_cover_letter(user, cover_letter_id):
             letterhead=letterhead, job_description=cl.job_description,
             provider=provider, model=model,
             fallback_kwargs=fallback_kwargs,
+            success_context=success_context,
         )
         # KI-Erkennbarkeit prüfen (Sanitization läuft bereits in svc.generate())
         ai_detectability = svc.check_ai_detectability(content)

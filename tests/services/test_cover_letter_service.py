@@ -202,3 +202,56 @@ def test_generate_automatically_sanitizes(mock_call):
     # Ersetzte Wörter sollten da sein
     assert 'vertiefen' in result.lower()
     assert 'erfahren' in result.lower()
+
+
+# --- Phase C: success_context integration ---
+
+def test_generate_signature_has_success_context_param():
+    """Backward-compat: generate akzeptiert success_context als optional kwarg."""
+    import inspect
+    from services.cover_letter_service import CoverLetterService
+    sig = inspect.signature(CoverLetterService.generate)
+    assert "success_context" in sig.parameters
+    assert sig.parameters["success_context"].default == ""
+
+
+def test_generate_builds_prompt_with_success_context(monkeypatch):
+    """Wenn success_context gesetzt, taucht er im user_prompt auf."""
+    captured = {}
+
+    def fake_call_ai(system_prompt, user_prompt, **kw):
+        captured["user_prompt"] = user_prompt
+        return "<p>Sehr geehrte Damen und Herren...</p>"
+
+    monkeypatch.setattr(
+        "services.cover_letter_service._call_ai", fake_call_ai
+    )
+    from services.cover_letter_service import CoverLetterService
+    svc = CoverLetterService()
+    svc.generate(
+        company_name="TestCo", job_title="Dev",
+        analysis={"matched_skills": []},
+        success_context="<successful_applications>\nfoo\n</successful_applications>",
+    )
+    assert "successful_applications" in captured["user_prompt"]
+    assert "foo" in captured["user_prompt"]
+
+
+def test_generate_no_success_context_keeps_old_prompt(monkeypatch):
+    """Backward-compat: ohne success_context kein extra Block."""
+    captured = {}
+
+    def fake_call_ai(system_prompt, user_prompt, **kw):
+        captured["user_prompt"] = user_prompt
+        return "<p>x</p>"
+
+    monkeypatch.setattr(
+        "services.cover_letter_service._call_ai", fake_call_ai
+    )
+    from services.cover_letter_service import CoverLetterService
+    svc = CoverLetterService()
+    svc.generate(
+        company_name="TestCo", job_title="Dev",
+        analysis={"matched_skills": []},
+    )
+    assert "successful_applications" not in captured["user_prompt"]

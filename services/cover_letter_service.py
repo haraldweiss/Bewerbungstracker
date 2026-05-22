@@ -298,7 +298,8 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
                  job_description: Optional[str] = None,
                  provider: str = 'claude',
                  model: Optional[str] = None,
-                 fallback_kwargs: Optional[Dict[str, Any]] = None) -> str:
+                 fallback_kwargs: Optional[Dict[str, Any]] = None,
+                 success_context: str = "") -> str:
         """Phase 2: Anschreiben-Text basierend auf Analyse generieren.
 
         Args:
@@ -367,13 +368,14 @@ Gib EIN JSON-Objekt zurück mit dieser Struktur (keine Markdown-Codefences):
                 "5. DANN beginnt das eigentliche Anschreiben mit 'Sehr geehrte ...'.\n"
             )
 
+        success_block = f"\n{success_context}\n" if success_context else ""
         user_prompt = f"""Schreibe ein deutsches Anschreiben für {company_name} ({job_title}).
 
 {applicant_line}
 {letterhead_block}{job_desc_block}{briefkopf_instruction}
 Nutze AUSSCHLIESSLICH diese Fakten aus der Analyse:
 {analysis_json}
-
+{success_block}
 ANFORDERUNGEN:
 - Ton: {tone} (professional|casual|technical)
 - Länge: {word_count} Wörter (NUR Anschreiben-Text, Briefkopf separat)
