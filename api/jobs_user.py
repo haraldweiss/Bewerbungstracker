@@ -965,7 +965,7 @@ def _create_raw_job_and_match(
         title=(job_data.get('title') or '')[:512],
         company=(job_data.get('company') or '')[:255] or None,
         location=(job_data.get('location') or '')[:255] or None,
-        url=url[:1024],
+        url=url[:4096],
         description=(job_data.get('description') or '')[:2000] or None,
         crawl_status='raw',
     )
