@@ -15,6 +15,12 @@ _RE_DATE_NUM = re.compile(
     r"(\d{1,2})\.(\d{1,2})\.(\d{4})[,\s]+(?:um\s+)?(\d{1,2}):(\d{2})",
     re.IGNORECASE,
 )
+# Jahreslose deutsche Variante: "26.5. um 16:30" - kein Jahr direkt nach dem Tagespunkt.
+# Negativer Lookahead (?!\d) verhindert Match auf "26.5.2026".
+_RE_DATE_NUM_NOYEAR = re.compile(
+    r"(\d{1,2})\.(\d{1,2})\.(?!\d)\s*(?:um\s+)?(\d{1,2}):(\d{2})",
+    re.IGNORECASE,
+)
 _RE_DATE_ISO = re.compile(
     r"(\d{4})-(\d{2})-(\d{2})[T\s]+(\d{1,2}):(\d{2})"
 )
@@ -45,11 +51,16 @@ class ParsedInterview:
     passcode: Optional[str]
 
 
-def parse_interview_event(text: str) -> ParsedInterview:
+def parse_interview_event(text: str, now: Optional[datetime] = None) -> ParsedInterview:
+    """Parse Interview-Termin etc.
+
+    ``now`` (tz-aware) wird nur fuer die Jahresaufloesung jahresloser Datums-
+    angaben benoetigt. Wenn ``None``, verwendet die Funktion ``datetime.now(BERLIN)``.
+    """
     if not text:
         return ParsedInterview(None, None, None, None, None)
 
-    start = _extract_datetime(text)
+    start = _extract_datetime(text, now=now)
 
     meeting_url = None
     location = None
@@ -87,7 +98,7 @@ def parse_interview_event(text: str) -> ParsedInterview:
     )
 
 
-def _extract_datetime(text: str) -> Optional[datetime]:
+def _extract_datetime(text: str, now: Optional[datetime] = None) -> Optional[datetime]:
     m = _RE_DATE_ISO.search(text)
     if m:
         y, mo, d, h, mi = (int(x) for x in m.groups())
@@ -98,7 +109,27 @@ def _extract_datetime(text: str) -> Optional[datetime]:
         d, mo, y, h, mi = (int(x) for x in m.groups())
         return _safe_dt(y, mo, d, h, mi)
 
+    m = _RE_DATE_NUM_NOYEAR.search(text)
+    if m:
+        d, mo, h, mi = (int(x) for x in m.groups())
+        y = _resolve_year(mo, d, now)
+        return _safe_dt(y, mo, d, h, mi)
+
     return None
+
+
+def _resolve_year(month: int, day: int, now: Optional[datetime]) -> int:
+    """Jahr fuer jahresloses Datum aufloesen: aktuelles Jahr, falls Datum noch
+    nicht vergangen ist, sonst naechstes Jahr."""
+    if now is None:
+        now = datetime.now(BERLIN)
+    try:
+        candidate = datetime(now.year, month, day, tzinfo=BERLIN)
+    except ValueError:
+        return now.year
+    if candidate.date() < now.date():
+        return now.year + 1
+    return now.year
 
 
 def _safe_dt(y, mo, d, h, mi) -> Optional[datetime]:

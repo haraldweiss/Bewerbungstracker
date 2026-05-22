@@ -18,7 +18,7 @@ def test_parse_tkms_format():
     assert result.passcode is None
 
 
-from tests.fixtures.interview_emails import ARVATO_BODY, ESET_BODY, ARCTIC_WOLF_BODY
+from tests.fixtures.interview_emails import ARVATO_BODY, ESET_BODY, ARCTIC_WOLF_BODY, YOGI_TEA_BODY
 
 
 def test_parse_arvato_with_passcode():
@@ -58,3 +58,21 @@ def test_parse_custom_duration():
     result = parse_interview_event(text)
     assert result.start == datetime(2026, 6, 1, 10, 0, tzinfo=BERLIN)
     assert result.end == datetime(2026, 6, 1, 11, 30, tzinfo=BERLIN)
+
+
+def test_parse_yogi_tea_yearless_date():
+    """Jahresloses deutsches Datum '26.5. um 16:30' wird auf aktuelles Jahr aufgeloest,
+    wenn das Datum noch in der Zukunft liegt. Repro fuer Bug vom 2026-05-22."""
+    now = datetime(2026, 5, 22, 19, 30, tzinfo=BERLIN)
+    result = parse_interview_event(YOGI_TEA_BODY, now=now)
+    assert result.start == datetime(2026, 5, 26, 16, 30, tzinfo=BERLIN)
+    assert result.end == datetime(2026, 5, 26, 17, 30, tzinfo=BERLIN)  # default 60min
+    assert result.meeting_url == "https://teams.microsoft.com/meet/38038938497499?p=YA7ZxltvKgfXQ83ykM"
+    assert result.passcode == "rt2va9nJ"
+
+
+def test_parse_yearless_rolls_to_next_year_if_past():
+    """Jahresloses Datum, das im aktuellen Jahr bereits vergangen waere, rollt aufs naechste Jahr."""
+    now = datetime(2026, 12, 1, 10, 0, tzinfo=BERLIN)
+    result = parse_interview_event("Termin am 5.1. um 10:00", now=now)
+    assert result.start == datetime(2027, 1, 5, 10, 0, tzinfo=BERLIN)

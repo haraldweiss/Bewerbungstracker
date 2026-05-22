@@ -29,3 +29,16 @@ ARCTIC_WOLF_BODY = """Wed, Mar 18, 2026
 https://arcticwolf.zoom.us/j/92396253627?pwd=gLYaaIubIvokEDtKIRxfIvasQEXKb7.1
 (Password: 9chNu;)
 """
+
+# Yogi Tea (2026-05-22): Notiz wurde aus Booking-Mail automatisch zusammengestellt,
+# beginnt mit jahreslosem deutschen Datum "26.5. um 16:30".
+YOGI_TEA_BODY = """Interview am 26.5. um 16:30:
+Nachricht von Jennifer Stoner <Jennifer.Stoner@EastWestTea.com> am 22. Mai 2026, 19:19 +0200:
+
+This meeting was scheduled from the bookings page of Jennifer Stoner.
+
+Microsoft Teams meeting
+Join: https://teams.microsoft.com/meet/38038938497499?p=YA7ZxltvKgfXQ83ykM
+Meeting ID: 380 389 384 974 99
+Passcode: rt2va9nJ
+"""
