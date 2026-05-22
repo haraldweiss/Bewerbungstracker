@@ -1248,6 +1248,7 @@
         </p>
         <div style="margin-bottom:0.75rem">
             <button class="btn btn-success btn-sm" onclick="JdSourcesUI.openCreate()">+ Eigene Quelle</button>
+            <button class="btn btn-primary btn-sm" onclick="JdSourcesUI.importAll()" title="Alle aktiven Email-Quellen sequenziell importieren">📧 Alle importieren</button>
             <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.refresh()">🔄</button>
         </div>
         <table id="jdSourcesTable" style="width:100%;font-size:0.88rem;border-collapse:collapse">
@@ -3551,6 +3552,14 @@ const JdSourcesUI = (() => {
     // JobsView ist NICHT global verfuegbar — pre-existing Bug).
     let _sourcesCache = [];
 
+    // Import-Queue: verhindert parallele Imports die gunicorn-Worker blockieren.
+    // _importRunning = true wenn aktuell ein Import läuft.
+    // _importQueue = pending source IDs (FIFO).
+    // _currentImportId = ID der gerade laufenden Source (für Duplicate-Erkennung).
+    const _importQueue = [];
+    let _importRunning = false;
+    let _currentImportId = null;
+
     async function refresh() {
         const tbody = $('jdSourcesTableBody');
         if (!tbody) return;
@@ -3886,9 +3895,42 @@ const JdSourcesUI = (() => {
     // ── Indeed-Email Import-Flow ────────────────────────────────────────────
 
     async function importFromEmail(id) {
+        // Duplicate-Klick auf bereits laufende Source: ignorieren
+        if (_currentImportId === id) {
+            return;
+        }
+        // Anderer Import läuft → in Queue stellen (kein Duplicate)
+        if (_importRunning) {
+            if (!_importQueue.includes(id)) {
+                _importQueue.push(id);
+                const btn = document.querySelector(`button[onclick="JdSourcesUI.importFromEmail(${id})"]`);
+                if (btn) {
+                    btn.disabled = true;
+                    // Position in Queue (1-basiert): aktueller Index + 1
+                    const pos = _importQueue.indexOf(id) + 1;
+                    btn.innerHTML = '⏳ Warteschlange…';
+                    btn.title = 'Position ' + pos + ' in Queue';
+                }
+            }
+            return;
+        }
+        // Frei → ausführen, dann Queue abarbeiten
+        await _runImport(id);
+        while (_importQueue.length > 0) {
+            const next = _importQueue.shift();
+            await _runImport(next);
+        }
+    }
+
+    async function _runImport(id) {
+        _importRunning = true;
+        _currentImportId = id;
         const btn = document.querySelector(`button[onclick="JdSourcesUI.importFromEmail(${id})"]`);
-        const originalText = btn ? btn.innerHTML : '';
-        if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Lade…'; }
+        // Original-Text aus dem Markup wiederherstellen — wenn der Button vorher
+        // schon in Queue-State war, ist sein innerHTML "⏳ Warteschlange…", was
+        // wir NICHT als Original behalten wollen.
+        const originalText = '📧 Import';
+        if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Lade…'; btn.title = ''; }
 
         try {
             // Wenn indeedScriptUrl gesetzt: Backend macht serverseitigen Fetch
@@ -3931,8 +3973,26 @@ const JdSourcesUI = (() => {
             }
             alert(`❌ Import fehlgeschlagen: ${msg}`);
         } finally {
-            if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
+            if (btn) { btn.disabled = false; btn.innerHTML = originalText; btn.title = 'Import aus IMAP-Folder'; }
+            _importRunning = false;
+            _currentImportId = null;
         }
+    }
+
+    async function importAll() {
+        const emailSources = (_sourcesCache || []).filter(s =>
+            s.enabled && s.type && s.type.endsWith('_email')
+        );
+        if (emailSources.length === 0) {
+            alert('Keine aktiven Email-Quellen gefunden.');
+            return;
+        }
+        if (!confirm(emailSources.length + ' Email-Quellen nacheinander importieren?\n\n(sequenziell, kann mehrere Minuten dauern)')) {
+            return;
+        }
+        // forEach reicht — importFromEmail enqueued bei laufendem Import,
+        // erster Call startet, alle weiteren landen in der Queue.
+        emailSources.forEach(s => importFromEmail(s.id));
     }
 
     async function trainPattern(sourceId) {
@@ -4238,7 +4298,7 @@ const JdSourcesUI = (() => {
     return {
         refresh, openCreate, closeCreate, renderTypeFields, create,
         testCrawl, toggle, del, edit,
-        importFromEmail, skipAllBlocked, submitApproval, closeApprovalDialog,
+        importFromEmail, importAll, skipAllBlocked, submitApproval, closeApprovalDialog,
         saveIndeedScriptUrl, toggleIndeedScriptCode,
         testImap, clearImapCreds, loadImapStatus,
         trainPattern, loadLearnedPatterns, rollbackPattern,
