@@ -1030,7 +1030,7 @@ def _ai_extract(user, subject: str, body: str) -> Optional[dict]:
     if not provider:
         return None
 
-    fallback_kwargs = ai_provider_client.build_fallback_kwargs(user)
+    fallback_kwargs = ai_provider_client.build_fallback_kwargs(user, feature='email_parse')
 
     prompt = (
         "Extract structured job data from this Indeed email. "
@@ -1100,7 +1100,7 @@ def _ai_extract_digest(
     if not provider:
         return None
 
-    fallback_kwargs = ai_provider_client.build_fallback_kwargs(user)
+    fallback_kwargs = ai_provider_client.build_fallback_kwargs(user, feature='email_parse')
 
     prompt = (
         f"Extract ALL job postings from this {profile.source_label} digest email. "

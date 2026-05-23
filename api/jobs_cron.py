@@ -783,7 +783,7 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
     vor-zusammengefasster Job-Description.
     """
     client = ai_provider_client.get_client()
-    fallback_kwargs = ai_provider_client.build_fallback_kwargs(user)
+    fallback_kwargs = ai_provider_client.build_fallback_kwargs(user, feature='match')
 
     # Phase B: User-Feedback-Historie einmalig laden, im closure
     # `call_match` mehrfach wiederverwendet (Match + ggf. Summary-Retry).

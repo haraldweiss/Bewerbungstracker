@@ -368,7 +368,7 @@ def chat_with_user_provider(user):
 
     try:
         client = ai_provider_client.get_client()
-        fallback_kwargs = ai_provider_client.build_fallback_kwargs(user)
+        fallback_kwargs = ai_provider_client.build_fallback_kwargs(user, feature='chat')
         response = client.chat(
             user_id=user.id, provider=provider, model=model,
             messages=[{'role': 'user', 'content': prompt}],

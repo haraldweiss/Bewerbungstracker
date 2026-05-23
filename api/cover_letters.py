@@ -121,7 +121,7 @@ def generate_cover_letter(user, cover_letter_id):
 
     # Backup-Provider (Fallback wenn primary nicht erreichbar) durchreichen
     from services.ai_provider_client import build_fallback_kwargs
-    fallback_kwargs = build_fallback_kwargs(user)
+    fallback_kwargs = build_fallback_kwargs(user, feature='cover_letter')
 
     try:
         svc = CoverLetterService()
