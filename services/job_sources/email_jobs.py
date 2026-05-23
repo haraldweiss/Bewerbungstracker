@@ -118,7 +118,12 @@ PROFILES: dict[str, PlatformProfile] = {
         body_title_re=_BODY_TITLE_RE,
         body_company_re=_BODY_COMPANY_RE,
         body_location_re=_BODY_LOCATION_RE,
-        digest_threshold=3,
+        # Indeed-Mails sind meist Single-Job; auch die enthalten 3-7
+        # unique Indeed-URLs (Job-Tracker, Profile-Edit, Unsubscribe,
+        # Footer-Links). digest_threshold=8 verhindert false-positiv
+        # AI-Fallback-Trigger der bei Indeed-Latenz Worker-Timeouts
+        # verursacht. Echte Multi-Job-Digests haben deutlich >8 URLs.
+        digest_threshold=8,
         ai_hint=(
             "Indeed-Jobempfehlung. Click-Tracker-URLs cts.indeed.com/v3 "
             "bleiben als external_id (kein Auto-Follow)."
