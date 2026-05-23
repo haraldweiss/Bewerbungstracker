@@ -161,7 +161,21 @@ class AIProviderClient:
         ein. fallback_config (z.B. {'api_key': '...'}) wird einmalig an den
         Service mitgegeben — nützlich für Admin-User mit zentralem env-Key,
         wo nichts in der Service-DB persistiert werden soll.
+
+        Phase 2B: Wenn der Caller einen Claude-Backup einplant und das
+        User-Tagesbudget bereits ausgeschoepft ist, werden die fallback_*-
+        kwargs vor dem Service-Call gestrippt (Cap durchsetzen).
         """
+        if _should_strip_claude_fallback(user_id, fallback_provider, fallback_model):
+            import logging
+            logging.getLogger(__name__).warning(
+                "Daily budget cap hit for user %s — stripping claude fallback",
+                user_id,
+            )
+            fallback_provider = None
+            fallback_model = None
+            fallback_config = None
+
         body = {
             'user_id': user_id, 'provider': provider, 'model': model,
             'messages': messages, 'max_tokens': max_tokens,
@@ -233,6 +247,44 @@ def is_enabled() -> bool:
 # Whitelist: nur diese Features duerfen heute Backup-Fallback nutzen.
 # Erweitert in Phase 2B nach Einfuehrung des zentralen Cost-Tracker.
 ALLOW_BACKUP_FEATURES = {'match'}
+
+
+def _lookup_user_budget_cents(user_id: str) -> int:
+    """Liest user.job_daily_budget_cents oder default 500. Isoliert, damit
+    Tests mocken koennen ohne DB."""
+    try:
+        from models import User
+        user = User.query.get(user_id)
+        if user is None:
+            return 500
+        return int(user.job_daily_budget_cents or 500)
+    except Exception:
+        return 500
+
+
+def _should_strip_claude_fallback(user_id: str, fallback_provider: str | None,
+                                   fallback_model: str | None) -> bool:
+    """Prueft ob Budget-Cap greift und Backup gestrippt werden soll."""
+    if not user_id:
+        return False
+    is_claude = (
+        (fallback_provider or '').lower() == 'claude'
+        or 'claude' in (fallback_model or '').lower()
+    )
+    if not is_claude:
+        return False
+    try:
+        from services import cost_tracker
+        spent = cost_tracker.user_today_cost_cents(user_id)
+        budget = _lookup_user_budget_cents(user_id)
+        return spent >= budget
+    except Exception:
+        # Bei DB-Fehler permissiv durchlassen + Warnung
+        import logging
+        logging.getLogger(__name__).warning(
+            "cost_tracker check failed for user %s — allowing call", user_id,
+        )
+        return False
 
 
 def build_fallback_kwargs(user, feature: str | None = None) -> dict:

@@ -134,3 +134,74 @@ def test_build_fallback_kwargs_match_feature_returns_kwargs():
     kw = build_fallback_kwargs(user, feature='match')
     assert kw['fallback_provider'] == 'claude'
     assert kw['fallback_model'] == 'claude-haiku-4-5-20251001'
+
+
+# Phase 2B: Budget-Cap im chat()-Wrapper
+def test_chat_strips_claude_fallback_when_budget_exhausted(monkeypatch):
+    """Wenn user heute schon ueber Budget: fallback_* aus dem Service-Body strippen."""
+    import services.ai_provider_client as aip
+    monkeypatch.setattr('services.cost_tracker.user_today_cost_cents',
+                        lambda uid: 600)
+    monkeypatch.setattr(aip, '_lookup_user_budget_cents', lambda uid: 500)
+    captured = {}
+    def fake_post(self, path, body):
+        captured['body'] = body
+        return {'result': {'content': [{'text': 'hi'}], 'model': 'm'}}
+    monkeypatch.setattr(aip.AIProviderClient, '_post', fake_post)
+
+    client = aip.AIProviderClient.__new__(aip.AIProviderClient)
+    client.base_url = "http://test"
+    client.token = "test-token"
+    client.timeout = 10
+    client.chat(user_id='u1', provider='ollama', model='x',
+                messages=[{'role': 'user', 'content': 'hi'}],
+                fallback_provider='claude',
+                fallback_model='claude-haiku-4-5-20251001')
+    assert 'fallback_provider' not in captured['body']
+    assert 'fallback_model' not in captured['body']
+
+
+def test_chat_keeps_fallback_when_budget_remaining(monkeypatch):
+    """Budget noch da → kwargs bleiben unveraendert."""
+    import services.ai_provider_client as aip
+    monkeypatch.setattr('services.cost_tracker.user_today_cost_cents',
+                        lambda uid: 100)
+    monkeypatch.setattr(aip, '_lookup_user_budget_cents', lambda uid: 500)
+    captured = {}
+    def fake_post(self, path, body):
+        captured['body'] = body
+        return {'result': {'content': [{'text': 'hi'}], 'model': 'm'}}
+    monkeypatch.setattr(aip.AIProviderClient, '_post', fake_post)
+
+    client = aip.AIProviderClient.__new__(aip.AIProviderClient)
+    client.base_url = "http://test"
+    client.token = "test-token"
+    client.timeout = 10
+    client.chat(user_id='u1', provider='ollama', model='x',
+                messages=[{'role': 'user', 'content': 'hi'}],
+                fallback_provider='claude',
+                fallback_model='claude-haiku-4-5-20251001')
+    assert captured['body'].get('fallback_provider') == 'claude'
+    assert captured['body'].get('fallback_model') == 'claude-haiku-4-5-20251001'
+
+
+def test_chat_keeps_non_claude_fallback_unconditionally(monkeypatch):
+    """Ollama-Fallback ist kostenlos und wird nicht gestripped — egal Budget-Status."""
+    import services.ai_provider_client as aip
+    monkeypatch.setattr('services.cost_tracker.user_today_cost_cents',
+                        lambda uid: 9999)
+    captured = {}
+    def fake_post(self, path, body):
+        captured['body'] = body
+        return {'result': {'content': [{'text': 'hi'}], 'model': 'm'}}
+    monkeypatch.setattr(aip.AIProviderClient, '_post', fake_post)
+
+    client = aip.AIProviderClient.__new__(aip.AIProviderClient)
+    client.base_url = "http://test"
+    client.token = "test-token"
+    client.timeout = 10
+    client.chat(user_id='u1', provider='claude', model='x',
+                messages=[{'role': 'user', 'content': 'hi'}],
+                fallback_provider='ollama',
+                fallback_model='qwen3-coder')
+    assert captured['body']['fallback_provider'] == 'ollama'
