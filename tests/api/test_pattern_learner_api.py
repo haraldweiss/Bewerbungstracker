@@ -152,6 +152,56 @@ def test_train_hit_rate_too_low(client, auth_header):
     assert LearnedEmailPattern.query.filter_by(platform="linkedin").count() == 0
 
 
+def test_train_auto_reduces_train_size_when_few_mails(client, auth_header):
+    """Bei < train_size + 1 Mails wird train_size auto-reduziert statt 400."""
+    headers, user = auth_header
+    src = _make_source(user)
+    body = (
+        "Senior Engineer\r\n"
+        "TechCorp\r\n"
+        "Berlin, Deutschland\r\n"
+        "Jobangebot ansehen: https://linkedin.com/comm/jobs/view/1"
+    )
+    # Nur 2 Mails (default train_size=5 wuerde sonst 400 returnen).
+    fake_mails = [{"subject": "Senior Engineer bei TechCorp", "body": body}] * 2
+    with patch(
+        "services.job_sources.pattern_learner.fetch_sample_mails",
+        return_value=fake_mails,
+    ), patch(
+        "services.job_sources.pattern_learner.ai_learn_pattern",
+        return_value=_fake_pattern(),
+    ):
+        resp = client.post(
+            f"/api/jobs/sources/{src.id}/train-pattern",
+            headers=headers,
+            json={},
+        )
+    assert resp.status_code == 200, resp.get_json()
+    data = resp.get_json()
+    assert data["train_size_reduced"] is True
+    assert data["train_size_used"] == 1
+    assert data["sample_count"] == 1
+    assert data["mails_total"] == 2
+
+
+def test_train_rejects_single_mail(client, auth_header):
+    """1 Mail = kann nicht train+test splitten -> 400."""
+    headers, user = auth_header
+    src = _make_source(user)
+    fake_mails = [{"subject": "S", "body": "no structure"}]
+    with patch(
+        "services.job_sources.pattern_learner.fetch_sample_mails",
+        return_value=fake_mails,
+    ):
+        resp = client.post(
+            f"/api/jobs/sources/{src.id}/train-pattern",
+            headers=headers,
+            json={},
+        )
+    assert resp.status_code == 400
+    assert "mind. 2" in resp.get_json()["error"].lower() or "2 noetig" in resp.get_json()["error"]
+
+
 def test_train_non_email_source(client, auth_header):
     headers, user = auth_header
     # RSS-Source ueber direkte DB-Insertion, da Endpoint-Validation

@@ -1271,16 +1271,24 @@ def train_pattern(user, source_id):
         )
     except RuntimeError as exc:
         return jsonify({"error": f"IMAP-Fetch fehlgeschlagen: {exc}"}), 400
-    if len(mails) < train_size + 1:
+    # Mindestens 2 Mails noetig (1 train + 1 test). Bei weniger Mails als
+    # train_size + 1 wird train_size automatisch reduziert, damit User mit
+    # kleinen Plattform-Inboxen (z.B. HeyJobs: 1 Digest/Woche) trotzdem
+    # trainieren koennen. Trade-off: Pattern auf weniger Samples ist
+    # statistisch schwaecher; mind. min_hit_rate-Schwelle bleibt der
+    # Quality-Gate.
+    if len(mails) < 2:
         return jsonify({
             "error": (
                 f"Zu wenig Mails ({len(mails)}) fuer Training "
-                f"(mind. {train_size + 1} noetig)."
+                f"(mind. 2 noetig: 1 Train + 1 Test)."
             )
         }), 400
+    train_size_effective = min(train_size, max(1, len(mails) - 1))
+    train_size_reduced = train_size_effective < train_size
 
-    train = mails[:train_size]
-    test = mails[train_size:]
+    train = mails[:train_size_effective]
+    test = mails[train_size_effective:]
 
     try:
         pattern = pl.ai_learn_pattern(user, train_samples=train, platform=platform)
@@ -1331,6 +1339,9 @@ def train_pattern(user, source_id):
         "sample_count": len(test),
         "pattern": pattern,
         "example_matches": [d for d in diagnostics if d["matched"]][:3],
+        "train_size_used": train_size_effective,
+        "train_size_reduced": train_size_reduced,
+        "mails_total": len(mails),
     }), 200
 
 
