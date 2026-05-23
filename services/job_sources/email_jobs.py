@@ -667,10 +667,11 @@ class EmailJobsAdapter(JobSourceAdapter):
             if cards:
                 jobs_from_cards = []
                 for m in cards:
-                    t = (m.group('title') or '').strip()
-                    c = (m.group('company') or '').strip()
-                    loc = (m.group('location') or '').strip() or None
-                    u = (m.group('url') or '').strip()
+                    gd = m.groupdict()
+                    t = (gd.get('title') or '').strip()
+                    c = (gd.get('company') or '').strip()
+                    loc = (gd.get('location') or '').strip() or None
+                    u = (gd.get('url') or '').strip()
                     if not t or not u:
                         continue
                     # Trenner-Linien (z.B. "---") schlüpfen sonst als Title
