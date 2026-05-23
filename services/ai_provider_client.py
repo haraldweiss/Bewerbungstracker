@@ -196,7 +196,7 @@ class AIProviderClient:
         r = result.get('result') or {}
         contents = r.get('content') or []
         usage = r.get('usage') or {}
-        return ChatResponse(
+        response = ChatResponse(
             content=[ChatContent(text=c.get('text', '')) for c in contents],
             usage=ChatUsage(
                 input_tokens=int(usage.get('input_tokens', 0)),
@@ -208,6 +208,30 @@ class AIProviderClient:
             # (backward-compat fuer alte Service-Versionen).
             model=result.get('model') or model,
         )
+
+        # Phase 2B: Wenn der Backup-Pfad genommen wurde, Cost zentral tracken.
+        # Damit landen ALLE Claude-Calls in api_calls — egal aus welchem Feature.
+        if response.fallback_used and response.model:
+            try:
+                from services import cost_tracker
+                cost_usd = cost_tracker.estimate_cost_usd(
+                    response.model, response.usage.input_tokens, response.usage.output_tokens,
+                )
+                cost_tracker.record_call(
+                    user_id=user_id, endpoint='ai_provider_client.chat',
+                    model=response.model,
+                    tokens_in=response.usage.input_tokens,
+                    tokens_out=response.usage.output_tokens,
+                    cost_usd=cost_usd, key_owner='server',
+                )
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "cost_tracker.record_call failed: %s — call already done",
+                    exc,
+                )
+
+        return response
 
     # ── Queue ────────────────────────────────────────────────────────────────
 

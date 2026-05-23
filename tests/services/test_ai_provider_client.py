@@ -205,3 +205,71 @@ def test_chat_keeps_non_claude_fallback_unconditionally(monkeypatch):
                 fallback_provider='ollama',
                 fallback_model='qwen3-coder')
     assert captured['body']['fallback_provider'] == 'ollama'
+
+
+def test_chat_records_cost_when_fallback_used(monkeypatch):
+    """Wenn response.fallback_used=True: cost_tracker.record_call wird aufgerufen
+    mit dem echten Backup-Modell + Cost-Estimate."""
+    import services.ai_provider_client as aip
+    monkeypatch.setattr('services.cost_tracker.user_today_cost_cents', lambda uid: 0)
+    monkeypatch.setattr(aip, '_lookup_user_budget_cents', lambda uid: 500)
+
+    def fake_post(self, path, body):
+        return {
+            'result': {
+                'content': [{'text': 'hi'}],
+                'model': 'claude-haiku-4-5-20251001',
+                'usage': {'input_tokens': 100, 'output_tokens': 50},
+            },
+            'fallback_used': True,
+            'model': 'claude-haiku-4-5-20251001',
+        }
+    monkeypatch.setattr(aip.AIProviderClient, '_post', fake_post)
+
+    recorded = []
+    monkeypatch.setattr('services.cost_tracker.record_call',
+                        lambda **kw: recorded.append(kw))
+
+    client = aip.AIProviderClient.__new__(aip.AIProviderClient)
+    client.base_url = "http://test"
+    client.token = "test-token"
+    client.timeout = 10
+    client.chat(user_id='u1', provider='ollama', model='x',
+                messages=[{'role': 'user', 'content': 'hi'}],
+                fallback_provider='claude',
+                fallback_model='claude-haiku-4-5-20251001')
+
+    assert len(recorded) == 1
+    assert recorded[0]['model'] == 'claude-haiku-4-5-20251001'
+    assert recorded[0]['tokens_in'] == 100
+    assert recorded[0]['tokens_out'] == 50
+    assert recorded[0]['cost_usd'] > 0
+
+
+def test_chat_does_not_record_when_fallback_not_used(monkeypatch):
+    """Primary-Path (Ollama) erfolgreich: KEIN cost_tracker.record_call (oder nur cost=0)."""
+    import services.ai_provider_client as aip
+    monkeypatch.setattr('services.cost_tracker.user_today_cost_cents', lambda uid: 0)
+    monkeypatch.setattr(aip, '_lookup_user_budget_cents', lambda uid: 500)
+
+    def fake_post(self, path, body):
+        return {
+            'result': {'content': [{'text': 'hi'}], 'model': 'qwen3-coder',
+                       'usage': {'input_tokens': 100, 'output_tokens': 50}},
+            'fallback_used': False,
+        }
+    monkeypatch.setattr(aip.AIProviderClient, '_post', fake_post)
+
+    recorded = []
+    monkeypatch.setattr('services.cost_tracker.record_call',
+                        lambda **kw: recorded.append(kw))
+
+    client = aip.AIProviderClient.__new__(aip.AIProviderClient)
+    client.base_url = "http://test"
+    client.token = "test-token"
+    client.timeout = 10
+    client.chat(user_id='u1', provider='ollama', model='qwen3-coder',
+                messages=[{'role': 'user', 'content': 'hi'}])
+    # Entweder gar kein Record, oder einer mit cost=0
+    if recorded:
+        assert recorded[0]['cost_usd'] == 0.0
