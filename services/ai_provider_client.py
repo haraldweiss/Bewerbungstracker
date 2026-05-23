@@ -268,9 +268,12 @@ def is_enabled() -> bool:
     return bool(Config.AI_PROVIDER_SERVICE_URL and Config.AI_PROVIDER_SERVICE_TOKEN)
 
 
-# Whitelist: nur diese Features duerfen heute Backup-Fallback nutzen.
-# Erweitert in Phase 2B nach Einfuehrung des zentralen Cost-Tracker.
-ALLOW_BACKUP_FEATURES = {'match'}
+# Whitelist: welche Features duerfen Backup-Fallback nutzen.
+# Phase 2B: erweitert auf alle bekannten Features, weil zentrales Cost-Tracking
+# + Cap im chat()-Wrapper jetzt fuer alle gilt. Konstante bleibt als Safety-
+# Net (Default = None oder unbekannt → kein Backup).
+ALLOW_BACKUP_FEATURES = {'match', 'cover_letter', 'email_parse',
+                         'cv_summarize', 'pattern_learn', 'chat'}
 
 
 def _lookup_user_budget_cents(user_id: str) -> int:

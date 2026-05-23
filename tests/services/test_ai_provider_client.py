@@ -113,16 +113,25 @@ def test_build_fallback_kwargs_without_feature_returns_empty():
     assert build_fallback_kwargs(user) == {}
 
 
-def test_build_fallback_kwargs_non_whitelisted_feature_returns_empty():
-    """Features ausserhalb der Whitelist bekommen KEIN Backup."""
+def test_build_fallback_kwargs_all_known_features_get_backup():
+    """Phase 2B: alle bekannten Features sind whitelisted, Cap erfolgt jetzt
+    im chat()-Wrapper."""
     from services.ai_provider_client import build_fallback_kwargs
     user = type('U', (), {
         'get_backup_config': lambda self: ('claude', 'claude-haiku-4-5-20251001', False)
     })()
-    assert build_fallback_kwargs(user, feature='email_parse') == {}
-    assert build_fallback_kwargs(user, feature='cover_letter') == {}
-    assert build_fallback_kwargs(user, feature='cv_summarize') == {}
-    assert build_fallback_kwargs(user, feature='pattern_learn') == {}
+    for feature in ['match', 'cover_letter', 'email_parse', 'cv_summarize', 'pattern_learn', 'chat']:
+        assert build_fallback_kwargs(user, feature=feature) != {}, f"feature {feature} nicht in Whitelist"
+
+
+def test_build_fallback_kwargs_unknown_feature_returns_empty():
+    """Unbekanntes/None Feature bleibt safe-by-default."""
+    from services.ai_provider_client import build_fallback_kwargs
+    user = type('U', (), {
+        'get_backup_config': lambda self: ('claude', 'claude-haiku-4-5-20251001', False)
+    })()
+    assert build_fallback_kwargs(user, feature=None) == {}
+    assert build_fallback_kwargs(user, feature='unbekannt_xyz') == {}
 
 
 def test_build_fallback_kwargs_match_feature_returns_kwargs():
