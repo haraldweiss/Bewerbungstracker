@@ -3877,6 +3877,10 @@ const JdSourcesUI = (() => {
             if ($('jdCfgUmkreis')) $('jdCfgUmkreis').value = cfg.umkreis || 25;
         } else if (src.type === 'arbeitnow') {
             if ($('jdCfgTags')) $('jdCfgTags').value = (cfg.tags || []).join(', ');
+        } else if (src.type.endsWith('_email')) {
+            // Generische Email-Typen (heyjobs_email, linkedin_email, xing_email, etc.)
+            if ($('jdCfgFolder')) $('jdCfgFolder').value = cfg.folder || '';
+            if ($('jdCfgLookback')) $('jdCfgLookback').value = cfg.lookback_days || 30;
         }
         // Modal-Titel anpassen
         const h3 = document.querySelector('#jdSourceModalWrap h3');
@@ -4281,6 +4285,11 @@ const JdSourcesUI = (() => {
             const list = (r && r.platforms) || [];
             const sel = document.getElementById('jdNewType');
             if (!sel) return;
+            // Wert merken bevor Options entfernt werden — beim Edit-Modal
+            // ist der Wert bereits auf den Source-Typ gesetzt; durch das
+            // Entfernen/Neu-Hinzufügen der dynamic-Options geht die Selektion
+            // verloren, was das Formular auf RSS (ersten Wert) zurückspringt.
+            const savedValue = sel.value;
             // Remove old dynamic options first
             Array.from(sel.querySelectorAll('option[data-dynamic="true"]')).forEach(o => o.remove());
             list.forEach(p => {
@@ -4290,6 +4299,12 @@ const JdSourcesUI = (() => {
                 opt.setAttribute('data-dynamic', 'true');
                 sel.appendChild(opt);
             });
+            // Wert und Felder wiederherstellen falls er durch das
+            // Entfernen/Neu-Hinzufügen verloren gegangen ist.
+            if (savedValue && sel.value !== savedValue) {
+                sel.value = savedValue;
+                renderTypeFields();
+            }
         } catch (e) {
             console.warn('[JdSources] Konnte DB-Plattformen nicht laden:', e);
         }
