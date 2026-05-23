@@ -9,6 +9,7 @@ Parsing: Regex zuerst, AI-Fallback (ai-provider-service) wenn unvollständig.
 """
 from __future__ import annotations
 
+import concurrent.futures as _futures
 import email
 import imaplib
 import json
@@ -1025,11 +1026,13 @@ def _ai_extract(user, subject: str, body: str) -> Optional[dict]:
 
     if not ai_provider_client.is_enabled():
         return None
-    # Best-Effort-Call: bei langsamen Mails (riesiger Body, Ollama zaeht)
-    # lieber nach 60s aufgeben statt den gunicorn-Worker bei 180s killen
-    # zu lassen — Worker-Tot kann eine ganze Import-Runde killen, weil
-    # Apache dann eine HTML-Errorpage liefert ("Unexpected token '<'").
-    client = ai_provider_client.get_client(timeout=60)
+    # Harter Wall-Clock-Timeout via ThreadPoolExecutor: verhindert dass
+    # ein langsamer Ollama-Token-Stream den gunicorn-Worker (180s) killt.
+    # requests timeout=60 allein reicht nicht — jeder eintreffende Token
+    # resettet den Socket-Idle-Timeout, d.h. ein Streaming-Modell kann
+    # theoretisch 180s laufen ohne timeout auszulösen.
+    _HARD_TIMEOUT = 55  # sicher unter gunicorn-Worker-Timeout (180s)
+    client = ai_provider_client.get_client(timeout=_HARD_TIMEOUT)
     if not client:
         return None
 
@@ -1048,8 +1051,8 @@ def _ai_extract(user, subject: str, body: str) -> Optional[dict]:
         f"Body:\n{body[:2000]}"
     )
 
-    try:
-        response = client.chat(
+    def _do_chat_single():
+        return client.chat(
             user_id=user.id,
             provider=provider,
             model=model or '',
@@ -1057,6 +1060,15 @@ def _ai_extract(user, subject: str, body: str) -> Optional[dict]:
             max_tokens=300,
             **fallback_kwargs,
         )
+
+    try:
+        with _futures.ThreadPoolExecutor(max_workers=1) as _ex:
+            _f = _ex.submit(_do_chat_single)
+            try:
+                response = _f.result(timeout=_HARD_TIMEOUT)
+            except _futures.TimeoutError:
+                logger.warning("AI-Extract hard-timeout (%ss)", _HARD_TIMEOUT)
+                return None
         text = response.content[0].text if response.content else ''
     except Exception as exc:
         logger.warning("AI-Extract fehlgeschlagen: %s", exc)
@@ -1095,11 +1107,11 @@ def _ai_extract_digest(
 
     if not ai_provider_client.is_enabled():
         return None
-    # Best-Effort-Call: bei langsamen Mails (riesiger Body, Ollama zaeht)
-    # lieber nach 60s aufgeben statt den gunicorn-Worker bei 180s killen
-    # zu lassen — Worker-Tot kann eine ganze Import-Runde killen, weil
-    # Apache dann eine HTML-Errorpage liefert ("Unexpected token '<'").
-    client = ai_provider_client.get_client(timeout=60)
+    # Harter Wall-Clock-Timeout via ThreadPoolExecutor — gleiche Begründung
+    # wie in _ai_extract(): Streaming-Modelle können requests-Socket-Timeout
+    # umgehen; hier setzen wir eine absolute Obergrenze.
+    _HARD_TIMEOUT = 55
+    client = ai_provider_client.get_client(timeout=_HARD_TIMEOUT)
     if not client:
         return None
 
@@ -1120,8 +1132,8 @@ def _ai_extract_digest(
         f"Body:\n{body[:4000]}"
     )
 
-    try:
-        response = client.chat(
+    def _do_chat_digest():
+        return client.chat(
             user_id=user.id,
             provider=provider,
             model=model or '',
@@ -1129,6 +1141,15 @@ def _ai_extract_digest(
             max_tokens=1500,
             **fallback_kwargs,
         )
+
+    try:
+        with _futures.ThreadPoolExecutor(max_workers=1) as _ex:
+            _f = _ex.submit(_do_chat_digest)
+            try:
+                response = _f.result(timeout=_HARD_TIMEOUT)
+            except _futures.TimeoutError:
+                logger.warning("AI-Extract-Digest hard-timeout (%ss)", _HARD_TIMEOUT)
+                return None
         text = response.content[0].text if response.content else ''
     except Exception as exc:
         logger.warning("AI-Extract-Digest fehlgeschlagen: %s", exc)
