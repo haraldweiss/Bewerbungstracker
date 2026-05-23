@@ -230,15 +230,24 @@ def is_enabled() -> bool:
     return bool(Config.AI_PROVIDER_SERVICE_URL and Config.AI_PROVIDER_SERVICE_TOKEN)
 
 
-def build_fallback_kwargs(user) -> dict:
+# Whitelist: nur diese Features duerfen heute Backup-Fallback nutzen.
+# Erweitert in Phase 2B nach Einfuehrung des zentralen Cost-Tracker.
+ALLOW_BACKUP_FEATURES = {'match'}
+
+
+def build_fallback_kwargs(user, feature: str | None = None) -> dict:
     """Baut die fallback_provider/fallback_model/fallback_config kwargs für chat().
 
     - Returns {} wenn der User kein Backup hat
+    - Returns {} wenn feature nicht in ALLOW_BACKUP_FEATURES (Safe-by-Default,
+      verhindert dass ungetracker Pfade Sonnet/Haiku ungebremst nutzen)
     - Returns nur provider+model wenn explizit konfiguriert (Service nutzt
       die vom User gespeicherte Config)
     - Returns provider+model+config wenn Admin-Auto-Fallback (zentraler
       CLAUDE_API_KEY wird per-call mitgegeben, NICHT im Service persistiert)
     """
+    if feature not in ALLOW_BACKUP_FEATURES:
+        return {}
     import os
     backup = user.get_backup_config() if user else None
     if not backup:

@@ -100,3 +100,37 @@ def test_get_client_passes_timeout_override():
         fast_client = get_client(timeout=60)
         assert fast_client is not None
         assert fast_client.timeout == 60
+
+
+# Phase 2A: Backup-Whitelist
+def test_build_fallback_kwargs_without_feature_returns_empty():
+    """Default-Aufruf ohne feature= darf KEIN Backup mehr aktivieren.
+    Safe by default."""
+    from services.ai_provider_client import build_fallback_kwargs
+    user = type('U', (), {
+        'get_backup_config': lambda self: ('claude', 'claude-haiku-4-5-20251001', False)
+    })()
+    assert build_fallback_kwargs(user) == {}
+
+
+def test_build_fallback_kwargs_non_whitelisted_feature_returns_empty():
+    """Features ausserhalb der Whitelist bekommen KEIN Backup."""
+    from services.ai_provider_client import build_fallback_kwargs
+    user = type('U', (), {
+        'get_backup_config': lambda self: ('claude', 'claude-haiku-4-5-20251001', False)
+    })()
+    assert build_fallback_kwargs(user, feature='email_parse') == {}
+    assert build_fallback_kwargs(user, feature='cover_letter') == {}
+    assert build_fallback_kwargs(user, feature='cv_summarize') == {}
+    assert build_fallback_kwargs(user, feature='pattern_learn') == {}
+
+
+def test_build_fallback_kwargs_match_feature_returns_kwargs():
+    """match steht in der Whitelist und bekommt Backup-kwargs."""
+    from services.ai_provider_client import build_fallback_kwargs
+    user = type('U', (), {
+        'get_backup_config': lambda self: ('claude', 'claude-haiku-4-5-20251001', False)
+    })()
+    kw = build_fallback_kwargs(user, feature='match')
+    assert kw['fallback_provider'] == 'claude'
+    assert kw['fallback_model'] == 'claude-haiku-4-5-20251001'
