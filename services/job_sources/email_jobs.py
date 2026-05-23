@@ -674,6 +674,12 @@ class EmailJobsAdapter(JobSourceAdapter):
                     u = (gd.get('url') or '').strip()
                     if not t or not u:
                         continue
+                    # Mindest-Titellänge: Jobtitel sind nie kürzer als 5 Zeichen.
+                    # Filtert Einzel-Wörter wie "AGB", "Vollzeit", "KI" aus die
+                    # durch Tracking-Links (HeyJobs, LinkedIn) als Card-Matches
+                    # auftauchen.
+                    if len(t) < 5:
+                        continue
                     # Trenner-Linien (z.B. "---") schlüpfen sonst als Title
                     # oder Company durch und schieben echte Werte raus.
                     if re.fullmatch(r"[\-=_~\*\.\s]{3,}", t):
