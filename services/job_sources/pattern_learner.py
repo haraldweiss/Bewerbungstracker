@@ -89,6 +89,18 @@ def compile_pattern(pattern: dict, url_pattern_str: str | None = None) -> Compil
     url_re_inner = url_pattern_str or r"https?://[^\s\r\n)<>\"']+"
     n_sep = body_card["separator_lines_allowed"]
 
+    def _dedup_fields(fields: list[str]) -> list[str]:
+        """Entferne doppelte Named-Group-Felder (title/company/location).
+        'extra' hat keine named group und darf mehrfach vorkommen."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for f in fields:
+            if f == "extra" or f not in seen:
+                result.append(f)
+                if f != "extra":
+                    seen.add(f)
+        return result
+
     parts: list[str] = []
 
     if title_in_link:
@@ -106,9 +118,12 @@ def compile_pattern(pattern: dict, url_pattern_str: str | None = None) -> Compil
         # are configured, allow optional separator/blank lines before them.
         if body_card.get("fields_after_url"):
             parts.append(rf"(?:[^\r\n]*\r?\n){{0,{n_sep}}}?")
+        # In Mode B ist title bereits via title_in_link belegt —
+        # title aus fields_after_url wuerde eine doppelte Named Group erzeugen.
+        fields_after = [f for f in body_card.get("fields_after_url", []) if f != "title"]
     else:
         # Mode A (LinkedIn-Style, default).
-        for field in body_card["fields_before_url"]:
+        for field in _dedup_fields(body_card["fields_before_url"]):
             if field not in _FIELD_BUILDERS:
                 raise ValueError(f"Unknown field: {field}")
             parts.append(_FIELD_BUILDERS[field])
@@ -130,10 +145,16 @@ def compile_pattern(pattern: dict, url_pattern_str: str | None = None) -> Compil
         # no fields_after_url at all (so this is skipped for LinkedIn).
         if body_card.get("fields_after_url"):
             parts.append(rf"\s*\r?\n(?:[^\r\n]*\r?\n){{0,{n_sep}}}?")
+        # Dedupliziere gegen fields_before_url, damit die AI keine doppelten
+        # Named Groups erzeugen kann.
+        before_fields_set = {f for f in body_card["fields_before_url"] if f != "extra"}
+        fields_after = _dedup_fields(
+            [f for f in body_card.get("fields_after_url", []) if f not in before_fields_set]
+        )
 
     # fields_after_url (both modes — typical XING use case: company+location
     # on separate lines AFTER the title-link line).
-    for field in body_card.get("fields_after_url", []):
+    for field in fields_after:
         if field not in _FIELD_BUILDERS:
             raise ValueError(f"Unknown field: {field}")
         parts.append(_FIELD_BUILDERS[field])

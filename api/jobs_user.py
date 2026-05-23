@@ -1249,11 +1249,13 @@ def train_pattern(user, source_id):
     train_size = int(data.get("train_size") or 5)
     min_hit_rate = float(data.get("min_hit_rate") or 0.40)
 
-    # Rate-Limit: 1 Train pro Plattform pro Stunde.
+    # Rate-Limit: 1 erfolgreicher Train pro Plattform pro Stunde.
+    # Fehlerhafte Trainings zaehlen NICHT zum Rate-Limit.
     one_hour_ago = datetime.utcnow() - timedelta(hours=1)
     recent = LearnedEmailPattern.query.filter(
         LearnedEmailPattern.platform == platform,
         LearnedEmailPattern.trained_at > one_hour_ago,
+        LearnedEmailPattern.is_active == True,  # Only count successful trainings
     ).first()
     if recent is not None:
         return jsonify({
