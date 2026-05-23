@@ -418,9 +418,10 @@ def test_match_uses_feature_override(app, user_factory, db_session):
 def test_estimate_cost_usd_does_not_round_sub_cent_calls_to_zero():
     """Regression: bei Haiku-Preisen sind typische Match-Calls <0.5¢ — die alte
     int-cents Variante rundete sie auf 0, sodass api_calls.cost fälschlich $0
-    zeigte (Vorfall 2026-05-14: 18.435 Calls Anthropic-billed, DB sah $0)."""
-    from api.jobs_cron import _estimate_cost_usd
+    zeigte (Vorfall 2026-05-14: 18.435 Calls Anthropic-billed, DB sah $0).
+    Nach Phase 2B: Funktion lebt in services/cost_tracker.py."""
+    from services.cost_tracker import estimate_cost_usd
     # Haiku-typischer Match-Call: 2552 in / 241 out tokens
-    cost = _estimate_cost_usd(2552, 241)
+    cost = estimate_cost_usd('claude-haiku-4-5-20251001', 2552, 241)
     assert cost > 0.0, "sub-cent costs must not round to zero"
     assert cost < 0.01, "should still be sub-cent for haiku-typical call"

@@ -12,7 +12,8 @@ from models import JobSource, RawJob, JobMatch, Application
 from api.auth import token_required
 from services.ssrf_guard import is_url_safe_for_rss
 from services import ai_provider_client
-from api.jobs_cron import _run_claude_match_for, _user_today_cost_cents, _is_failed_evaluation
+from api.jobs_cron import _run_claude_match_for, _is_failed_evaluation
+from services import cost_tracker
 
 
 jobs_user_bp = Blueprint('jobs_user', __name__, url_prefix='/api/jobs')
@@ -613,7 +614,7 @@ def import_match(user, match_id: int):
     # NEU: Wenn noch nicht bewertet, Claude versuchen (mit Budget-Check)
     budget_skipped = False
     if m.match_score is None:
-        if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+        if cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
             budget_skipped = True
         else:
             client = _get_anthropic_client()
@@ -697,7 +698,7 @@ def score_match(user, match_id: int):
         }), 200
 
     # Budget-Check vor Anthropic-Client-Init
-    if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+    if cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
         return jsonify({"error": "Tagesbudget für Claude-Bewertungen erschöpft"}), 402
 
     # Im Service-Modus brauchen wir keinen lokalen Anthropic-Key — der ai-provider-service
@@ -713,7 +714,7 @@ def score_match(user, match_id: int):
     if not success:
         db.session.rollback()
         # Nochmal Budget prüfen — kann sich gerade in der Helper-Schleife geändert haben
-        if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+        if cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
             return jsonify({"error": "Tagesbudget für Claude-Bewertungen erschöpft"}), 402
         return jsonify({"error": "Bewertung fehlgeschlagen"}), 500
 
@@ -773,7 +774,7 @@ def score_match_bulk(user):
 
     for m in own:
         # Budget-Check vor jedem Match (kann sich mid-loop aendern durch flush in Helper)
-        if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+        if cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
             skipped_budget.append(m.id)
             continue
         try:
@@ -785,7 +786,7 @@ def score_match_bulk(user):
                 if m.match_score is not None:
                     # Schon bewertet (idempotent path)
                     scored.append({"id": m.id, "match_score": m.match_score})
-                elif _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+                elif cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
                     # Budget mid-call erschoepft
                     skipped_budget.append(m.id)
                 else:

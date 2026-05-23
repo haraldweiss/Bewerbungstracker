@@ -13,6 +13,7 @@ from flask import Blueprint, jsonify
 
 from database import db
 from models import User, JobSource, RawJob, JobMatch, ApiCall, Application
+from services import cost_tracker
 from services.cron_auth import require_cron_token
 from services.job_sources import get_adapter
 from services.job_matching.cv_tokenizer import tokenize_cv
@@ -96,26 +97,8 @@ def _get_anthropic_client():
     return Anthropic(api_key=api_key)
 
 
-def _estimate_cost_usd(tokens_in: int, tokens_out: int) -> float:
-    """Echte USD-Kosten als float — kein Rounding auf cents.
-
-    Vorher returnte diese Funktion `int` cents via round() — bei Haiku-Pricing
-    (Input $1/M, Output $5/M) sind typische Match-Calls (~2500 in / 250 out)
-    nur ~0.4 cent wert und wurden fälschlich auf 0 gerundet. Über 100+ Calls
-    pro Tag verschwand der Kostenanteil komplett aus `api_calls.cost`, obwohl
-    Anthropic real berechnete. Float-USD löst das Reporting-Problem.
-    """
-    usd = (tokens_in / 1_000_000 * COST_USD_PER_1M_TOKENS_IN
-           + tokens_out / 1_000_000 * COST_USD_PER_1M_TOKENS_OUT)
-    return max(0.0, usd)
-
-
-def _user_today_cost_cents(user_id: str) -> int:
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    rows = (db.session.query(db.func.sum(ApiCall.cost))
-            .filter(ApiCall.user_id == user_id, ApiCall.timestamp >= today_start)
-            .scalar()) or 0
-    return int(round(rows * 100))
+# _estimate_cost_usd und _user_today_cost_cents wurden nach services/cost_tracker.py
+# extrahiert (Phase 2B). Lokale Aufrufe gehen jetzt direkt an cost_tracker.*.
 
 
 def _build_cv_summary(cv_data_json: str) -> str:
@@ -898,22 +881,22 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
         cost_usd = 0.0
         key_owner = 'user' if response.via == 'ollama' else 'custom_endpoint'
     else:
-        cost_usd = _estimate_cost_usd(result.tokens_in, result.tokens_out)
+        # Bei Fallback echten Modellnamen loggen (ai-provider-service liefert
+        # ChatResponse.model seit 2026-05-19). Bei Primary-Path = Wunschmodell.
+        logged_model_for_cost = response.model if (response.fallback_used and response.model) else model
+        cost_usd = cost_tracker.estimate_cost_usd(logged_model_for_cost, result.tokens_in, result.tokens_out)
         key_owner = 'server'
 
-    # Bei Fallback echten Modellnamen loggen (ai-provider-service liefert
-    # ChatResponse.model seit 2026-05-19). Bei Primary-Path = Wunschmodell.
-    # Backward-compat: response.model leer falls Service alt → falle auf
-    # Wunschmodell zurueck.
+    # Bei Fallback echten Modellnamen loggen — Backward-compat: response.model
+    # leer falls Service alt → falle auf Wunschmodell zurueck.
     logged_model = response.model if (response.fallback_used and response.model) else model
 
-    db.session.add(ApiCall(
+    cost_tracker.record_call(
         user_id=user.id, endpoint='/api/jobs/match',
         model=logged_model, tokens_in=result.tokens_in,
-        tokens_out=result.tokens_out, cost=cost_usd,
+        tokens_out=result.tokens_out, cost_usd=cost_usd,
         key_owner=key_owner,
-    ))
-    db.session.flush()
+    )
     return True
 
 
@@ -957,7 +940,7 @@ def _run_match_via_local_factory(user: User, match: JobMatch, raw: RawJob, cv_su
     match.missing_skills = result.missing_skills
     raw.crawl_status = 'matched'
 
-    cost_usd = _estimate_cost_usd(result.tokens_in, result.tokens_out)
+    cost_usd = cost_tracker.estimate_cost_usd(model, result.tokens_in, result.tokens_out)
     key_owner = 'server'
     if provider == ProviderConfig.OLLAMA:
         key_owner = 'user'
@@ -966,13 +949,12 @@ def _run_match_via_local_factory(user: User, match: JobMatch, raw: RawJob, cv_su
         key_owner = 'custom_endpoint'
         cost_usd = 0.0  # User bezahlt direkt beim Provider, kein Server-Cost
 
-    db.session.add(ApiCall(
+    cost_tracker.record_call(
         user_id=user.id, endpoint='/api/jobs/match',
         model=model, tokens_in=result.tokens_in,
-        tokens_out=result.tokens_out, cost=cost_usd,
+        tokens_out=result.tokens_out, cost_usd=cost_usd,
         key_owner=key_owner,
-    ))
-    db.session.flush()
+    )
     return True
 
 
@@ -1011,7 +993,7 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
         match.missing_skills = []
         match.suspicious_reasons = None
 
-    if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+    if cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
         return False
 
     raw = RawJob.query.get(match.raw_job_id)
@@ -1056,7 +1038,7 @@ def claude_match():
         if time.time() - started > HARD_TIME_LIMIT_SEC:
             break
 
-        if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+        if cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
             skipped_budget += 1
             continue
 
@@ -1075,7 +1057,7 @@ def claude_match():
                 matched += 1
             else:
                 # Wenn Budget gerade erschöpft wurde mid-loop → weiter zum nächsten User
-                if _user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
+                if cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
                     break
 
         db.session.commit()
