@@ -3695,17 +3695,24 @@ const JdSourcesUI = (() => {
             c.innerHTML = `<div class="form-group"><label>Tags (kommagetrennt):</label>
                 <input type="text" id="jdCfgTags" placeholder="javascript, remote" style="width:100%"></div>`;
         } else if (t === 'bulk_email') {
-            // Static template — no user input interpolated. Pattern matches the
-            // existing innerHTML usage in this function (see arbeitnow/indeed_email above).
+            // IMAP-Autofill: IMAP-Konto aus gespeicherten Einstellungen ermitteln.
+            const imapHost = (state && state.settings && state.settings.imapHost) || '';
+            const imapUser = (state && state.settings && state.settings.imapUser) || '';
+            const isGmail = imapHost.toLowerCase().includes('gmail') || imapUser.toLowerCase().endsWith('@gmail.com');
+            const bulkFolderDefault = isGmail ? '[Google Mail]/Alle Nachrichten' : 'INBOX';
+            const imapBannerHtml = imapHost
+                ? `<div style="padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.75rem;font-size:0.82rem;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);">✅ IMAP: <strong>${escapeHtml(imapUser)}</strong>&nbsp;@&nbsp;${escapeHtml(imapHost)}</div>`
+                : `<div style="padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.75rem;font-size:0.82rem;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);">⚠️ Kein IMAP-Konto konfiguriert. <a href="#" onclick="JdSourcesUI.closeCreate();showView('einstellungen');return false;" style="color:var(--warning,#F59E0B)">→ Einstellungen öffnen</a></div>`;
             c.innerHTML = `
-                <div style="background:var(--bg-secondary,#f7f8fc);padding:0.75rem;border-radius:6px;margin-bottom:0.75rem">
+                ${imapBannerHtml}
+                <div style="background:var(--bg-card2);padding:0.75rem;border-radius:6px;margin-bottom:0.75rem">
                     <div style="font-weight:600;margin-bottom:0.5rem">📬 Plattformen wählen:</div>
                     <label style="display:block;margin:0.25rem 0"><input type="checkbox" id="jdBulkIndeed" checked> 🔍 Indeed</label>
                     <label style="display:block;margin:0.25rem 0"><input type="checkbox" id="jdBulkLinkedIn" checked> 💼 LinkedIn</label>
                     <label style="display:block;margin:0.25rem 0"><input type="checkbox" id="jdBulkXing" checked> 📌 XING</label>
                 </div>
                 <div class="form-group"><label>IMAP-Folder (für alle):</label>
-                    <input type="text" id="jdBulkFolder" value="[Google Mail]/Alle Nachrichten" style="width:100%"></div>
+                    <input type="text" id="jdBulkFolder" value="${escapeHtml(bulkFolderDefault)}" style="width:100%"></div>
                 <div class="form-group"><label>Lookback (Tage):</label>
                     <input type="number" id="jdBulkLookback" value="30" min="1" max="365" style="width:120px"></div>
                 <div class="form-group"><label>Limit pro Plattform:</label>
@@ -3715,9 +3722,24 @@ const JdSourcesUI = (() => {
                 </div>`;
         } else if (t.endsWith('_email')) {
             // Generic Email-Source form: works for all hardcoded + DB platforms.
-            const platform = t.slice(0, -'_email'.length);
-            const folderDefault = platform.charAt(0).toUpperCase() + platform.slice(1);
             while (c.firstChild) c.removeChild(c.firstChild);
+
+            // IMAP-Autofill: IMAP-Konto aus gespeicherten Einstellungen ermitteln.
+            const imapHost = (state && state.settings && state.settings.imapHost) || '';
+            const imapUser = (state && state.settings && state.settings.imapUser) || '';
+            const isGmail = imapHost.toLowerCase().includes('gmail') || imapUser.toLowerCase().endsWith('@gmail.com');
+            const smartFolder = isGmail ? '[Google Mail]/Alle Nachrichten' : 'INBOX';
+
+            // IMAP-Status-Banner anzeigen
+            const banner = document.createElement('div');
+            banner.style.cssText = 'padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.75rem;font-size:0.82rem;'
+                + (imapHost
+                    ? 'background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);'
+                    : 'background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);');
+            banner.innerHTML = imapHost
+                ? `✅ IMAP: <strong>${escapeHtml(imapUser)}</strong>&nbsp;@&nbsp;${escapeHtml(imapHost)}`
+                : `⚠️ Kein IMAP-Konto konfiguriert. <a href="#" onclick="JdSourcesUI.closeCreate();showView('einstellungen');return false;" style="color:var(--warning,#F59E0B)">→ Einstellungen öffnen</a>`;
+            c.appendChild(banner);
 
             const grp1 = document.createElement('div');
             grp1.className = 'form-group';
@@ -3727,8 +3749,8 @@ const JdSourcesUI = (() => {
             const inp1 = document.createElement('input');
             inp1.type = 'text';
             inp1.id = 'jdCfgFolder';
-            inp1.value = folderDefault;
-            inp1.placeholder = folderDefault;
+            inp1.value = smartFolder;
+            inp1.placeholder = smartFolder;
             inp1.style.width = '100%';
             grp1.appendChild(inp1);
             c.appendChild(grp1);
@@ -3752,7 +3774,7 @@ const JdSourcesUI = (() => {
             note.className = 'form-group';
             note.style.fontSize = '0.8rem';
             note.style.color = 'var(--text-muted)';
-            note.textContent = 'Nur manueller Import via 📧 Button. User-IMAP-Credentials müssen gesetzt sein.';
+            note.textContent = 'Manueller Import via 📧 Button. Folder aus deinem IMAP-Konto oben wählen.';
             c.appendChild(note);
         }
     }
@@ -3860,10 +3882,7 @@ const JdSourcesUI = (() => {
         // Type-spezifische Felder rendern und mit cfg pre-fillen
         renderTypeFields();
         const cfg = src.config || {};
-        if (src.type === 'indeed_email') {
-            if ($('jdCfgFolder')) $('jdCfgFolder').value = cfg.folder || 'Indeed';
-            if ($('jdCfgLookback')) $('jdCfgLookback').value = cfg.lookback_days || 30;
-        } else if (src.type === 'rss') {
+        if (src.type === 'rss') {
             if ($('jdCfgUrl')) $('jdCfgUrl').value = cfg.url || '';
         } else if (src.type === 'adzuna') {
             if ($('jdCfgAppId')) $('jdCfgAppId').value = cfg.app_id || '';
@@ -3878,13 +3897,16 @@ const JdSourcesUI = (() => {
         } else if (src.type === 'arbeitnow') {
             if ($('jdCfgTags')) $('jdCfgTags').value = (cfg.tags || []).join(', ');
         } else if (src.type.endsWith('_email')) {
-            // Generische Email-Typen (heyjobs_email, linkedin_email, xing_email, etc.)
+            // Alle Email-Typen (indeed_email, linkedin_email, heyjobs_email, etc.)
+            // renderTypeFields() setzt smart default — hier mit gespeichertem cfg überschreiben.
             if ($('jdCfgFolder')) $('jdCfgFolder').value = cfg.folder || '';
             if ($('jdCfgLookback')) $('jdCfgLookback').value = cfg.lookback_days || 30;
         }
-        // Modal-Titel anpassen
+        // Modal-Titel + Button-Beschriftung anpassen
         const h3 = document.querySelector('#jdSourceModalWrap h3');
         if (h3) h3.textContent = '✏️ Quelle bearbeiten';
+        const saveBtn = document.querySelector('#jdSourceModalWrap button.btn-primary');
+        if (saveBtn) saveBtn.textContent = 'Speichern';
     }
 
     function closeCreate(event) {
@@ -4303,7 +4325,12 @@ const JdSourcesUI = (() => {
             // Entfernen/Neu-Hinzufügen verloren gegangen ist.
             if (savedValue && sel.value !== savedValue) {
                 sel.value = savedValue;
-                renderTypeFields();
+                // Im Edit-Modus wurden Felder bereits durch edit() gerendert und
+                // mit cfg vorbelegt — kein erneutes renderTypeFields() nötig
+                // (würde Pre-Fill-Werte für dynamische Plattformen zurücksetzen).
+                if (!_editingSourceId) {
+                    renderTypeFields();
+                }
             }
         } catch (e) {
             console.warn('[JdSources] Konnte DB-Plattformen nicht laden:', e);
