@@ -3,6 +3,7 @@
 """Cron-Endpoints für Job-Discovery Pipeline (Token-geschützt)."""
 
 from __future__ import annotations
+import concurrent.futures as _futures
 import json
 import logging
 import os
@@ -177,14 +178,33 @@ def _ai_confirm_prefilter_dismiss(user, raw, cv_summary: str):
         'Antworte NUR mit JSON: {"fits": true|false, "reason": "<1 Satz, deutsch, max 150 Zeichen>"}'
     )
 
-    try:
-        resp = client.chat(
+    # Hard-Timeout via ThreadPoolExecutor (gleiches Pattern wie 4a8eb3f in
+    # services/job_sources/email_jobs.py): Streaming-Modelle (Ollama) können
+    # den requests-Socket-Timeout umgehen weil jeder Token den Idle-Timer
+    # resettet — ohne harten Cap kann ein Call 180s+ laufen und den gunicorn-
+    # Worker killen (→ HTTP 502 → kompletter Cron-Lauf bricht ab).
+    _HARD_TIMEOUT = 55
+
+    def _do_chat():
+        return client.chat(
             user_id=user.id,
             provider=user.ai_provider,
             model=user.ai_provider_model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=120,
         )
+
+    try:
+        with _futures.ThreadPoolExecutor(max_workers=1) as _ex:
+            _f = _ex.submit(_do_chat)
+            try:
+                resp = _f.result(timeout=_HARD_TIMEOUT)
+            except _futures.TimeoutError:
+                logger.warning(
+                    "ai_confirm_prefilter hard-timeout (%ss) for match=%s",
+                    _HARD_TIMEOUT, raw.id,
+                )
+                return None
     except Exception as exc:
         logger.warning("ai_confirm_prefilter failed for match=%s: %s", raw.id, exc)
         return None

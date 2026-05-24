@@ -16,6 +16,7 @@ import json
 import logging
 import re
 import ssl
+import time as _time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.header import decode_header
@@ -511,7 +512,20 @@ class EmailJobsAdapter(JobSourceAdapter):
         self._ai_calls_used = 0  # AI-Budget pro Lauf zurücksetzen
         self._ai_disabled_for_run = False
         jobs: list[FetchedJob] = []
+        # Wall-Clock-Budget für den Parse-Loop. Bei N Mails mit AI-Fallback
+        # können sich pro-Mail-Timeouts (55s) leicht über die gunicorn-Worker-
+        # Schwelle (180s) summieren. Bei Erschöpfung: partial result statt
+        # 502 — User sieht "X von Y Mails importiert" lieber als HTML-Error.
+        _RUN_BUDGET_S = 150
+        _run_start = _time.monotonic()
         for em in emails:
+            if _time.monotonic() - _run_start > _RUN_BUDGET_S:
+                logger.warning(
+                    "fetch() Wall-Clock-Budget %ss erschöpft nach %d/%d Mails — "
+                    "Rest übersprungen (verhindert gunicorn-Worker-Kill)",
+                    _RUN_BUDGET_S, len(jobs), len(emails),
+                )
+                break
             try:
                 result = self._parse_email(em)
                 if result is None:
@@ -561,7 +575,14 @@ class EmailJobsAdapter(JobSourceAdapter):
         lookback_days: int,
         limit: int,
     ) -> list[dict]:
-        conn = imaplib.IMAP4_SSL(host, 993, ssl_context=ssl.create_default_context())
+        # timeout=30: socket-level Wall-Clock-Timeout für ALLE folgenden IMAP-Ops
+        # (login/select/search/fetch). Ohne diesen Parameter blockt SSL.read()
+        # unbegrenzt wenn der IMAP-Server die Connection still droppt (NAT-Reset,
+        # IDLE-Drop) — gunicorn killt dann den Worker bei 180s, Apache liefert
+        # 502 mit HTML, Frontend zeigt "Server-Timeout (HTML-Antwort)".
+        conn = imaplib.IMAP4_SSL(
+            host, 993, ssl_context=ssl.create_default_context(), timeout=30
+        )
         try:
             conn.login(imap_user, password)
             # readonly=True: setzt \Seen-Flag NICHT (User-Inbox bleibt unverändert).
