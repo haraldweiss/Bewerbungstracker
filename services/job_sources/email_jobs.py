@@ -292,6 +292,33 @@ _GENERIC_SUBJECT_PATTERN = re.compile(
 )
 
 
+# Plattform-spezifische deterministische Title-Blacklists für DB-derived
+# Profile (PROFILES-Dict hat eigene hardcoded Listen). Greift IMMER, auch
+# wenn das AI-gelernte learned_email_patterns.title_blacklist die Strings
+# nicht enthält — verhindert Drift bei zukünftigen Pattern-Re-Trains.
+# Slug → compiled Regex.
+_DB_PROFILE_HARD_BLACKLISTS: dict[str, "re.Pattern"] = {
+    "heyjobs": re.compile(
+        r"^(?:"
+        # UI-Buttons / Navigation-Links die der Card-Regex als
+        # "[Text](URL)"-Markdown matched (Trailing " (" ist häufig):
+        r"Jobs found for|"                  # Mail-Header
+        r"Von\s+Job[\s-]?Alarmen\s+abmelden|"  # Unsubscribe-CTA
+        r"Zu\s+Deinen\s+Bewerbungen|"       # Navigation
+        r"Feedback\s+anfragen|"             # UI-Button
+        r"Du\s+kannst\s+jetzt\s+einmal|"    # Mailtext-Anfang
+        # Bereits in DB-Pattern enthaltene Strings nochmal hier hardcoden,
+        # damit sie bei Re-Train ohne diese Strings nicht verloren gehen:
+        r"AGB|Datenschutzerk|Impressum|Newsletter\s+abmelden|"
+        r"Direkt\s+bewerben|Job\s+anzeigen|Mehr\s+Jobs|"
+        r"Jobs\s+aufs\s+Handy|Traumjob\s+finden|"
+        r"Wir\s+haben\s+neue\s+Jobs|HeyJobs(?:\s|$|\(|-)"
+        r")(?:\s|\(|$)",
+        re.IGNORECASE,
+    ),
+}
+
+
 def _build_profile_from_row(row) -> PlatformProfile:
     """Konstruiert PlatformProfile aus DB-Row. Auto-Generation aus domain
     wenn url_pattern_override / from_whitelist_override nicht gesetzt sind.
@@ -356,7 +383,7 @@ def _build_profile_from_row(row) -> PlatformProfile:
         digest_threshold=row.digest_threshold,
         ai_hint="",
         body_card_re=None,
-        hard_title_blacklist_re=None,
+        hard_title_blacklist_re=_DB_PROFILE_HARD_BLACKLISTS.get(row.slug),
         subject_must_contain=subject_must_contain,
         ai_schema_hint=row.ai_schema_hint or "",
     )
