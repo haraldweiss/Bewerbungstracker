@@ -125,6 +125,7 @@ def create_app(config_class=None):
     from api.cover_letters import cover_letters_bp
     from claude_integration import claude_bp
     from api.calendar import calendar_bp
+    from api.tasks import tasks_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(apps_bp)
@@ -138,6 +139,7 @@ def create_app(config_class=None):
     app.register_blueprint(cover_letters_bp)
     app.register_blueprint(claude_bp)
     app.register_blueprint(calendar_bp)
+    app.register_blueprint(tasks_bp)
 
     # Error handlers
     @app.errorhandler(401)
