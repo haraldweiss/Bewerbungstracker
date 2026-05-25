@@ -10,6 +10,7 @@ from typing import Any
 
 from database import db
 from models import TaskQueue
+from sqlalchemy import text
 
 
 def enqueue_task(task_type: str, user_id: str, payload: dict[str, Any],
@@ -40,3 +41,41 @@ def enqueue_task(task_type: str, user_id: str, payload: dict[str, Any],
     db.session.add(row)
     db.session.commit()
     return task_id
+
+
+def pick_next_task(worker_id: str) -> TaskQueue | None:
+    """Atomar einen queued-Task auf running setzen und zurückgeben.
+
+    Nutzt UPDATE ... RETURNING (SQLite >= 3.35). Verhindert Race zwischen
+    parallelen Workern.
+
+    Args:
+        worker_id: Identifier of the worker claiming the task
+
+    Returns:
+        TaskQueue object with status='running', or None if queue is empty
+    """
+    now = datetime.utcnow()
+    stmt = text("""
+        UPDATE task_queue
+           SET status = 'running',
+               worker_id = :worker_id,
+               started_at = :now,
+               heartbeat_at = :now,
+               attempts = attempts + 1
+         WHERE id = (
+           SELECT id FROM task_queue
+            WHERE status = 'queued'
+              AND created_at <= :now
+            ORDER BY priority DESC, created_at
+            LIMIT 1
+         )
+           AND status = 'queued'
+        RETURNING id
+    """)
+    result = db.session.execute(stmt, {'worker_id': worker_id, 'now': now})
+    row = result.fetchone()
+    db.session.commit()
+    if row is None:
+        return None
+    return db.session.get(TaskQueue, row[0])

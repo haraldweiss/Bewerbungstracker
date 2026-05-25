@@ -4,11 +4,12 @@
 import json
 import pytest
 import uuid
+import threading
 from datetime import datetime
 
 from database import db
 from models import User, TaskQueue
-from services.tasks.queue import enqueue_task
+from services.tasks.queue import enqueue_task, pick_next_task
 
 
 @pytest.fixture
@@ -54,3 +55,49 @@ def test_enqueue_creates_queued_row(app, user):
     assert json.loads(row.payload) == {'foo': 'bar'}
     assert row.attempts == 0
     assert isinstance(row.created_at, datetime)
+
+
+def test_pick_next_task_marks_running(app, user):
+    """pick_next_task sollte einen queued-Task auf running setzen und zurückgeben."""
+    task_id = enqueue_task('test_noop', user.id, {})
+    picked = pick_next_task(worker_id='w1')
+    assert picked is not None
+    assert picked.id == task_id
+    assert picked.status == 'running'
+    assert picked.worker_id == 'w1'
+    assert picked.attempts == 1
+    assert picked.started_at is not None
+    assert picked.heartbeat_at is not None
+
+
+def test_pick_next_task_returns_none_when_empty(app, user):
+    """pick_next_task sollte None zurückgeben wenn keine queued-Tasks vorhanden sind."""
+    assert pick_next_task(worker_id='w1') is None
+
+
+def test_pick_next_task_skips_running(app, user):
+    """pick_next_task sollte bereits running-Tasks ignorieren."""
+    enqueue_task('test_noop', user.id, {})
+    pick_next_task(worker_id='w1')
+    assert pick_next_task(worker_id='w2') is None
+
+
+def test_pick_next_task_is_atomic_under_concurrency(app, user):
+    """2 Threads picken gleichzeitig — nur einer kriegt den Job."""
+    enqueue_task('test_noop', user.id, {})
+    results = []
+    lock = threading.Lock()
+
+    def worker(wid):
+        with app.app_context():
+            t = pick_next_task(worker_id=wid)
+            with lock:
+                results.append(t)
+
+    threads = [threading.Thread(target=worker, args=(f'w{i}',)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    successes = [r for r in results if r is not None]
+    assert len(successes) == 1, f"expected 1 pick, got {len(successes)}"
