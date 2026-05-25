@@ -1,0 +1,14 @@
+[Unit]
+Description=Bewerbungstracker Task Worker (Background-Jobs)
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/bewerbungen
+ExecStart=/bin/bash -c 'source /var/www/bewerbungen/.env && exec /var/www/bewerbungen/venv/bin/python -m services.tasks.worker'
+Restart=always
+RestartSec=10
+TimeoutStopSec=300
+Environment="TASK_WORKER_COUNT=2"
+
+[Install]
+WantedBy=multi-user.target
