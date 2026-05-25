@@ -5,11 +5,11 @@ import json
 import pytest
 import uuid
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from database import db
 from models import User, TaskQueue
-from services.tasks.queue import enqueue_task, pick_next_task
+from services.tasks.queue import enqueue_task, pick_next_task, recover_stale_tasks
 
 
 @pytest.fixture
@@ -101,3 +101,25 @@ def test_pick_next_task_is_atomic_under_concurrency(app, user):
         t.join()
     successes = [r for r in results if r is not None]
     assert len(successes) == 1, f"expected 1 pick, got {len(successes)}"
+
+
+def test_recover_stale_tasks_requeues_old_running(app, user):
+    """recover_stale_tasks sollte alte running-Tasks zurück auf queued setzen."""
+    task_id = enqueue_task('test_noop', user.id, {})
+    pick_next_task(worker_id='w1')
+    row = db.session.get(TaskQueue, task_id)
+    row.heartbeat_at = datetime.utcnow() - timedelta(seconds=90)
+    db.session.commit()
+
+    recovered = recover_stale_tasks(stale_seconds=60)
+    assert recovered == 1
+    row = db.session.get(TaskQueue, task_id)
+    assert row.status == 'queued'
+    assert row.worker_id is None
+
+
+def test_recover_stale_tasks_skips_fresh(app, user):
+    """recover_stale_tasks sollte frische running-Tasks ignorieren."""
+    enqueue_task('test_noop', user.id, {})
+    pick_next_task(worker_id='w1')
+    assert recover_stale_tasks(stale_seconds=60) == 0

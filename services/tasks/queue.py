@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from database import db
@@ -79,3 +79,21 @@ def pick_next_task(worker_id: str) -> TaskQueue | None:
     if row is None:
         return None
     return db.session.get(TaskQueue, row[0])
+
+
+def recover_stale_tasks(stale_seconds: int = 60) -> int:
+    """Re-queued Tasks deren Worker offenbar gestorben ist.
+
+    Returns: Anzahl recoverter Tasks (für Monitoring).
+    """
+    threshold = datetime.utcnow() - timedelta(seconds=stale_seconds)
+    stmt = text("""
+        UPDATE task_queue
+           SET status = 'queued',
+               worker_id = NULL
+         WHERE status = 'running'
+           AND heartbeat_at < :threshold
+    """)
+    result = db.session.execute(stmt, {'threshold': threshold})
+    db.session.commit()
+    return result.rowcount or 0
