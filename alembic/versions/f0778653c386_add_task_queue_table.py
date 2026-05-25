@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column('finished_at', sa.DateTime, nullable=True),
         sa.Column('heartbeat_at', sa.DateTime, nullable=True),
         sa.Column('worker_id', sa.String(128), nullable=True),
-        sa.ForeignKeyConstraint(['user_id'], ['user.id']),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id']),
     )
     op.create_index(
         'idx_task_queue_pickup', 'task_queue',
