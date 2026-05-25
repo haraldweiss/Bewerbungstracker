@@ -3,6 +3,8 @@
 """Background-Tasks API: Status-Polling für asynchrone Jobs."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from flask import Blueprint, jsonify, request
 from sqlalchemy import desc
 
@@ -50,4 +52,31 @@ def get_task(user, task_id: str):
     row = db.session.get(TaskQueue, task_id)
     if row is None or row.user_id != user.id:
         return jsonify({'error': 'Not Found'}), 404
+    return jsonify(row.to_dict()), 200
+
+
+@tasks_bp.post('/<task_id>/cancel')
+@token_required
+def cancel_task(user, task_id: str):
+    """Cancel a queued task.
+
+    Args:
+        user: Authenticated user (from @token_required)
+        task_id: UUID of the task
+
+    Returns:
+        200 + task dict if successfully cancelled
+        404 if not found or belongs to other user
+        409 if task is not in 'queued' status
+    """
+    row = db.session.get(TaskQueue, task_id)
+    if row is None or row.user_id != user.id:
+        return jsonify({'error': 'Not Found'}), 404
+    if row.status != 'queued':
+        return jsonify({
+            'error': f"Task ist {row.status}, kann nur 'queued' gecancelt werden"
+        }), 409
+    row.status = 'cancelled'
+    row.finished_at = datetime.utcnow()
+    db.session.commit()
     return jsonify(row.to_dict()), 200

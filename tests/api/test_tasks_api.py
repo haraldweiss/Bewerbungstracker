@@ -3,7 +3,7 @@
 """Tests for GET /api/tasks/<id> endpoint."""
 import pytest
 from database import db
-from models import User
+from models import User, TaskQueue
 from services.tasks.queue import enqueue_task
 
 
@@ -56,3 +56,23 @@ def test_list_tasks_filters_by_type(client, auth_header):
     assert resp.status_code == 200
     types = [t['type'] for t in resp.get_json()['tasks']]
     assert types == ['test_noop']
+
+
+def test_cancel_queued_task(client, auth_header):
+    """POST /api/tasks/<id>/cancel transitions queued task to cancelled."""
+    headers, user = auth_header
+    task_id = enqueue_task('test_noop', user.id, {})
+    resp = client.post(f'/api/tasks/{task_id}/cancel', headers=headers)
+    assert resp.status_code == 200
+    row = db.session.get(TaskQueue, task_id)
+    assert row.status == 'cancelled'
+
+
+def test_cancel_running_task_returns_409(client, auth_header):
+    """POST /api/tasks/<id>/cancel returns 409 if task is already running."""
+    from services.tasks.queue import pick_next_task
+    headers, user = auth_header
+    task_id = enqueue_task('test_noop', user.id, {})
+    pick_next_task(worker_id='w1')
+    resp = client.post(f'/api/tasks/{task_id}/cancel', headers=headers)
+    assert resp.status_code == 409
