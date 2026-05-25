@@ -619,6 +619,37 @@
             </div>
         </div>
 
+        <!-- Background Jobs Section -->
+        <div class="table-wrapper" id="bg-jobs-section" style="margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 1rem; padding: 1rem 1rem 0.5rem; justify-content: space-between; flex-wrap: wrap;">
+                <h2>Background Jobs (Letzte 20)</h2>
+                <button id="bg-jobs-refresh" class="btn btn-secondary" type="button">Refresh</button>
+            </div>
+            <div class="table-responsive">
+                <table id="bg-jobs-table">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Erstellt</th>
+                            <th>Dauer</th>
+                            <th>Fehler</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td colspan="5">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon">🔄</div>
+                                    <div>Klicke Refresh, um Jobs zu laden</div>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Users Table -->
         <div class="table-wrapper">
             <div class="table-responsive">
@@ -1289,6 +1320,12 @@
                 logoutBtn.addEventListener('click', handleLogout);
             }
 
+            // Background Jobs refresh button
+            const bgJobsRefresh = document.getElementById('bg-jobs-refresh');
+            if (bgJobsRefresh) {
+                bgJobsRefresh.addEventListener('click', loadBackgroundJobs);
+            }
+
             // Delegated click handler for table actions and modals
             document.addEventListener('click', (e) => {
                 const action = e.target.getAttribute('data-action');
@@ -1379,6 +1416,96 @@
         function handleLogout() {
             Auth.logout();
             window.location.href = '/login';
+        }
+
+        /**
+         * Build a full-width colspan row with an icon + message (no innerHTML).
+         */
+        function makePlaceholderRow(icon, message, colSpan) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = colSpan;
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'empty-state';
+
+            const iconEl = document.createElement('div');
+            iconEl.className = 'empty-state-icon';
+            iconEl.textContent = icon;
+
+            const msgEl = document.createElement('div');
+            msgEl.textContent = message;
+
+            wrapper.appendChild(iconEl);
+            wrapper.appendChild(msgEl);
+            td.appendChild(wrapper);
+            tr.appendChild(td);
+            return tr;
+        }
+
+        /**
+         * Load background jobs from /api/tasks
+         */
+        async function loadBackgroundJobs() {
+            const tbody = document.querySelector('#bg-jobs-table tbody');
+
+            // Show loading state
+            while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+            const loadingRow = document.createElement('tr');
+            const loadingCell = document.createElement('td');
+            loadingCell.colSpan = 5;
+
+            const loadingWrapper = document.createElement('div');
+            loadingWrapper.className = 'loading-state';
+
+            const spinner = document.createElement('div');
+            spinner.className = 'spinner';
+
+            const loadingText = document.createElement('span');
+            loadingText.textContent = 'Jobs werden geladen…';
+
+            loadingWrapper.appendChild(spinner);
+            loadingWrapper.appendChild(loadingText);
+            loadingCell.appendChild(loadingWrapper);
+            loadingRow.appendChild(loadingCell);
+            tbody.appendChild(loadingRow);
+
+            try {
+                const response = await Auth.fetch('/api/tasks?limit=20', { method: 'GET' });
+                const tasks = (response && response.tasks) || [];
+
+                while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+                if (tasks.length === 0) {
+                    tbody.appendChild(makePlaceholderRow('✅', 'Keine Jobs gefunden', 5));
+                    return;
+                }
+
+                function cell(text, className) {
+                    const td = document.createElement('td');
+                    if (className) td.className = className;
+                    td.textContent = text == null ? '' : String(text);
+                    return td;
+                }
+
+                for (const t of tasks) {
+                    const duration = t.finished_at && t.started_at
+                        ? Math.round((new Date(t.finished_at) - new Date(t.started_at)) / 1000) + 's'
+                        : (t.started_at ? 'läuft …' : '—');
+
+                    const tr = document.createElement('tr');
+                    tr.appendChild(cell(t.type));
+                    tr.appendChild(cell(t.status, 'status-' + t.status));
+                    tr.appendChild(cell(new Date(t.created_at).toLocaleString('de-DE')));
+                    tr.appendChild(cell(duration));
+                    tr.appendChild(cell(t.error ? t.error.slice(0, 100) : ''));
+                    tbody.appendChild(tr);
+                }
+            } catch (error) {
+                while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+                tbody.appendChild(makePlaceholderRow('⚠️', 'Fehler beim Laden der Jobs', 5));
+                console.warn('Background Jobs konnten nicht geladen werden:', error.message);
+            }
         }
 
         // Initialize on load
