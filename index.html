@@ -23,6 +23,8 @@
     <script src="/components/vendor/nacl-util.min.js"></script>
     <!-- Authentication Module - must load before main script -->
     <script src="/frontend/auth.js"></script>
+    <!-- Task polling helper (must load before JdSourcesUI inline script) -->
+    <script src="/frontend/js/task-poller.js"></script>
     <style>
         :root {
             --primary: #4F46E5; --primary-light: #818CF8; --primary-dark: #3730A3;
@@ -3967,9 +3969,22 @@ const JdSourcesUI = (() => {
             const requestBody = scriptUrl ? JSON.stringify({ script_url: scriptUrl }) : null;
             if (scriptUrl && btn) btn.innerHTML = '⏳ Hole + Parse Mails…';
 
-            const r = await Auth.fetch(`/jobs/sources/${id}/import-from-email`, {
+            // Endpoint gibt 202 + {task_id} zurück. Auth.fetch liefert geparsten
+            // JSON-Body direkt zurück (wirft bei non-2xx).
+            const enqRes = await Auth.fetch(`/jobs/sources/${id}/import-from-email`, {
                 method: 'POST',
                 body: requestBody,
+            });
+            if (!enqRes || !enqRes.task_id) throw new Error('Leere oder ungültige Antwort vom Server');
+
+            if (btn) btn.textContent = '⏳ Verarbeite…';
+
+            // Ergebnis hat dieselbe Form wie früher: imported, blocked, duplicates, …
+            const r = await pollTask(enqRes.task_id, task => {
+                // Fortschritt im Button anzeigen, falls vorhanden
+                if (btn && task.progress != null) {
+                    btn.textContent = '⏳ ' + task.progress + '%…';
+                }
             });
             if (!r) throw new Error('Leere Antwort vom Server');
 
