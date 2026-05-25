@@ -5,11 +5,13 @@ import json
 import pytest
 import uuid
 import threading
+import time
 from datetime import datetime, timedelta
 
 from database import db
 from models import User, TaskQueue
 from services.tasks.queue import enqueue_task, pick_next_task, recover_stale_tasks, mark_done, mark_failed, requeue_with_backoff
+from services.tasks.heartbeat import HeartbeatThread
 
 
 @pytest.fixture
@@ -156,3 +158,21 @@ def test_requeue_with_backoff(app, user):
     assert row.status == 'queued'
     assert row.created_at > datetime.utcnow()
     assert 'transient' in row.error
+
+
+def test_heartbeat_updates_heartbeat_at(app, user):
+    """HeartbeatThread sollte periodisch heartbeat_at aktualisieren."""
+    task_id = enqueue_task('test_noop', user.id, {})
+    pick_next_task(worker_id='w1')
+    row = db.session.get(TaskQueue, task_id)
+    initial = row.heartbeat_at
+
+    hb = HeartbeatThread(app, task_id, interval=0.1)
+    hb.start()
+    time.sleep(0.3)
+    hb.stop()
+    hb.join(timeout=1.0)
+
+    db.session.expire_all()
+    row = db.session.get(TaskQueue, task_id)
+    assert row.heartbeat_at > initial
