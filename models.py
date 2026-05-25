@@ -601,3 +601,38 @@ class PlatformProfileRow(db.Model):
 
     def __repr__(self):
         return f'<PlatformProfileRow {self.slug}>'
+
+
+class TaskQueue(db.Model):
+    __tablename__ = 'task_queue'
+    id = db.Column(db.String(36), primary_key=True)
+    type = db.Column(db.String(64), nullable=False)
+    user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False)
+    payload = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(16), nullable=False)
+    result = db.Column(db.Text)
+    error = db.Column(db.Text)
+    progress = db.Column(db.Integer, nullable=False, default=0)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    max_attempts = db.Column(db.Integer, nullable=False, default=3)
+    priority = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, nullable=False)
+    started_at = db.Column(db.DateTime)
+    finished_at = db.Column(db.DateTime)
+    heartbeat_at = db.Column(db.DateTime)
+    worker_id = db.Column(db.String(128))
+
+    def to_dict(self):
+        import json
+        return {
+            'id': self.id,
+            'type': self.type,
+            'status': self.status,
+            'progress': self.progress,
+            'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,
+            'started_at': self.started_at.isoformat() + 'Z' if self.started_at else None,
+            'finished_at': self.finished_at.isoformat() + 'Z' if self.finished_at else None,
+            'result': json.loads(self.result) if self.result else None,
+            'error': self.error,
+            'attempts': self.attempts,
+        }
