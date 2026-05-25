@@ -83,3 +83,62 @@ def worker_loop(app: 'Flask', worker_id: str, stop_event) -> None:
             logger.exception("Worker %s loop error — sleeping 5s", worker_id)
             stop_event.wait(5.0)
     logger.info("Worker %s stopped", worker_id)
+
+
+def main():
+    """Entrypoint: python -m services.tasks.worker
+
+    Spawnt N Worker-Subprozesse (env TASK_WORKER_COUNT, default 2).
+    """
+    import multiprocessing as mp
+    import os
+    import signal
+    import socket
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    )
+
+    n_workers = int(os.getenv('TASK_WORKER_COUNT', '2'))
+    hostname = socket.gethostname()
+
+    import services.tasks.handlers  # noqa: F401 — Registry füllen
+
+    stop_events = []
+    processes = []
+    for i in range(n_workers):
+        stop = mp.Event()
+        stop_events.append(stop)
+        p = mp.Process(
+            target=_worker_subprocess_main,
+            args=(f'{hostname}:{os.getpid()}:{i}', stop),
+            name=f'task-worker-{i}',
+        )
+        p.start()
+        processes.append(p)
+        logger.info("Spawned worker %s (PID %s)", p.name, p.pid)
+
+    def _shutdown(signum, _frame):
+        logger.info("Received signal %s, stopping workers", signum)
+        for ev in stop_events:
+            ev.set()
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
+    for p in processes:
+        p.join()
+    logger.info("All workers exited")
+
+
+def _worker_subprocess_main(worker_id: str, stop_event) -> None:
+    """Wird im Subprozess ausgeführt: Flask-App bauen, worker_loop laufen."""
+    import services.tasks.handlers  # noqa: F401 — Registry im Subprozess füllen
+    from app import create_app
+    app = create_app()
+    worker_loop(app, worker_id, stop_event)
+
+
+if __name__ == '__main__':
+    main()
