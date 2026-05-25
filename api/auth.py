@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from config import Config
 from auth_service import AuthService
 from models import User, EmailConfirmationToken
-from services.email_service import send_confirmation_email
+from services.email_service import send_confirmation_email, send_admin_new_user_notification
 from services.encryption_service import EncryptionService
 from services.key_cache import get_key_cache
 from database import db
@@ -57,7 +57,16 @@ def admin_required(f):
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    """Register new user - creates inactive user and sends confirmation email"""
+    """Register new user - creates inactive user and sends confirmation email.
+
+    Gated by env AUTH_ALLOW_REGISTRATION (default: 'false'). Bei deaktivierter
+    Public-Registrierung legt der Admin User über /api/admin/users an
+    (siehe api/admin.py).
+    """
+    import os
+    if os.getenv('AUTH_ALLOW_REGISTRATION', 'false').lower() not in ('true', '1', 'yes'):
+        return {'error': 'Registrierung ist deaktiviert. Bitte den Admin kontaktieren.'}, 403
+
     data = request.get_json()
 
     if not data or not data.get('email') or not data.get('password'):
@@ -99,6 +108,17 @@ def register():
         from flask import current_app
         confirmation_link = f"{current_app.config['APP_URL']}/api/auth/confirm-email?token={confirmation_token}"
         send_confirmation_email(user.email, confirmation_link)
+
+        # Admin-Notification (no-op wenn ADMIN_NOTIFICATION_EMAIL nicht gesetzt).
+        # Fehler hier dürfen nicht den User-Flow brechen.
+        try:
+            send_admin_new_user_notification(
+                user.email,
+                ip=request.headers.get('X-Forwarded-For', request.remote_addr or ''),
+                user_agent=request.headers.get('User-Agent', ''),
+            )
+        except Exception:
+            pass
 
         return {
             'id': user.id,

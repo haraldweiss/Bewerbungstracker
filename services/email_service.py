@@ -90,6 +90,29 @@ def send_confirmation_email(user_email: str, confirmation_link: str) -> bool:
     return _send_via_smtp(user_email, subject, html_body)
 
 
+def send_admin_new_user_notification(new_user_email: str, ip: str = '', user_agent: str = '') -> bool:
+    """Notification an den Admin (env ADMIN_NOTIFICATION_EMAIL) wenn ein neuer
+    User sich registriert. No-op wenn ADMIN_NOTIFICATION_EMAIL nicht gesetzt."""
+    import os
+    admin_email = os.getenv('ADMIN_NOTIFICATION_EMAIL', '').strip()
+    if not admin_email:
+        return False
+    subject = f"🆕 Neue Registrierung: {new_user_email}"
+    html_body = f"""
+    <html>
+        <body style="font-family: Arial, sans-serif; color: #333;">
+            <h2>Neue User-Registrierung</h2>
+            <p>Email: <strong>{new_user_email}</strong></p>
+            <p>IP: <code>{ip or 'unbekannt'}</code></p>
+            <p>User-Agent: <code style="font-size:11px;">{(user_agent or 'unbekannt')[:200]}</code></p>
+            <hr>
+            <p style="color: #666; font-size: 12px;">Bewerbungs-Tracker · Admin-Notification</p>
+        </body>
+    </html>
+    """
+    return _send_via_smtp(admin_email, subject, html_body)
+
+
 def send_approval_notification(user_email: str) -> bool:
     """Notification dass Account vom Admin freigeschaltet wurde."""
     app_url = current_app.config.get('APP_URL', 'https://bewerbungen.wolfinisoftware.de')
