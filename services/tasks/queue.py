@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import traceback as _tb
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -97,3 +98,61 @@ def recover_stale_tasks(stale_seconds: int = 60) -> int:
     result = db.session.execute(stmt, {'threshold': threshold})
     db.session.commit()
     return result.rowcount or 0
+
+
+_BACKOFF_SECONDS = {1: 5, 2: 30, 3: 300}
+
+
+def mark_done(task_id: str, result: Any) -> None:
+    """Markiert Task als abgeschlossen mit Resultat.
+
+    Args:
+        task_id: ID of the task to mark as done
+        result: Result object to store (will be JSON-encoded)
+    """
+    row = db.session.get(TaskQueue, task_id)
+    if row is None:
+        return
+    row.status = 'done'
+    row.result = json.dumps(result)
+    row.finished_at = datetime.utcnow()
+    db.session.commit()
+
+
+def mark_failed(task_id: str, exc: BaseException) -> None:
+    """Markiert Task als fehlgeschlagen mit Fehlermeldung.
+
+    Args:
+        task_id: ID of the task to mark as failed
+        exc: Exception that caused the failure
+    """
+    row = db.session.get(TaskQueue, task_id)
+    if row is None:
+        return
+    row.status = 'failed'
+    row.error = f"{type(exc).__name__}: {exc}\n{_tb.format_exc()[-1500:]}"
+    row.finished_at = datetime.utcnow()
+    db.session.commit()
+
+
+def requeue_with_backoff(task_id: str, exc: BaseException) -> None:
+    """Setzt Task zurück auf queued mit exponentiellem Backoff.
+
+    Der Backoff basiert auf der Anzahl von Attempts:
+    - 1. Versuch: 5 Sekunden
+    - 2. Versuch: 30 Sekunden
+    - 3+. Versuch: 300 Sekunden
+
+    Args:
+        task_id: ID of the task to requeue
+        exc: Exception that triggered the requeue
+    """
+    row = db.session.get(TaskQueue, task_id)
+    if row is None:
+        return
+    delay = _BACKOFF_SECONDS.get(row.attempts, 300)
+    row.status = 'queued'
+    row.worker_id = None
+    row.created_at = datetime.utcnow() + timedelta(seconds=delay)
+    row.error = f"{type(exc).__name__}: {exc}"
+    db.session.commit()

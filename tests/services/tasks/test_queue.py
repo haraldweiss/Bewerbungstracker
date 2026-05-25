@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from database import db
 from models import User, TaskQueue
-from services.tasks.queue import enqueue_task, pick_next_task, recover_stale_tasks
+from services.tasks.queue import enqueue_task, pick_next_task, recover_stale_tasks, mark_done, mark_failed, requeue_with_backoff
 
 
 @pytest.fixture
@@ -123,3 +123,36 @@ def test_recover_stale_tasks_skips_fresh(app, user):
     enqueue_task('test_noop', user.id, {})
     pick_next_task(worker_id='w1')
     assert recover_stale_tasks(stale_seconds=60) == 0
+
+
+def test_mark_done_sets_result(app, user):
+    """mark_done sollte status='done', result, und finished_at setzen."""
+    task_id = enqueue_task('test_noop', user.id, {})
+    pick_next_task(worker_id='w1')
+    mark_done(task_id, {'imported': 5})
+    row = db.session.get(TaskQueue, task_id)
+    assert row.status == 'done'
+    assert row.finished_at is not None
+    assert json.loads(row.result) == {'imported': 5}
+
+
+def test_mark_failed_sets_error(app, user):
+    """mark_failed sollte status='failed', error, und finished_at setzen."""
+    task_id = enqueue_task('test_noop', user.id, {})
+    pick_next_task(worker_id='w1')
+    mark_failed(task_id, RuntimeError("boom"))
+    row = db.session.get(TaskQueue, task_id)
+    assert row.status == 'failed'
+    assert 'boom' in row.error
+    assert row.finished_at is not None
+
+
+def test_requeue_with_backoff(app, user):
+    """requeue_with_backoff sollte zurück auf queued setzen mit Backoff-Delay."""
+    task_id = enqueue_task('test_noop', user.id, {})
+    pick_next_task(worker_id='w1')
+    requeue_with_backoff(task_id, RuntimeError("transient"))
+    row = db.session.get(TaskQueue, task_id)
+    assert row.status == 'queued'
+    assert row.created_at > datetime.utcnow()
+    assert 'transient' in row.error
