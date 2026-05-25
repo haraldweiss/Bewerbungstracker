@@ -534,19 +534,23 @@ class EmailJobsAdapter(JobSourceAdapter):
         if not re.match(r'^[^\x00-\x1f\x7f"\\]{1,100}$', folder):
             raise ValueError(f"Ungültiger Ordner-Name: {folder!r}")
 
-        emails = self._fetch_emails(host, imap_user, password, folder, lookback_days, limit)
+        # Gesamt-Wall-Clock-Budget für den kompletten Run (IMAP-Fetch +
+        # Parse + AI-Fallback). Muss deutlich unter gunicorn --timeout
+        # (240s) liegen, damit der Worker nicht gekillt wird und der User
+        # ein partial result + sauberen Status sieht statt 502.
+        _RUN_BUDGET_S = 150
+        deadline = _time.monotonic() + _RUN_BUDGET_S
+
+        emails = self._fetch_emails(
+            host, imap_user, password, folder, lookback_days, limit,
+            deadline=deadline,
+        )
 
         self._ai_calls_used = 0  # AI-Budget pro Lauf zurücksetzen
         self._ai_disabled_for_run = False
         jobs: list[FetchedJob] = []
-        # Wall-Clock-Budget für den Parse-Loop. Bei N Mails mit AI-Fallback
-        # können sich pro-Mail-Timeouts (55s) leicht über die gunicorn-Worker-
-        # Schwelle (180s) summieren. Bei Erschöpfung: partial result statt
-        # 502 — User sieht "X von Y Mails importiert" lieber als HTML-Error.
-        _RUN_BUDGET_S = 150
-        _run_start = _time.monotonic()
         for em in emails:
-            if _time.monotonic() - _run_start > _RUN_BUDGET_S:
+            if _time.monotonic() >= deadline:
                 logger.warning(
                     "fetch() Wall-Clock-Budget %ss erschöpft nach %d/%d Mails — "
                     "Rest übersprungen (verhindert gunicorn-Worker-Kill)",
@@ -554,7 +558,7 @@ class EmailJobsAdapter(JobSourceAdapter):
                 )
                 break
             try:
-                result = self._parse_email(em)
+                result = self._parse_email(em, deadline=deadline)
                 if result is None:
                     continue
                 if isinstance(result, list):
@@ -601,6 +605,7 @@ class EmailJobsAdapter(JobSourceAdapter):
         folder: str,
         lookback_days: int,
         limit: int,
+        deadline: float | None = None,
     ) -> list[dict]:
         # timeout=30: socket-level Wall-Clock-Timeout für ALLE folgenden IMAP-Ops
         # (login/select/search/fetch). Ohne diesen Parameter blockt SSL.read()
@@ -649,6 +654,17 @@ class EmailJobsAdapter(JobSourceAdapter):
 
             out: list[dict] = []
             for msg_id in ids:
+                # Wall-Clock-Check vor jedem IMAP-FETCH: bei langsamen
+                # Servern (Gmail-Drossel, große Mails) kann der Socket-
+                # Timeout (30s) zwar je Op greifen, addiert sich aber
+                # über N Mails leicht über die gunicorn-Worker-Schwelle.
+                if deadline is not None and _time.monotonic() >= deadline:
+                    logger.warning(
+                        "_fetch_emails Deadline erschöpft nach %d/%d Mails — "
+                        "Rest übersprungen (verhindert gunicorn-Worker-Kill)",
+                        len(out), len(ids),
+                    )
+                    break
                 typ, data = conn.fetch(msg_id, '(BODY.PEEK[])')
                 if typ != 'OK' or not data or not data[0]:
                     continue
@@ -678,7 +694,7 @@ class EmailJobsAdapter(JobSourceAdapter):
 
     # ── Parsing ────────────────────────────────────────────────────────────
 
-    def _parse_email(self, em: dict):
+    def _parse_email(self, em: dict, *, deadline: float | None = None):
         """Regex-Parse zuerst, AI-Fallback falls Pflichtfelder fehlen.
 
         Returns `None`, ein einzelnes `FetchedJob` ODER eine Liste von
@@ -783,7 +799,7 @@ class EmailJobsAdapter(JobSourceAdapter):
         # nutzlos ist (Subject zeigt nicht einen Job).
         urls_in_body = set(self.profile.url_pattern.findall(body))
         if len(urls_in_body) >= self.profile.digest_threshold:
-            return self._ai_fallback_digest(em)
+            return self._ai_fallback_digest(em, deadline=deadline)
 
         title, company = self._parse_subject(subject)
         location = None
@@ -836,7 +852,7 @@ class EmailJobsAdapter(JobSourceAdapter):
                 and self._ai_calls_used < self.AI_FALLBACK_BUDGET
             ):
                 self._ai_calls_used += 1
-                ai_data = _ai_extract(self.user, subject, body)
+                ai_data = _ai_extract(self.user, subject, body, deadline=deadline)
                 if not ai_data:
                     self._ai_disabled_for_run = True
                 if ai_data:
@@ -884,7 +900,7 @@ class EmailJobsAdapter(JobSourceAdapter):
                 return m.group('title').strip(), m.group('company').strip()
         return None, None
 
-    def _ai_fallback_digest(self, em: dict) -> list[FetchedJob]:
+    def _ai_fallback_digest(self, em: dict, *, deadline: float | None = None) -> list[FetchedJob]:
         """AI-Fallback für Multi-URL-Digest-Mails (z.B. LinkedIn/XING).
 
         Erwartet vom Modell eine JSON-Liste von Objekten mit Keys
@@ -902,7 +918,7 @@ class EmailJobsAdapter(JobSourceAdapter):
         subject = em.get('subject', '') or ''
         body = em.get('body', '') or ''
 
-        items = _ai_extract_digest(self.user, subject, body, self.profile)
+        items = _ai_extract_digest(self.user, subject, body, self.profile, deadline=deadline)
         if not items:
             # Failure (Timeout / Parse-Fehler / leeres Ergebnis): AI fuer
             # den Rest dieses Laufs deaktivieren. Verhindert kumulierte
@@ -1061,7 +1077,7 @@ def _resolve_indeed_tracker(tracker_url: str, timeout: float = 4.0) -> Optional[
     return r.url
 
 
-def _ai_extract(user, subject: str, body: str) -> Optional[dict]:
+def _ai_extract(user, subject: str, body: str, *, deadline: float | None = None) -> Optional[dict]:
     """AI-Fallback: nutzt ai-provider-service via user.get_model_for('email_parse').
 
     Returns dict mit Keys title/company/location/url (any may be None),
@@ -1079,8 +1095,18 @@ def _ai_extract(user, subject: str, body: str) -> Optional[dict]:
     # requests timeout=60 allein reicht nicht — jeder eintreffende Token
     # resettet den Socket-Idle-Timeout, d.h. ein Streaming-Modell kann
     # theoretisch 180s laufen ohne timeout auszulösen.
-    _HARD_TIMEOUT = 55  # sicher unter gunicorn-Worker-Timeout (180s)
-    client = ai_provider_client.get_client(timeout=_HARD_TIMEOUT)
+    _HARD_TIMEOUT = 55  # sicher unter gunicorn-Worker-Timeout (240s)
+    # Dynamisch reduzieren wenn nur noch wenig vom Gesamtbudget übrig:
+    # ein langsamer Token-Stream darf nicht das letzte Wall-Clock-Budget
+    # verbrennen. <10s rest → AI ganz überspringen.
+    effective_timeout = _HARD_TIMEOUT
+    if deadline is not None:
+        remaining = deadline - _time.monotonic()
+        if remaining < 10:
+            logger.info("AI-Extract skip: nur %.1fs Budget übrig", remaining)
+            return None
+        effective_timeout = max(5, min(_HARD_TIMEOUT, int(remaining * 0.5)))
+    client = ai_provider_client.get_client(timeout=effective_timeout)
     if not client:
         return None
 
@@ -1113,9 +1139,9 @@ def _ai_extract(user, subject: str, body: str) -> Optional[dict]:
         with _futures.ThreadPoolExecutor(max_workers=1) as _ex:
             _f = _ex.submit(_do_chat_single)
             try:
-                response = _f.result(timeout=_HARD_TIMEOUT)
+                response = _f.result(timeout=effective_timeout)
             except _futures.TimeoutError:
-                logger.warning("AI-Extract hard-timeout (%ss)", _HARD_TIMEOUT)
+                logger.warning("AI-Extract hard-timeout (%ss)", effective_timeout)
                 return None
         text = response.content[0].text if response.content else ''
     except Exception as exc:
@@ -1142,6 +1168,7 @@ def _ai_extract(user, subject: str, body: str) -> Optional[dict]:
 
 def _ai_extract_digest(
     user, subject: str, body: str, profile: PlatformProfile,
+    *, deadline: float | None = None,
 ) -> Optional[list[dict]]:
     """AI-Fallback für Digest-Mails: erwartet JSON-Array von Job-Dicts.
 
@@ -1159,7 +1186,15 @@ def _ai_extract_digest(
     # wie in _ai_extract(): Streaming-Modelle können requests-Socket-Timeout
     # umgehen; hier setzen wir eine absolute Obergrenze.
     _HARD_TIMEOUT = 55
-    client = ai_provider_client.get_client(timeout=_HARD_TIMEOUT)
+    # Gleiche Deadline-Logik wie in _ai_extract.
+    effective_timeout = _HARD_TIMEOUT
+    if deadline is not None:
+        remaining = deadline - _time.monotonic()
+        if remaining < 10:
+            logger.info("AI-Extract-Digest skip: nur %.1fs Budget übrig", remaining)
+            return None
+        effective_timeout = max(5, min(_HARD_TIMEOUT, int(remaining * 0.5)))
+    client = ai_provider_client.get_client(timeout=effective_timeout)
     if not client:
         return None
 
@@ -1194,9 +1229,9 @@ def _ai_extract_digest(
         with _futures.ThreadPoolExecutor(max_workers=1) as _ex:
             _f = _ex.submit(_do_chat_digest)
             try:
-                response = _f.result(timeout=_HARD_TIMEOUT)
+                response = _f.result(timeout=effective_timeout)
             except _futures.TimeoutError:
-                logger.warning("AI-Extract-Digest hard-timeout (%ss)", _HARD_TIMEOUT)
+                logger.warning("AI-Extract-Digest hard-timeout (%ss)", effective_timeout)
                 return None
         text = response.content[0].text if response.content else ''
     except Exception as exc:
