@@ -34,3 +34,25 @@ def test_get_task_404_for_other_user(client, auth_header, user_factory):
     task_id = enqueue_task('test_noop', other_user.id, {})
     resp = client.get(f'/api/tasks/{task_id}', headers=headers)
     assert resp.status_code == 404
+
+
+def test_list_tasks_returns_users_own(client, auth_header):
+    """GET /api/tasks returns user's own tasks."""
+    headers, user = auth_header
+    t1 = enqueue_task('test_noop', user.id, {})
+    t2 = enqueue_task('test_noop', user.id, {})
+    resp = client.get('/api/tasks', headers=headers)
+    assert resp.status_code == 200
+    ids = [t['id'] for t in resp.get_json()['tasks']]
+    assert set(ids) == {t1, t2}
+
+
+def test_list_tasks_filters_by_type(client, auth_header):
+    """GET /api/tasks?type=<type> filters by task type."""
+    headers, user = auth_header
+    enqueue_task('test_noop', user.id, {})
+    enqueue_task('other_type', user.id, {})
+    resp = client.get('/api/tasks?type=test_noop', headers=headers)
+    assert resp.status_code == 200
+    types = [t['type'] for t in resp.get_json()['tasks']]
+    assert types == ['test_noop']
