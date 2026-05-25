@@ -47,39 +47,40 @@ def enqueue_task(task_type: str, user_id: str, payload: dict[str, Any],
 def pick_next_task(worker_id: str) -> TaskQueue | None:
     """Atomar einen queued-Task auf running setzen und zurückgeben.
 
-    Nutzt UPDATE ... RETURNING (SQLite >= 3.35). Verhindert Race zwischen
-    parallelen Workern.
+    Two-step approach (kompatibel mit SQLite < 3.35, das kein RETURNING
+    unterstützt — Rocky 9 hat 3.34):
 
-    Args:
-        worker_id: Identifier of the worker claiming the task
-
-    Returns:
-        TaskQueue object with status='running', or None if queue is empty
+    1. SELECT älteste queued Task-ID
+    2. UPDATE WHERE id=? AND status='queued' — atomic check; bei Race
+       gewinnt der Erste, die anderen sehen rowcount=0.
     """
     now = datetime.utcnow()
-    stmt = text("""
+    candidate_id = db.session.execute(text("""
+        SELECT id FROM task_queue
+         WHERE status = 'queued'
+           AND created_at <= :now
+         ORDER BY priority DESC, created_at
+         LIMIT 1
+    """), {'now': now}).scalar()
+    if candidate_id is None:
+        return None
+
+    result = db.session.execute(text("""
         UPDATE task_queue
            SET status = 'running',
                worker_id = :worker_id,
                started_at = :now,
                heartbeat_at = :now,
                attempts = attempts + 1
-         WHERE id = (
-           SELECT id FROM task_queue
-            WHERE status = 'queued'
-              AND created_at <= :now
-            ORDER BY priority DESC, created_at
-            LIMIT 1
-         )
+         WHERE id = :id
            AND status = 'queued'
-        RETURNING id
-    """)
-    result = db.session.execute(stmt, {'worker_id': worker_id, 'now': now})
-    row = result.fetchone()
+    """), {'id': candidate_id, 'worker_id': worker_id, 'now': now})
     db.session.commit()
-    if row is None:
+
+    if result.rowcount == 0:
+        # Race lost — another worker claimed it between SELECT and UPDATE.
         return None
-    return db.session.get(TaskQueue, row[0])
+    return db.session.get(TaskQueue, candidate_id)
 
 
 def recover_stale_tasks(stale_seconds: int = 60) -> int:
