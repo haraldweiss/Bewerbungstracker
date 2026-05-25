@@ -11,6 +11,21 @@ from models import Application, JobMatch, JobSource, RawJob
 from services.job_sources.base import FetchedJob
 
 
+def _run_enqueued_handler_sync(client_response):
+    """Führt den gerade enqueueten Handler synchron aus, returnt result-dict.
+
+    Genutzt nach POST /import-from-email (returnt 202): liest die Job-Row,
+    ruft den Handler direkt auf, returnt das gleiche result-dict das früher
+    direkt in der HTTP-Response stand.
+    """
+    import json
+    from models import TaskQueue
+    from services.tasks.handlers.email_import import handle_email_import
+    task_id = client_response.get_json()['task_id']
+    row = db.session.get(TaskQueue, task_id)
+    return handle_email_import(json.loads(row.payload), progress_cb=None)
+
+
 # ── Fixtures ──────────────────────────────────────────────────────────────
 
 
@@ -127,8 +142,8 @@ def test_import_creates_raw_job_and_match_for_new_jobs(client, auth_header, inde
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             headers=headers,
         )
-    assert r.status_code == 200
-    body = r.get_json()
+        assert r.status_code == 202
+        body = _run_enqueued_handler_sync(r)
     assert body["imported"] == 2
     assert body["blocked"] == []
     assert body["duplicates"] == 0
@@ -164,8 +179,8 @@ def test_import_blocks_rejected_company(client, auth_header, indeed_source):
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             headers=headers,
         )
-    assert r.status_code == 200
-    body = r.get_json()
+        assert r.status_code == 202
+        body = _run_enqueued_handler_sync(r)
     assert body["imported"] == 1                # only GoodCo direct
     assert len(body["blocked"]) == 1            # KA Resources in dialog
     assert body["blocked"][0]["company"] == "KA Resources"
@@ -195,7 +210,8 @@ def test_import_respects_rejection_window_expiry(client, auth_header, indeed_sou
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             headers=headers,
         )
-    body = r.get_json()
+        assert r.status_code == 202
+        body = _run_enqueued_handler_sync(r)
     assert body["imported"] == 1
     assert body["blocked"] == []
 
@@ -223,7 +239,8 @@ def test_import_dedupes_existing_urls(client, auth_header, indeed_source):
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             headers=headers,
         )
-    body = r.get_json()
+        assert r.status_code == 202
+        body = _run_enqueued_handler_sync(r)
     assert body["imported"] == 1
     assert body["duplicates"] == 1
 
@@ -260,7 +277,10 @@ def test_import_handles_fetch_error_and_increments_failures(client, auth_header,
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             headers=headers,
         )
-    assert r.status_code in (502, 503)
+        assert r.status_code == 202
+        import pytest as _pytest
+        with _pytest.raises(RuntimeError, match="IMAP unreachable"):
+            _run_enqueued_handler_sync(r)
     db.session.refresh(indeed_source)
     assert indeed_source.consecutive_failures == 1
     assert 'IMAP unreachable' in (indeed_source.last_error or '')
@@ -277,7 +297,10 @@ def test_import_auto_disables_after_5_failures(client, auth_header, indeed_sourc
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             headers=headers,
         )
-    assert r.status_code == 502
+        assert r.status_code == 202
+        import pytest as _pytest
+        with _pytest.raises(RuntimeError, match="boom"):
+            _run_enqueued_handler_sync(r)
     db.session.refresh(indeed_source)
     assert indeed_source.consecutive_failures == 5
     assert indeed_source.enabled is False
@@ -295,7 +318,8 @@ def test_import_resets_failure_counter_on_success(client, auth_header, indeed_so
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             headers=headers,
         )
-    assert r.status_code == 200
+        assert r.status_code == 202
+        _run_enqueued_handler_sync(r)
     db.session.refresh(indeed_source)
     assert indeed_source.consecutive_failures == 0
     assert indeed_source.last_error is None
@@ -412,8 +436,8 @@ def test_import_apps_script_mode_parses_provided_emails(client, auth_header, ind
         f"/api/jobs/sources/{indeed_source.id}/import-from-email",
         json=body, headers=headers,
     )
-    assert r.status_code == 200
-    data = r.get_json()
+    assert r.status_code == 202
+    data = _run_enqueued_handler_sync(r)
     assert data["imported"] == 2
     assert data["blocked"] == []
     assert data["fetch_mode"] == "apps_script"
@@ -443,7 +467,8 @@ def test_import_apps_script_mode_applies_rejection_window(client, auth_header, i
         f"/api/jobs/sources/{indeed_source.id}/import-from-email",
         json=body, headers=headers,
     )
-    data = r.get_json()
+    assert r.status_code == 202
+    data = _run_enqueued_handler_sync(r)
     assert data["imported"] == 1
     assert len(data["blocked"]) == 1
     assert data["blocked"][0]["company"] == "ProblemCo"
@@ -480,8 +505,8 @@ def test_import_apps_script_proxy_mode_fetches_via_backend(client, auth_header, 
             json={'script_url': 'https://script.google.com/macros/s/ABCdef123_-/exec'},
             headers=headers,
         )
-    assert r.status_code == 200
-    data = r.get_json()
+        assert r.status_code == 202
+        data = _run_enqueued_handler_sync(r)
     assert data['fetch_mode'] == 'apps_script_proxy'
     assert data['imported'] == 1
     assert data['total_emails'] == 1
@@ -517,15 +542,19 @@ def test_apps_script_cache_skips_second_fetch(client, auth_header, indeed_source
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             json={'script_url': url}, headers=headers,
         )
+        assert r1.status_code == 202
+        data1 = _run_enqueued_handler_sync(r1)
         # 2. Call: Cache hit → kein fetch, aber 0 new (URL bereits in DB als RawJob)
         r2 = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             json={'script_url': url}, headers=headers,
         )
+        assert r2.status_code == 202
+        data2 = _run_enqueued_handler_sync(r2)
         assert mock_get.call_count == 1  # nur 1× ausgegangen!
 
-    assert r1.get_json()['cache_hit'] is False
-    assert r2.get_json()['cache_hit'] is True
+    assert data1['cache_hit'] is False
+    assert data2['cache_hit'] is True
 
 
 def test_apps_script_force_refresh_bypasses_cache(client, auth_header, indeed_source):
@@ -545,18 +574,22 @@ def test_apps_script_force_refresh_bypasses_cache(client, auth_header, indeed_so
     url = 'https://script.google.com/macros/s/ForceTest_-xyz/exec'
     with patch('requests.get', return_value=FakeResp()) as mock_get:
         # 1. Call → cache miss
-        client.post(
+        r1 = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             json={'script_url': url}, headers=headers,
         )
+        assert r1.status_code == 202
+        _run_enqueued_handler_sync(r1)
         # 2. Call mit force_refresh → cache bypass, neuer fetch
         r2 = client.post(
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             json={'script_url': url, 'force_refresh': True}, headers=headers,
         )
+        assert r2.status_code == 202
+        data2 = _run_enqueued_handler_sync(r2)
         assert mock_get.call_count == 2
 
-    assert r2.get_json()['cache_hit'] is False
+    assert data2['cache_hit'] is False
 
 
 def test_import_apps_script_proxy_rejects_bad_url(client, auth_header, indeed_source):
@@ -567,9 +600,12 @@ def test_import_apps_script_proxy_rejects_bad_url(client, auth_header, indeed_so
         json={'script_url': 'https://evil.example.com/steal'},
         headers=headers,
     )
-    assert r.status_code in (502, 503)
-    err = r.get_json().get('error', '')
-    assert 'script.google.com' in err or 'ValueError' in err
+    assert r.status_code == 202
+    import pytest as _pytest
+    with _pytest.raises(Exception) as exc_info:
+        _run_enqueued_handler_sync(r)
+    err = str(exc_info.value)
+    assert 'script.google.com' in err or 'ValueError' in err or 'evil' in err
 
 
 def test_import_empty_body_uses_imap_mode(client, auth_header, indeed_source):
@@ -581,8 +617,9 @@ def test_import_empty_body_uses_imap_mode(client, auth_header, indeed_source):
             f"/api/jobs/sources/{indeed_source.id}/import-from-email",
             headers=headers,
         )
-    assert r.status_code == 200
-    assert r.get_json()["fetch_mode"] == "imap"
+        assert r.status_code == 202
+        data = _run_enqueued_handler_sync(r)
+    assert data["fetch_mode"] == "imap"
 
 
 # ── Cron-Endpoint: Auto-Import alle eligible Sources ─────────────────────

@@ -37,25 +37,35 @@ def handle_email_import(payload: dict, *, progress_cb: Optional[Callable] = None
     script_url = payload.get('script_url')
     force_refresh = bool(payload.get('force_refresh'))
 
+    _AUTO_DISABLE_THRESHOLD = 5
+
     if progress_cb:
         progress_cb(5, 'fetching')
 
     cache_hit = False
-    adapter = get_adapter(src.type, src.config, user=user)
-    adapter._source_id_for_tracking = src.id
-    if isinstance(provided_emails, list):
-        fetched = adapter.parse_emails(provided_emails)
-        fetch_mode = 'apps_script'
-    elif isinstance(script_url, str) and script_url:
-        from api.jobs_user import _fetch_apps_script_emails
-        emails, cache_hit = _fetch_apps_script_emails(
-            script_url, user_id=user.id, use_cache=not force_refresh,
-        )
-        fetched = adapter.parse_emails(emails)
-        fetch_mode = 'apps_script_proxy'
-    else:
-        fetched = adapter.fetch()
-        fetch_mode = 'imap'
+    try:
+        adapter = get_adapter(src.type, src.config, user=user)
+        adapter._source_id_for_tracking = src.id
+        if isinstance(provided_emails, list):
+            fetched = adapter.parse_emails(provided_emails)
+            fetch_mode = 'apps_script'
+        elif isinstance(script_url, str) and script_url:
+            from api.jobs_user import _fetch_apps_script_emails
+            emails, cache_hit = _fetch_apps_script_emails(
+                script_url, user_id=user.id, use_cache=not force_refresh,
+            )
+            fetched = adapter.parse_emails(emails)
+            fetch_mode = 'apps_script_proxy'
+        else:
+            fetched = adapter.fetch()
+            fetch_mode = 'imap'
+    except Exception as e:
+        src.last_error = f"{type(e).__name__}: {str(e)[:500]}"
+        src.consecutive_failures = (src.consecutive_failures or 0) + 1
+        if src.consecutive_failures >= _AUTO_DISABLE_THRESHOLD:
+            src.enabled = False
+        db.session.commit()
+        raise
 
     if progress_cb:
         progress_cb(60, f'parsed {len(fetched)} jobs')

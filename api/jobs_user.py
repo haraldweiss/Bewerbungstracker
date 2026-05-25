@@ -1015,28 +1015,12 @@ def _create_raw_job_and_match(
 @jobs_user_bp.post('/sources/<int:source_id>/import-from-email')
 @token_required
 def import_from_email(user, source_id: int):
-    """Fetcht neue Indeed-Job-Empfehlungen aus dem User-IMAP-Folder.
+    """Enqueued einen email_import-Task und returnt 202 + task_id.
 
-    Ablauf:
-    1. Source laden, Ownership prüfen
-    2. Adapter fetch() → list[FetchedJob]
-    3. URL-Dedup gegen RawJob + Application
-    4. Rejection-Window: Companies mit Status='absage' werden als 'blocked'
-       markiert (nicht direkt importiert)
-    5. Non-blocked → RawJob + JobMatch(status='new') sofort
-    6. Blocked → temp zurück an Frontend (User entscheidet via /approve)
-
-    Returns:
-        {
-          "imported": int,        # direkt erstellte JobMatches
-          "blocked": [job_data],  # Companies mit aktiver Absage
-          "duplicates": int,      # bereits in DB
-          "total_emails": int,    # gefetchte Emails
-          "errors": [str]         # parse errors (best-effort)
-        }
+    Frontend pollt anschließend GET /api/tasks/<id>. Die eigentliche
+    Logik lebt in services/tasks/handlers/email_import.py.
     """
-    from services.job_sources import get_adapter
-    from services.job_sources import dedup as _dedup
+    from services.tasks.queue import enqueue_task
 
     src = JobSource.query.get_or_404(source_id)
     if src.user_id != user.id:
@@ -1044,108 +1028,19 @@ def import_from_email(user, source_id: int):
     if not _is_email_source_type(src.type):
         return jsonify({"error": f"Source ist kein Email-Typ (ist '{src.type}')"}), 400
 
-    # Modus-Wahl (3-fach):
-    #   1) Body {emails:[...]}     → Apps-Script-Mode (Browser hat schon gefetcht)
-    #   2) Body {script_url:"..."} → Apps-Script-Proxy-Mode (VPS fetcht, umgeht CORS)
-    #   3) Leerer Body             → IMAP-Mode (VPS verbindet direkt zu IMAP)
     payload = request.get_json(silent=True) or {}
-    provided_emails = payload.get('emails')
-    script_url = payload.get('script_url')
-    force_refresh = bool(payload.get('force_refresh'))
-
-    cache_hit = False
-    try:
-        adapter = get_adapter(src.type, src.config, user=user)
-        adapter._source_id_for_tracking = src.id
-        if isinstance(provided_emails, list):
-            fetched = adapter.parse_emails(provided_emails)
-            fetch_mode = 'apps_script'
-        elif isinstance(script_url, str) and script_url:
-            emails, cache_hit = _fetch_apps_script_emails(
-                script_url,
-                user_id=user.id,
-                use_cache=not force_refresh,
-            )
-            fetched = adapter.parse_emails(emails)
-            fetch_mode = 'apps_script_proxy'
-        else:
-            fetched = adapter.fetch()
-            fetch_mode = 'imap'
-    except Exception as e:
-        src.last_error = f"{type(e).__name__}: {str(e)[:500]}"
-        src.consecutive_failures = (src.consecutive_failures or 0) + 1
-        if src.consecutive_failures >= _INDEED_AUTO_DISABLE_THRESHOLD:
-            src.enabled = False
-        db.session.commit()
-        status_code = 503 if src.consecutive_failures < _INDEED_AUTO_DISABLE_THRESHOLD else 502
-        return jsonify({
-            "error": src.last_error,
-            "consecutive_failures": src.consecutive_failures,
-            "auto_disabled": not src.enabled,
-        }), status_code
-
-    # Erfolg: Counter zurücksetzen
-    src.consecutive_failures = 0
-    src.last_error = None
-
-    # URL-Dedup
-    existing_urls = _dedup.get_existing_job_urls()
-    fresh = _dedup.deduplicate(fetched, existing_urls)
-    duplicates_count = len(fetched) - len(fresh)
-
-    # Rejection-Window
-    window_days = int(user.job_reject_window_days or 180)
-    reject_enabled = bool(user.job_reject_filter_enabled)
-    rejected_companies = (
-        _get_rejected_companies_lower(user.id, window_days) if reject_enabled else set()
-    )
-
-    new_for_dialog: list[dict] = []
-    blocked_for_dialog: list[dict] = []
-
-    for fjob in fresh:
-        company_lower = (fjob.company or '').strip().lower()
-        is_blocked = bool(company_lower) and company_lower in rejected_companies
-        payload = {
-            'title': fjob.title,
-            'company': fjob.company,
-            'location': fjob.location,
-            'url': fjob.url,
-            'external_id': fjob.external_id,
-            'description': fjob.description,
-            'raw': fjob.raw or {},
-        }
-        if is_blocked:
-            blocked_for_dialog.append(payload)
-        else:
-            new_for_dialog.append(payload)
-
-    # Non-blocked: sofort als RawJob + JobMatch erstellen.
-    # Funktion ist idempotent — (None, None) bedeutet "bereits vorhanden,
-    # nichts angelegt" und zaehlt nicht als imported.
-    imported_count = 0
-    for payload in new_for_dialog:
-        raw, match = _create_raw_job_and_match(
-            src, user.id, payload, match_status='new'
-        )
-        if raw is not None and match is not None:
-            imported_count += 1
-        else:
-            duplicates_count += 1
-
-    src.last_crawled_at = datetime.utcnow()
-    db.session.commit()
-
+    task_payload = {
+        'user_id': user.id,
+        'source_id': src.id,
+        'emails': payload.get('emails'),
+        'script_url': payload.get('script_url'),
+        'force_refresh': bool(payload.get('force_refresh')),
+    }
+    task_id = enqueue_task('email_import', user.id, task_payload)
     return jsonify({
-        "imported": imported_count,
-        "blocked": blocked_for_dialog,
-        "duplicates": duplicates_count,
-        "total_emails": len(fetched),
-        "rejection_window_days": window_days,
-        "reject_filter_enabled": reject_enabled,
-        "fetch_mode": fetch_mode,
-        "cache_hit": cache_hit,
-    }), 200
+        'task_id': task_id,
+        'status': 'queued',
+    }), 202
 
 
 @jobs_user_bp.post('/sources/<int:source_id>/import-from-email/approve')
