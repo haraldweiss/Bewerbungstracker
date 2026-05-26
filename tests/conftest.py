@@ -57,6 +57,15 @@ def runner(app):
 
 
 @pytest.fixture(autouse=True)
+def _enable_registration_for_tests(monkeypatch):
+    """Public-Register ist in Prod per env-Toggle deaktiviert (commit 168caef).
+    Tests rufen `/api/auth/register` direkt auf und erwarten 201 — Toggle hier
+    aktivieren, damit das alte Test-Verhalten erhalten bleibt.
+    """
+    monkeypatch.setenv('AUTH_ALLOW_REGISTRATION', 'true')
+
+
+@pytest.fixture(autouse=True)
 def mock_smtp(monkeypatch):
     """Stub alle SMTP-Sends in Tests.
 
