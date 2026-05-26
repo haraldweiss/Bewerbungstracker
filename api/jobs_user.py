@@ -738,72 +738,27 @@ def score_match(user, match_id: int):
 @jobs_user_bp.post('/matches/score-bulk')
 @token_required
 def score_match_bulk(user):
-    """Bulk-Claude-Match. Stoppt bei Budget-Erschoepfung, returnt Status pro Match.
+    """Enqueued einen claude_match_bulk-Task. Frontend pollt GET /api/tasks/<id>.
 
     Body: {"match_ids": [1, 2, 3]}
-    Returns 200 with:
-        scored: [{id, match_score}, ...]
-        skipped_budget: [id, ...]
-        errors: [{id, error}, ...]
-        forbidden: [id, ...] (matches, die anderen Usern gehoeren)
-        not_found: [id, ...]
+    Returns 202 + {"task_id", "status"}.
+
+    Hintergrund: Bulk-Loop iteriert N Matches, jeder feuert einen Claude-Call (~5-10s).
+    Bei N=30 sind das 150-300s — überschreitet den 240s gunicorn-Timeout und erzeugt
+    502-Fehler. Daher asynchron via Task-Queue (analog P2 import-from-email).
     """
+    from services.tasks.queue import enqueue_task
+
     data = request.get_json() or {}
     ids = data.get("match_ids")
     if not isinstance(ids, list) or not ids:
         return jsonify({"error": "match_ids muss nicht-leere Liste sein"}), 400
 
-    matches = JobMatch.query.filter(JobMatch.id.in_(ids)).all()
-    found_ids = {m.id for m in matches}
-    not_found = [i for i in ids if i not in found_ids]
-
-    forbidden = [m.id for m in matches if m.user_id != user.id]
-    own = [m for m in matches if m.user_id == user.id]
-
-    # Im Service-Modus brauchen wir keinen lokalen Anthropic-Key.
-    if ai_provider_client.is_enabled():
-        client = None
-    else:
-        client = _get_anthropic_client()
-        if client is None:
-            return jsonify({"error": "Weder AI_PROVIDER_SERVICE_URL noch ANTHROPIC_API_KEY gesetzt"}), 503
-
-    scored = []
-    skipped_budget = []
-    errors = []
-
-    for m in own:
-        # Budget-Check vor jedem Match (kann sich mid-loop aendern durch flush in Helper)
-        if cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
-            skipped_budget.append(m.id)
-            continue
-        try:
-            success = _run_claude_match_for(client, user, m)
-            if success:
-                scored.append({"id": m.id, "match_score": m.match_score})
-            else:
-                # Helper returnt False bei drei Gruenden — disambiguieren:
-                if m.match_score is not None:
-                    # Schon bewertet (idempotent path)
-                    scored.append({"id": m.id, "match_score": m.match_score})
-                elif cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
-                    # Budget mid-call erschoepft
-                    skipped_budget.append(m.id)
-                else:
-                    # Claude-Error (Helper hat schon geloggt)
-                    errors.append({"id": m.id, "error": "Claude-Bewertung fehlgeschlagen"})
-        except Exception as e:
-            errors.append({"id": m.id, "error": str(e)})
-
-    db.session.commit()
-
-    return jsonify({
-        "scored": scored,
-        "skipped_budget": skipped_budget,
-        "errors": errors,
-        "forbidden": forbidden,
-        "not_found": not_found,
-    }), 200
+    task_id = enqueue_task('claude_match_bulk', user.id, {
+        'user_id': user.id,
+        'match_ids': ids,
+    })
+    return jsonify({'task_id': task_id, 'status': 'queued'}), 202
 
 
 @jobs_user_bp.patch('/matches/bulk')

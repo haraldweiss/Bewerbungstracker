@@ -599,8 +599,23 @@ def test_score_single_returns_existing_score_when_already_matched(client, app, u
 
 
 # ---------------------------------------------------------------------------
-# POST /api/jobs/matches/score-bulk (on-demand bulk Claude-Match)
+# POST /api/jobs/matches/score-bulk (async claude_match_bulk via task-queue)
 # ---------------------------------------------------------------------------
+
+def _run_enqueued_claude_match_bulk_sync(app, r):
+    """Führt den gerade enqueueten claude_match_bulk-Handler synchron aus.
+
+    Erlaubt Tests, die bisherigen Assertions auf scored/skipped_budget/errors
+    unverändert beizubehalten, ohne echten Worker-Daemon zu benötigen.
+    """
+    import json
+    from models import TaskQueue
+    from services.tasks.handlers.claude_match_bulk import handle_claude_match_bulk
+    with app.app_context():
+        task_id = r.get_json()['task_id']
+        row = db.session.get(TaskQueue, task_id)
+        return handle_claude_match_bulk(json.loads(row.payload), progress_cb=None)
+
 
 def test_score_bulk_evaluates_all_when_budget_sufficient(client, app, user_factory, auth_header):
     """3 Matches, alle bewerten → scored hat 3, skipped_budget leer."""
@@ -631,9 +646,9 @@ def test_score_bulk_evaluates_all_when_budget_sufficient(client, app, user_facto
          patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": ids}, headers=headers)
+        assert r.status_code == 202
+        body = _run_enqueued_claude_match_bulk_sync(app, r)
 
-    assert r.status_code == 200
-    body = r.get_json()
     assert len(body["scored"]) == 3
     assert body["skipped_budget"] == []
     assert body["errors"] == []
@@ -668,9 +683,9 @@ def test_score_bulk_stops_at_budget(client, app, user_factory, auth_header):
          patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": ids}, headers=headers)
+        assert r.status_code == 202
+        body = _run_enqueued_claude_match_bulk_sync(app, r)
 
-    assert r.status_code == 200
-    body = r.get_json()
     assert len(body["scored"]) >= 1
     assert len(body["skipped_budget"]) >= 1
     assert len(body["scored"]) + len(body["skipped_budget"]) == 3
@@ -700,15 +715,15 @@ def test_score_bulk_handles_mixed_ownership(client, app, user_factory, auth_head
          patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": [m_mine.id, m_other.id]}, headers=headers)
+        assert r.status_code == 202
+        body = _run_enqueued_claude_match_bulk_sync(app, r)
 
-    assert r.status_code == 200
-    body = r.get_json()
     assert len(body["scored"]) == 1
     assert m_other.id in body["forbidden"]
 
 
 def test_score_bulk_validates_input(client, app, auth_header):
-    """match_ids fehlt oder leer → 400."""
+    """match_ids fehlt oder leer → 400 (vor Enqueue, bleibt sync)."""
     headers, _ = auth_header
     r = client.post("/api/jobs/matches/score-bulk", json={}, headers=headers)
     assert r.status_code == 400
@@ -733,15 +748,15 @@ def test_score_bulk_classifies_claude_errors_correctly(client, app, user_factory
     m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
     db.session.add(m); db.session.commit()
 
-    # Claude raises → Helper logs warning + returns False, match_score bleibt None.
-    # Da Budget reichlich ist, soll der Endpoint dies als "errors" klassifizieren.
+    # Claude raises → Handler logs warning + returns False, match_score bleibt None.
+    # Da Budget reichlich ist, soll der Handler dies als "errors" klassifizieren.
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
          patch("api.jobs_cron.match_job_with_claude", side_effect=RuntimeError("API down")):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": [m.id]}, headers=headers)
+        assert r.status_code == 202
+        body = _run_enqueued_claude_match_bulk_sync(app, r)
 
-    assert r.status_code == 200
-    body = r.get_json()
     assert body["scored"] == []
     assert body["skipped_budget"] == []
     assert len(body["errors"]) == 1
