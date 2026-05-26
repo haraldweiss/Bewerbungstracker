@@ -1072,20 +1072,19 @@ def approve_email_import(user, source_id: int):
 @jobs_user_bp.post('/sources/<int:source_id>/train-pattern')
 @token_required
 def train_pattern(user, source_id):
-    """AI-Pattern-Train fuer Email-Source.
+    """AI-Pattern-Train fuer Email-Source (async via Task-Queue).
 
     Body (optional):
       sample_size   (int, default 30)
       train_size    (int, default 5)
       min_hit_rate  (float, default 0.40)
 
-    Pipeline: fetch -> ai-train -> compile -> validate -> persist.
+    Frueh-Checks (403/400/429) bleiben synchron. Der langsame Teil
+    (IMAP-Fetch + AI-Train + Validate + Persist) laeuft im Task-Worker.
     Rate-Limit: 1 Train pro Plattform pro Stunde.
     """
-    from services.job_sources import pattern_learner as pl
     from models import LearnedEmailPattern
-    import json as _json
-    import re as _re
+    from services.tasks.queue import enqueue_task
 
     src = JobSource.query.get_or_404(source_id)
     if src.user_id != user.id:
@@ -1113,88 +1112,14 @@ def train_pattern(user, source_id):
             "last_trained_at": recent.trained_at.isoformat(),
         }), 429
 
-    try:
-        mails = pl.fetch_sample_mails(
-            user,
-            platform=platform,
-            folder=src.config.get("folder", "INBOX"),
-            lookback_days=int(src.config.get("lookback_days", 30)),
-            n=sample_size,
-        )
-    except RuntimeError as exc:
-        return jsonify({"error": f"IMAP-Fetch fehlgeschlagen: {exc}"}), 400
-    # Mindestens 2 Mails noetig (1 train + 1 test). Bei weniger Mails als
-    # train_size + 1 wird train_size automatisch reduziert, damit User mit
-    # kleinen Plattform-Inboxen (z.B. HeyJobs: 1 Digest/Woche) trotzdem
-    # trainieren koennen. Trade-off: Pattern auf weniger Samples ist
-    # statistisch schwaecher; mind. min_hit_rate-Schwelle bleibt der
-    # Quality-Gate.
-    if len(mails) < 2:
-        return jsonify({
-            "error": (
-                f"Zu wenig Mails ({len(mails)}) fuer Training "
-                f"(mind. 2 noetig: 1 Train + 1 Test)."
-            )
-        }), 400
-    train_size_effective = min(train_size, max(1, len(mails) - 1))
-    train_size_reduced = train_size_effective < train_size
-
-    train = mails[:train_size_effective]
-    test = mails[train_size_effective:]
-
-    try:
-        pattern = pl.ai_learn_pattern(user, train_samples=train, platform=platform)
-    except RuntimeError as exc:
-        return jsonify({"error": f"AI-Train fehlgeschlagen: {exc}"}), 502
-
-    try:
-        # Plattform-URL-Pattern (hardcoded) als Constraint einflechten —
-        # verhindert dass AI-gelernte url_labels Marketing-Links matchen.
-        from services.job_sources.email_jobs import PROFILES, get_profile
-        profile = get_profile(platform)
-        url_pattern_str = profile.url_pattern.pattern
-        compiled = pl.compile_pattern(pattern, url_pattern_str=url_pattern_str)
-    except (ValueError, _re.error) as exc:
-        return jsonify({"error": f"Pattern-Compile fehlgeschlagen: {exc}"}), 502
-
-    hit_rate, diagnostics = pl.validate_pattern(
-        compiled, test, url_check_re=profile.url_pattern,
-    )
-    if hit_rate < min_hit_rate:
-        return jsonify({
-            "error": "Hit-Rate unter Schwelle - Pattern nicht aktiviert.",
-            "hit_rate": hit_rate,
-            "min_hit_rate": min_hit_rate,
-            "sample_count": len(test),
-            "diagnostics": diagnostics[:10],
-        }), 422
-
-    # Persist: alte Patterns deaktivieren + neue als active speichern.
-    LearnedEmailPattern.query.filter_by(
-        platform=platform, is_active=True
-    ).update({"is_active": False})
-    new_row = LearnedEmailPattern(
-        platform=platform,
-        pattern_json=_json.dumps(pattern),
-        sample_count=len(test),
-        hit_rate=hit_rate,
-        trained_at=datetime.utcnow(),
-        trained_by_user_id=user.id,
-        is_active=True,
-    )
-    db.session.add(new_row)
-    db.session.commit()
-
-    return jsonify({
-        "ok": True,
-        "hit_rate": hit_rate,
-        "sample_count": len(test),
-        "pattern": pattern,
-        "example_matches": [d for d in diagnostics if d["matched"]][:3],
-        "train_size_used": train_size_effective,
-        "train_size_reduced": train_size_reduced,
-        "mails_total": len(mails),
-    }), 200
+    task_id = enqueue_task('pattern_learner_train', user.id, {
+        'user_id': user.id,
+        'source_id': src.id,
+        'sample_size': sample_size,
+        'train_size': train_size,
+        'min_hit_rate': min_hit_rate,
+    })
+    return jsonify({'task_id': task_id, 'status': 'queued'}), 202
 
 
 @jobs_user_bp.get('/learned-patterns')

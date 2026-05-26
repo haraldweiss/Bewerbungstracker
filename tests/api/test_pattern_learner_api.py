@@ -76,10 +76,20 @@ def _fake_pattern():
     }
 
 
+def _run_enqueued_pattern_train_sync(app, r):
+    """Hilfs-Wrapper: holt Task aus DB, fuehrt Handler synchron aus."""
+    import json
+    from models import TaskQueue
+    from services.tasks.handlers.pattern_learner_train import handle_pattern_learner_train
+    task_id = r.get_json()['task_id']
+    row = db.session.get(TaskQueue, task_id)
+    return handle_pattern_learner_train(json.loads(row.payload), progress_cb=None)
+
+
 # ── Tests ────────────────────────────────────────────────────────────────
 
 
-def test_train_pattern_happy_path(client, auth_header):
+def test_train_pattern_happy_path(app, client, auth_header):
     headers, user = auth_header
     src = _make_source(user)
     body = (
@@ -101,8 +111,11 @@ def test_train_pattern_happy_path(client, auth_header):
             headers=headers,
             json={},
         )
-    assert resp.status_code == 200, resp.get_json()
-    data = resp.get_json()
+        assert resp.status_code == 202, resp.get_json()
+        assert resp.get_json()['task_id']
+
+        data = _run_enqueued_pattern_train_sync(app, resp)
+
     assert data["hit_rate"] >= 0.40
     active = LearnedEmailPattern.query.filter_by(
         platform="linkedin", is_active=True
@@ -132,7 +145,7 @@ def test_train_rate_limited(client, auth_header):
     assert resp.status_code == 429
 
 
-def test_train_hit_rate_too_low(client, auth_header):
+def test_train_hit_rate_too_low(app, client, auth_header):
     headers, user = auth_header
     src = _make_source(user)
     fake_mails = [{"subject": "S", "body": "no structure"}] * 30
@@ -148,11 +161,16 @@ def test_train_hit_rate_too_low(client, auth_header):
             headers=headers,
             json={},
         )
-    assert resp.status_code == 422
+        assert resp.status_code == 202, resp.get_json()
+
+        import pytest as _pytest
+        with _pytest.raises(RuntimeError, match="Hit-Rate unter Schwelle"):
+            _run_enqueued_pattern_train_sync(app, resp)
+
     assert LearnedEmailPattern.query.filter_by(platform="linkedin").count() == 0
 
 
-def test_train_auto_reduces_train_size_when_few_mails(client, auth_header):
+def test_train_auto_reduces_train_size_when_few_mails(app, client, auth_header):
     """Bei < train_size + 1 Mails wird train_size auto-reduziert statt 400."""
     headers, user = auth_header
     src = _make_source(user)
@@ -176,16 +194,17 @@ def test_train_auto_reduces_train_size_when_few_mails(client, auth_header):
             headers=headers,
             json={},
         )
-    assert resp.status_code == 200, resp.get_json()
-    data = resp.get_json()
+        assert resp.status_code == 202, resp.get_json()
+        data = _run_enqueued_pattern_train_sync(app, resp)
+
     assert data["train_size_reduced"] is True
     assert data["train_size_used"] == 1
     assert data["sample_count"] == 1
     assert data["mails_total"] == 2
 
 
-def test_train_rejects_single_mail(client, auth_header):
-    """1 Mail = kann nicht train+test splitten -> 400."""
+def test_train_rejects_single_mail(app, client, auth_header):
+    """1 Mail = kann nicht train+test splitten -> handler raises ValueError."""
     headers, user = auth_header
     src = _make_source(user)
     fake_mails = [{"subject": "S", "body": "no structure"}]
@@ -198,8 +217,13 @@ def test_train_rejects_single_mail(client, auth_header):
             headers=headers,
             json={},
         )
-    assert resp.status_code == 400
-    assert "mind. 2" in resp.get_json()["error"].lower() or "2 noetig" in resp.get_json()["error"]
+        assert resp.status_code == 202, resp.get_json()
+
+        import pytest as _pytest
+        with _pytest.raises((ValueError, RuntimeError)) as exc_info:
+            _run_enqueued_pattern_train_sync(app, resp)
+        err_msg = str(exc_info.value).lower()
+        assert "2" in err_msg or "noetig" in err_msg or "mind" in err_msg
 
 
 def test_train_non_email_source(client, auth_header):

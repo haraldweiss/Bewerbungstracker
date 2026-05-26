@@ -4054,8 +4054,17 @@ const JdSourcesUI = (() => {
         const showToast = typeof window.showToast === 'function' ? window.showToast : ((m) => alert(m));
         showToast('🧠 Pattern-Train laeuft... (kann 30-60s dauern)', 'info');
         try {
-            const r = await Auth.fetch('/jobs/sources/' + sourceId + '/train-pattern', {
+            // Endpoint gibt 202 + {task_id} zurück.
+            const enqRes = await Auth.fetch('/jobs/sources/' + sourceId + '/train-pattern', {
                 method: 'POST', body: JSON.stringify({}),
+            });
+            if (!enqRes || !enqRes.task_id) throw new Error('Leere oder ungültige Antwort vom Server');
+
+            // Ergebnis hat dieselbe Form wie früher: ok, hit_rate, sample_count, …
+            const r = await pollTask(enqRes.task_id, task => {
+                if (task.progress != null) {
+                    showToast('🧠 Pattern-Train: ' + task.progress + '%…', 'info');
+                }
             });
             if (r && r.ok) {
                 const pct = Math.round((r.hit_rate || 0) * 100);

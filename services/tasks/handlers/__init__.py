@@ -2,3 +2,4 @@
 from services.tasks.handlers import test_noop  # noqa: F401
 from services.tasks.handlers import email_import  # noqa: F401
 from services.tasks.handlers import claude_match_bulk  # noqa: F401
+from services.tasks.handlers import pattern_learner_train  # noqa: F401
