@@ -89,6 +89,16 @@ def create_app(config_class=None):
     def serve_backup_client_js():
         return send_file('frontend/backup-client.js', mimetype='application/javascript')
 
+    # Generic /frontend/js/<filename> — path-safe via send_from_directory.
+    # Notwendig für task-poller.js und zukünftige JS-Module (P3).
+    # NICHT für arbiträre Pfade — nur .js-Dateien im js/-Unterverzeichnis.
+    @app.route('/frontend/js/<path:filename>')
+    def serve_frontend_js(filename):
+        from flask import send_from_directory, abort
+        if not filename.endswith('.js'):
+            abort(404)
+        return send_from_directory('frontend/js', filename, mimetype='application/javascript')
+
     # PWA Static-Files (manifest, service-worker) – ohne diese gibt's
     # 404-Errors in der Konsole und keine Push/Offline-Funktionalität.
     @app.route('/manifest.json')
