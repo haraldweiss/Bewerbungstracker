@@ -846,68 +846,19 @@ def claude_match():
 @jobs_cron_bp.post('/notify')
 @require_cron_token
 def notify():
-    started = time.time()
-
-    candidates = (db.session.query(JobMatch, RawJob, User)
-                  .join(RawJob, RawJob.id == JobMatch.raw_job_id)
-                  .join(User, User.id == JobMatch.user_id)
-                  .filter(JobMatch.notified_at.is_(None),
-                          JobMatch.status == 'new',
-                          JobMatch.match_score.isnot(None))
-                  .all())
-
-    notified = 0
-    for match, raw, user in candidates:
-        if notified >= MAX_NOTIFICATIONS_PER_TICK:
-            break
-        if time.time() - started > HARD_TIME_LIMIT_SEC:
-            break
-        if match.match_score < user.job_notification_threshold:
-            continue
-
-        send_match_notification(
-            user_id=user.id, title=raw.title, company=raw.company,
-            score=match.match_score, url=raw.url,
-        )
-        match.notified_at = datetime.utcnow()
-        notified += 1
-
-    db.session.commit()
-    return jsonify({"notified": notified, "duration_sec": round(time.time() - started, 2)}), 200
+    """Enqueued einen cron_notify-Task. Returns 202 + task_id."""
+    from services.tasks.queue import enqueue_task
+    task_id = enqueue_task('cron_notify', _system_user_id(), {})
+    return jsonify({'task_id': task_id, 'status': 'queued'}), 202
 
 
 @jobs_cron_bp.post('/cleanup')
 @require_cron_token
 def cleanup():
-    cutoff = datetime.utcnow() - timedelta(days=ARCHIVE_AFTER_DAYS)
-
-    candidates = RawJob.query.filter(
-        RawJob.created_at < cutoff,
-        RawJob.crawl_status != 'archived',
-    ).all()
-
-    archived = 0
-    for raw in candidates:
-        active = JobMatch.query.filter(
-            JobMatch.raw_job_id == raw.id,
-            JobMatch.status.in_(['new', 'imported']),
-        ).count()
-        if active == 0:
-            raw.crawl_status = 'archived'
-            archived += 1
-
-    src_cutoff = datetime.utcnow() - timedelta(days=7)
-    healthy_sources = JobSource.query.filter(
-        JobSource.last_error.is_(None),
-        JobSource.consecutive_failures > 0,
-        JobSource.updated_at < src_cutoff,
-    ).all()
-    for s in healthy_sources:
-        s.consecutive_failures = 0
-
-    db.session.commit()
-    return jsonify({"archived_raw_jobs": archived,
-                    "reset_failure_counters": len(healthy_sources)}), 200
+    """Enqueued einen cron_cleanup-Task. Returns 202 + task_id."""
+    from services.tasks.queue import enqueue_task
+    task_id = enqueue_task('cron_cleanup', _system_user_id(), {})
+    return jsonify({'task_id': task_id, 'status': 'queued'}), 202
 
 
 # ---------------------------------------------------------------------------
@@ -928,96 +879,10 @@ URL_HEALTH_PER_DOMAIN_DELAY_S = 2.0
 @jobs_cron_bp.post('/url-health-check')
 @require_cron_token
 def url_health_check():
-    """Batch-URL-Check fuer RawJobs. Markiert nicht-erreichbare als
-    'marked_for_deletion' (3-Strike-Logik oder 404/410 sofort).
-
-    Aelteste-zuletzt-gepruefte zuerst (NULL = nie geprueft kommt vor).
-    Max URL_HEALTH_BATCH_SIZE pro Run, nur RawJobs juenger als
-    URL_HEALTH_MAX_AGE_DAYS, nur Status != 'archived'/'marked_for_deletion'.
-
-    Returns: {checked: int, marked: int, ok: int, skipped_no_url: int}
-    """
-    from services import url_health_check as _url_health_check_mod
-    from urllib.parse import urlparse
-    import time as _time
-
-    now = datetime.utcnow()
-    age_cutoff = now - timedelta(days=URL_HEALTH_MAX_AGE_DAYS)
-    recheck_cutoff = now - timedelta(hours=URL_HEALTH_RECHECK_INTERVAL_HOURS)
-
-    # Aelteste-zuletzt-gepruefte zuerst (NULL = nie geprueft kommt vor).
-    candidates = (
-        RawJob.query
-        .filter(
-            RawJob.crawl_status.notin_(['archived', 'marked_for_deletion']),
-            RawJob.created_at >= age_cutoff,
-            db.or_(
-                RawJob.url_last_checked_at.is_(None),
-                RawJob.url_last_checked_at < recheck_cutoff,
-            ),
-        )
-        .order_by(
-            db.case(
-                (RawJob.url_last_checked_at.is_(None), 0),
-                else_=1,
-            ),
-            RawJob.url_last_checked_at.asc(),
-        )
-        .limit(URL_HEALTH_BATCH_SIZE)
-        .all()
-    )
-
-    checked = 0
-    marked = 0
-    ok = 0
-    skipped_no_url = 0
-    last_call_per_domain: dict[str, float] = {}
-    # Hard-Cap auf Total-Run-Time: gunicorn-Timeout ist 180s, wir cappen
-    # konservativ bei 150s. Wer noch nicht durch ist, kommt im naechsten
-    # Cron-Run dran (Sortierung: aelteste-zuletzt-gepruefte zuerst).
-    run_deadline = _time.time() + 150.0
-
-    for raw in candidates:
-        if _time.time() > run_deadline:
-            logger.info("url-health-check: deadline reached at %d/%d, deferring rest",
-                        checked, len(candidates))
-            break
-        url = (raw.url or '').strip()
-        if not url:
-            skipped_no_url += 1
-            continue
-
-        # Per-Domain-Throttle
-        try:
-            domain = urlparse(url).netloc.lower()
-        except Exception:
-            domain = ''
-        if domain:
-            last = last_call_per_domain.get(domain, 0.0)
-            wait = URL_HEALTH_PER_DOMAIN_DELAY_S - (_time.time() - last)
-            if wait > 0:
-                _time.sleep(wait)
-            last_call_per_domain[domain] = _time.time()
-
-        status_label, http_code = _url_health_check_mod.check_url(url)
-        was_marked = _url_health_check_mod.update_raw_job_health(
-            raw, status_label, http_code,
-        )
-        checked += 1
-        if was_marked:
-            marked += 1
-            logger.info(
-                'url-health-check: raw_id=%s marked_for_deletion (%s code=%s url=%s)',
-                raw.id, status_label, http_code, url[:80],
-            )
-        if status_label == 'ok':
-            ok += 1
-
-    db.session.commit()
-    return jsonify({
-        'checked': checked, 'marked': marked, 'ok': ok,
-        'skipped_no_url': skipped_no_url,
-    }), 200
+    """Enqueued einen cron_url_health_check-Task. Returns 202 + task_id."""
+    from services.tasks.queue import enqueue_task
+    task_id = enqueue_task('cron_url_health_check', _system_user_id(), {})
+    return jsonify({'task_id': task_id, 'status': 'queued'}), 202
 
 
 # ---------------------------------------------------------------------------
