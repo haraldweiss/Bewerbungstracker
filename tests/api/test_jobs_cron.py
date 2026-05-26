@@ -2,6 +2,7 @@
 # © 2026 Harald Weiss
 import os
 import json
+import uuid
 from pathlib import Path
 import pytest
 import responses
@@ -34,8 +35,38 @@ def client(app):
     return app.test_client()
 
 
+def _make_admin(email=None):
+    """Erstellt einen Admin-User (Pflicht für _system_user_id in cron-Endpoints)."""
+    admin = User(
+        id=str(uuid.uuid4()),
+        email=email or f"admin-{uuid.uuid4().hex[:8]}@test.de",
+        password_hash="$2b$12$dummy",
+        is_active=True,
+        email_confirmed=True,
+        is_admin=True,
+    )
+    db.session.add(admin)
+    db.session.commit()
+    return admin
+
+
+def _run_cron_handler_sync(app, response, handler_fn):
+    """Führt den gerade enqueueten cron-Handler synchron aus für Tests.
+
+    Nutzt den bestehenden DB-Session-Kontext (kein neues app_context), damit
+    in-memory SQLite-Daten aus dem Test sichtbar sind.
+    """
+    import json as _json
+    from database import db
+    from models import TaskQueue
+    task_id = response.get_json()['task_id']
+    row = db.session.get(TaskQueue, task_id)
+    return handler_fn(_json.loads(row.payload), progress_cb=None)
+
+
 @responses.activate
 def test_crawl_source_picks_due_source_creates_raw_jobs_and_matches(app, client, user_factory):
+    _make_admin()
     user = user_factory(job_discovery_enabled=True, cv_data_json='{"cv":{"skills":["react"]}}')
 
     rss_xml = (Path(__file__).parent.parent / "fixtures" / "rss_stepstone_sample.xml").read_text()
@@ -47,9 +78,10 @@ def test_crawl_source_picks_due_source_creates_raw_jobs_and_matches(app, client,
     db.session.add(src)
     db.session.commit()
 
+    from services.tasks.handlers.cron_crawl_source import handle_cron_crawl_source
     r = client.post("/api/jobs/crawl-source", headers={"X-Cron-Token": "test-token"})
-    assert r.status_code == 200
-    body = r.get_json()
+    assert r.status_code == 202
+    body = _run_cron_handler_sync(app, r, handle_cron_crawl_source)
     assert body["source_id"] == src.id
     assert body["new_jobs"] == 2
     assert body["matches_created"] == 2  # 2 jobs × 1 user
@@ -63,30 +95,38 @@ def test_crawl_source_picks_due_source_creates_raw_jobs_and_matches(app, client,
 
 
 def test_crawl_source_skips_sources_not_due(app, client):
+    _make_admin()
     src = JobSource(name="Recent", type="rss", config={"url": "x"},
                     enabled=True, crawl_interval_min=60,
                     last_crawled_at=datetime.utcnow() - timedelta(minutes=5))
     db.session.add(src); db.session.commit()
+    from services.tasks.handlers.cron_crawl_source import handle_cron_crawl_source
     r = client.post("/api/jobs/crawl-source", headers={"X-Cron-Token": "test-token"})
-    assert r.status_code == 200
-    assert r.get_json()["source_id"] is None
-    assert r.get_json()["reason"] == "no_source_due"
+    assert r.status_code == 202
+    body = _run_cron_handler_sync(app, r, handle_cron_crawl_source)
+    assert body["source_id"] is None
+    assert body["reason"] == "no_source_due"
 
 
 @responses.activate
 def test_crawl_source_records_error_and_increments_failures(app, client):
+    _make_admin()
     responses.add(responses.GET, "https://example.com/broken.xml", status=500)
     src = JobSource(name="Broken", type="rss", config={"url": "https://example.com/broken.xml"},
                     enabled=True, crawl_interval_min=60)
     db.session.add(src); db.session.commit()
 
+    from services.tasks.handlers.cron_crawl_source import handle_cron_crawl_source
     r = client.post("/api/jobs/crawl-source", headers={"X-Cron-Token": "test-token"})
+    assert r.status_code == 202
+    _run_cron_handler_sync(app, r, handle_cron_crawl_source)
     db.session.refresh(src)
     assert src.consecutive_failures == 1
     assert src.last_error is not None
 
 
 def test_prefilter_scores_pending_matches(app, client, user_factory):
+    _make_admin()
     user = user_factory(
         job_discovery_enabled=True,
         cv_data_json=json.dumps({"cv": {"skills": ["react", "typescript"]}}),
@@ -100,9 +140,10 @@ def test_prefilter_scores_pending_matches(app, client, user_factory):
     db.session.add(JobMatch(raw_job_id=raw.id, user_id=user.id, status='new'))
     db.session.commit()
 
+    from services.tasks.handlers.cron_prefilter import handle_cron_prefilter
     r = client.post("/api/jobs/prefilter", headers={"X-Cron-Token": "test-token"})
-    assert r.status_code == 200
-    body = r.get_json()
+    assert r.status_code == 202
+    body = _run_cron_handler_sync(app, r, handle_cron_prefilter)
     assert body["scored"] == 1
 
     m = JobMatch.query.first()
@@ -111,6 +152,7 @@ def test_prefilter_scores_pending_matches(app, client, user_factory):
 
 
 def test_prefilter_dismisses_low_scores(app, client, user_factory):
+    _make_admin()
     user = user_factory(
         job_discovery_enabled=True,
         cv_data_json=json.dumps({"cv": {"skills": ["python"]}}),
@@ -124,13 +166,17 @@ def test_prefilter_dismisses_low_scores(app, client, user_factory):
     db.session.add(JobMatch(raw_job_id=raw.id, user_id=user.id, status='new'))
     db.session.commit()
 
-    client.post("/api/jobs/prefilter", headers={"X-Cron-Token": "test-token"})
+    from services.tasks.handlers.cron_prefilter import handle_cron_prefilter
+    r = client.post("/api/jobs/prefilter", headers={"X-Cron-Token": "test-token"})
+    assert r.status_code == 202
+    _run_cron_handler_sync(app, r, handle_cron_prefilter)
     m = JobMatch.query.first()
     assert m.status == 'dismissed'
 
 
 def test_prefilter_calls_embed_raw_job(app, client, user_factory):
     """Verifiziert dass prefilter best-effort embed_raw_job aufruft."""
+    _make_admin()
     user = user_factory(
         job_discovery_enabled=True,
         cv_data_json=json.dumps({"cv": {"skills": ["react"]}}),
@@ -144,15 +190,18 @@ def test_prefilter_calls_embed_raw_job(app, client, user_factory):
     db.session.add(JobMatch(raw_job_id=raw.id, user_id=user.id, status='new'))
     db.session.commit()
 
-    with patch('api.jobs_cron.embed_raw_job') as mock_embed:
+    from services.tasks.handlers.cron_prefilter import handle_cron_prefilter
+    with patch('services.tasks.handlers.cron_prefilter.embed_raw_job') as mock_embed:
         mock_embed.return_value = True
         r = client.post("/api/jobs/prefilter", headers={"X-Cron-Token": "test-token"})
-        assert r.status_code == 200
+        assert r.status_code == 202
+        _run_cron_handler_sync(app, r, handle_cron_prefilter)
         mock_embed.assert_called_once()
 
 
 def test_prefilter_resilient_to_embed_failure(app, client, user_factory):
     """Verifiziert dass prefilter weiterläuft wenn embed_raw_job exception wirft."""
+    _make_admin()
     user = user_factory(
         job_discovery_enabled=True,
         cv_data_json=json.dumps({"cv": {"skills": ["react", "typescript"]}}),
@@ -166,10 +215,12 @@ def test_prefilter_resilient_to_embed_failure(app, client, user_factory):
     db.session.add(JobMatch(raw_job_id=raw.id, user_id=user.id, status='new'))
     db.session.commit()
 
-    with patch('api.jobs_cron.embed_raw_job', side_effect=RuntimeError("ollama down")):
+    from services.tasks.handlers.cron_prefilter import handle_cron_prefilter
+    with patch('services.tasks.handlers.cron_prefilter.embed_raw_job',
+               side_effect=RuntimeError("ollama down")):
         r = client.post("/api/jobs/prefilter", headers={"X-Cron-Token": "test-token"})
-        assert r.status_code == 200
-        body = r.get_json()
+        assert r.status_code == 202
+        body = _run_cron_handler_sync(app, r, handle_cron_prefilter)
         assert body["scored"] == 1
 
     m = JobMatch.query.first()
@@ -182,6 +233,7 @@ def test_claude_match_scores_top_n_per_user(app, client, user_factory):
     Mock greift bei ProviderFactory.get_client + match_job_with_claude — das ist
     die Stelle, an der der echte Pfad in _run_match_via_local_factory landet.
     """
+    _make_admin()
     user = user_factory(
         job_discovery_enabled=True,
         cv_data_json=json.dumps({"cv": {"skills": ["react"], "summary": "React expert"}}),
@@ -200,11 +252,14 @@ def test_claude_match_scores_top_n_per_user(app, client, user_factory):
 
     fake_result = MagicMock(score=88, reasoning="ok", missing_skills=[],
                             tokens_in=100, tokens_out=20)
-    with patch("api.jobs_cron.ProviderFactory.get_client", return_value=MagicMock()), \
+    from services.tasks.handlers.cron_claude_match import handle_cron_claude_match
+    with patch("api.jobs_cron._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.ProviderFactory.get_client", return_value=MagicMock()), \
          patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/claude-match", headers={"X-Cron-Token": "test-token"})
+        assert r.status_code == 202
+        body = _run_cron_handler_sync(app, r, handle_cron_claude_match)
 
-    body = r.get_json()
     assert body["matched"] == 2
     matched = JobMatch.query.filter(JobMatch.match_score.isnot(None)).all()
     assert len(matched) == 2
@@ -338,9 +393,11 @@ def test_auto_cron_skips_jobs_below_auto_threshold(app, user_factory, monkeypatc
     """Auto-Cron bewertet nur prefilter_score >= AUTO_CLAUDE_THRESHOLD (50)."""
     from unittest.mock import patch, MagicMock
     from api.jobs_cron import AUTO_CLAUDE_THRESHOLD
+    from services.tasks.handlers.cron_claude_match import handle_cron_claude_match
 
     assert AUTO_CLAUDE_THRESHOLD == 50
 
+    _make_admin()
     user = user_factory(cv_data_json='{"cv": {"summary": "Python Dev", "skills": ["python"]}}')
     user.job_discovery_enabled = True
     user.job_claude_budget_per_tick = 5
@@ -368,7 +425,8 @@ def test_auto_cron_skips_jobs_below_auto_threshold(app, user_factory, monkeypatc
          patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
         client_t = app.test_client()
         r = client_t.post("/api/jobs/claude-match", headers={"X-Cron-Token": "test-token"})
-        assert r.status_code == 200
+        assert r.status_code == 202
+        _run_cron_handler_sync(app, r, handle_cron_claude_match)
 
     db.session.refresh(m_low)
     db.session.refresh(m_high)

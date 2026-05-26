@@ -98,6 +98,21 @@ def _get_anthropic_client():
     return Anthropic(api_key=api_key)
 
 
+def _system_user_id() -> str:
+    """Returns the admin user's id as the owner of cron-triggered system tasks.
+
+    Cron-stages have no specific user (they run for all eligible users in one
+    sweep), but task_queue.user_id is NOT NULL with a FK. Using the admin
+    keeps tasks visible in the admin's Background-Jobs view.
+
+    Raises if no admin exists — that would be a bootstrap-broken state.
+    """
+    admin = User.query.filter_by(is_admin=True).first()
+    if admin is None:
+        raise RuntimeError("No admin user — cannot enqueue cron-system task")
+    return admin.id
+
+
 # _estimate_cost_usd und _user_today_cost_cents wurden nach services/cost_tracker.py
 # extrahiert (Phase 2B). Lokale Aufrufe gehen jetzt direkt an cost_tracker.*.
 
@@ -313,243 +328,27 @@ def _eligible_users_for_source(source: JobSource) -> list[User]:
 @jobs_cron_bp.post('/crawl-source')
 @require_cron_token
 def crawl_source():
-    started = time.time()
-    src = _select_due_source()
-    if src is None:
-        return jsonify({"source_id": None, "reason": "no_source_due"}), 200
+    """Enqueued einen cron_crawl_source-Task. Returns 202 + task_id.
 
-    src.last_crawled_at = datetime.utcnow()
-
-    try:
-        adapter = get_adapter(src.type, src.config)
-        fetched = adapter.fetch()
-    except Exception as e:
-        src.last_error = f"{type(e).__name__}: {str(e)[:500]}"
-        src.consecutive_failures += 1
-        if src.consecutive_failures >= AUTO_DISABLE_FAILURE_COUNT:
-            src.enabled = False
-        db.session.commit()
-        return jsonify({"source_id": src.id, "error": src.last_error,
-                        "consecutive_failures": src.consecutive_failures,
-                        "auto_disabled": not src.enabled}), 200
-
-    src.last_error = None
-    src.consecutive_failures = 0
-
-    eligible_users = _eligible_users_for_source(src)
-    new_jobs = 0
-    matches_created = 0
-
-    for fj in fetched[:MAX_NEW_JOBS_PER_TICK]:
-        if time.time() - started > HARD_TIME_LIMIT_SEC:
-            break
-
-        existing = RawJob.query.filter_by(source_id=src.id, external_id=fj.external_id).first()
-        if existing:
-            continue
-
-        raw = RawJob(
-            source_id=src.id,
-            external_id=fj.external_id,
-            title=fj.title,
-            company=fj.company,
-            location=fj.location,
-            url=fj.url,
-            description=fj.description,
-            posted_at=fj.posted_at,
-            crawl_status='raw',
-        )
-        raw.raw_payload = {
-            k: v for k, v in fj.raw.items()
-            if isinstance(v, (str, int, float, bool, type(None), list, dict))
-        }
-        db.session.add(raw)
-        db.session.flush()
-        new_jobs += 1
-
-        for user in eligible_users:
-            db.session.add(JobMatch(
-                raw_job_id=raw.id, user_id=user.id, status='new'
-            ))
-            matches_created += 1
-
-    db.session.commit()
-
-    return jsonify({
-        "source_id": src.id,
-        "new_jobs": new_jobs,
-        "matches_created": matches_created,
-        "duration_sec": round(time.time() - started, 2),
-    }), 200
+    Cron-Script erfährt nur dass der Job angenommen wurde; das eigentliche
+    Resultat steht später unter GET /api/tasks/<id>.
+    """
+    from services.tasks.queue import enqueue_task
+    task_id = enqueue_task('cron_crawl_source', _system_user_id(), {})
+    return jsonify({'task_id': task_id, 'status': 'queued'}), 202
 
 
 @jobs_cron_bp.post('/prefilter')
 @require_cron_token
 def prefilter():
-    started = time.time()
-    pending = (JobMatch.query
-               .filter(JobMatch.prefilter_score.is_(None), JobMatch.status == 'new')
-               .limit(MAX_PREFILTER_PER_TICK).all())
+    """Enqueued einen cron_prefilter-Task. Returns 202 + task_id.
 
-    cv_cache: dict = {}
-    cv_summary_cache: dict = {}  # user_id → cv_summary string (für AI-Confirm)
-    user_cache: dict = {}
-    ctx_cache: dict = {}
-    rejected_companies_cache: dict = {}  # user_id → set(lower(company))
-    scored = 0
-    dismissed = 0
-    ai_confirm_used = 0       # Budget-Counter pro Run
-    ai_confirm_overruled = 0  # Items die AI "passt doch" gerettet hat
-    rejected_company_dismissed = 0  # Items wegen Company im Rejection-Fenster
-
-    def _rejected_companies_for(user_id: str, window_days: int) -> set:
-        """Lädt + cached die rejected-companies fuer einen User."""
-        if user_id not in rejected_companies_cache:
-            cutoff_dt = datetime.utcnow() - timedelta(days=window_days)
-            rows = (
-                db.session.query(db.func.lower(Application.company))
-                .filter(
-                    Application.user_id == user_id,
-                    Application.deleted == False,  # noqa: E712
-                    Application.status.in_(['absage', 'rejected']),
-                    Application.company.isnot(None),
-                    db.or_(
-                        Application.applied_date >= cutoff_dt.date(),
-                        db.and_(Application.applied_date.is_(None),
-                                Application.created_at >= cutoff_dt),
-                    ),
-                )
-                .distinct()
-                .all()
-            )
-            rejected_companies_cache[user_id] = {r[0] for r in rows if r[0]}
-        return rejected_companies_cache[user_id]
-
-    for match in pending:
-        if time.time() - started > HARD_TIME_LIMIT_SEC:
-            break
-
-        if match.user_id not in cv_cache:
-            user = User.query.get(match.user_id)
-            user_cache[match.user_id] = user
-            cv_data = json.loads(user.cv_data_json) if user.cv_data_json else {}
-            cv_cache[match.user_id] = tokenize_cv(cv_data)
-            cv_summary_cache[match.user_id] = _build_cv_summary(user.cv_data_json)
-            ctx_cache[match.user_id] = PrefilterContext(
-                language_filter=user.job_language_filter,
-                region_filter=user.job_region_filter,
-            )
-
-        raw = RawJob.query.get(match.raw_job_id)
-
-        # Duplikat-Check zuerst: gleiche Title+Company beim selben User
-        # bereits angesehen (imported/dismissed)? Crawl-Source-Cron findet
-        # denselben Job oft ueber verschiedene URLs (RSS/Adzuna/Arbeitnow
-        # geben unterschiedliche URLs fuer gleichen Job zurueck).
-        is_duplicate = False
-        if raw.title and raw.company:
-            dup_exists = (
-                JobMatch.query
-                .join(RawJob, JobMatch.raw_job_id == RawJob.id)
-                .filter(
-                    JobMatch.user_id == match.user_id,
-                    JobMatch.id != match.id,
-                    JobMatch.status.in_(['imported', 'dismissed']),
-                    RawJob.title == raw.title,
-                    RawJob.company == raw.company,
-                )
-                .first()
-            )
-            is_duplicate = dup_exists is not None
-
-        score = score_job(
-            cv_cache[match.user_id],
-            {"title": raw.title, "description": raw.description, "location": raw.location},
-            ctx_cache[match.user_id],
-        )
-        match.prefilter_score = score
-        # Best-Effort Embedding (Ollama up → JobEmbedding wird befüllt)
-        try:
-            embed_raw_job(raw)
-        except Exception:
-            pass  # Embedding ist optional, prefilter funktioniert auch ohne
-
-        # Pruefe ob Firma in den letzten N Tagen abgelehnt hat — wenn ja,
-        # sofort dismissen (egal welcher Score). Spiegelt das UI-Listen-Filter,
-        # aber persistent statt nur view-side. Dominiert ueber alle anderen
-        # Auto-Dismiss-Reasons (Duplikat, Score, AI).
-        is_rejected_company = False
-        if raw.company:
-            user_obj = user_cache.get(match.user_id)
-            if user_obj:
-                window = user_obj.job_reject_window_days or 180
-                rejected_set = _rejected_companies_for(match.user_id, window)
-                if raw.company.lower().strip() in rejected_set:
-                    is_rejected_company = True
-
-        # User-Judgment NIE ueberschreiben — wenn User schon eigene Reasons
-        # (feedback_reasons-Tags ODER Freitext) hinterlegt hat, bleibt das.
-        user_has_judgment = _has_user_judgment(match)
-
-        if is_rejected_company:
-            match.status = 'dismissed'
-            if not user_has_judgment:
-                match.feedback_text = 'company_already_rejected'
-            dismissed += 1
-            rejected_company_dismissed += 1
-        elif is_duplicate:
-            # Duplikat dominiert ueber Score — zeigt dem User klar warum
-            # das Item dismissed wurde, auch wenn Score eigentlich OK gewesen
-            # waere.
-            match.status = 'dismissed'
-            if not user_has_judgment:
-                match.feedback_text = 'duplicate_of_other'
-            dismissed += 1
-        elif score < PREFILTER_DISMISS_THRESHOLD:
-            # AI-Confirm vor dem endgueltigen Dismiss — Pre-Filter ist
-            # eine Keyword-Heuristik und uebersieht ungewoehnlich formulierte
-            # Job-Beschreibungen. Budget: 50 AI-Calls/Tick.
-            ai_result = None
-            if ai_confirm_used < AI_CONFIRM_BUDGET:
-                user_obj = user_cache.get(match.user_id)
-                cv_sum = cv_summary_cache.get(match.user_id, '')
-                if user_obj and cv_sum:
-                    ai_result = _ai_confirm_prefilter_dismiss(user_obj, raw, cv_sum)
-                    if ai_result is not None:
-                        ai_confirm_used += 1
-
-            if ai_result is None:
-                # Kein AI-Provider / Budget aufgebraucht / Parse-Error →
-                # altes Verhalten (sofort dismissen, ohne AI-Bestaetigung).
-                match.status = 'dismissed'
-                if not user_has_judgment:
-                    match.feedback_text = 'prefilter_low_score'
-                dismissed += 1
-            elif ai_result[0]:
-                # AI sagt "passt doch" → Item NICHT dismissen, durchlaeuft
-                # weiter den normalen Claude-Match-Pfad (Stage 3).
-                ai_confirm_overruled += 1
-                # Begründung im match_reasoning konservieren fuer Audit.
-                if ai_result[1]:
-                    match.match_reasoning = f"[AI-Overrule] {ai_result[1]}"
-            else:
-                # AI bestaetigt: passt wirklich nicht.
-                match.status = 'dismissed'
-                if not user_has_judgment:
-                    match.feedback_text = 'prefilter_low_score_ai_confirmed'
-                if ai_result[1]:
-                    match.match_reasoning = f"[AI-Confirm-Dismiss] {ai_result[1]}"
-                dismissed += 1
-        scored += 1
-
-    db.session.commit()
-    return jsonify({
-        "scored": scored, "dismissed": dismissed,
-        "rejected_company_dismissed": rejected_company_dismissed,
-        "ai_confirm_used": ai_confirm_used,
-        "ai_confirm_overruled": ai_confirm_overruled,
-        "duration_sec": round(time.time() - started, 2),
-    }), 200
+    Cron-Script erfährt nur dass der Job angenommen wurde; das eigentliche
+    Resultat steht später unter GET /api/tasks/<id>.
+    """
+    from services.tasks.queue import enqueue_task
+    task_id = enqueue_task('cron_prefilter', _system_user_id(), {})
+    return jsonify({'task_id': task_id, 'status': 'queued'}), 202
 
 
 def _extract_first_json_object(text: str) -> dict | None:
@@ -1034,56 +833,14 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
 @jobs_cron_bp.post('/claude-match')
 @require_cron_token
 def claude_match():
-    started = time.time()
-    # Im Service-Modus brauchen wir keinen lokalen Anthropic-Key — der Service
-    # hat seinen eigenen. Im Local-Dev-Modus weiterhin Pflicht.
-    if not ai_provider_client.is_enabled():
-        client = _get_anthropic_client()
-        if client is None:
-            return jsonify({"error": "Weder AI_PROVIDER_SERVICE_URL noch ANTHROPIC_API_KEY gesetzt"}), 503
-    else:
-        client = None
+    """Enqueued einen cron_claude_match-Task. Returns 202 + task_id.
 
-    matched = 0
-    skipped_budget = 0
-
-    users_with_pending = (db.session.query(User)
-                          .join(JobMatch, JobMatch.user_id == User.id)
-                          .filter(JobMatch.match_score.is_(None),
-                                  JobMatch.prefilter_score >= AUTO_CLAUDE_THRESHOLD,
-                                  JobMatch.status == 'new')
-                          .distinct().all())
-
-    for user in users_with_pending:
-        if time.time() - started > HARD_TIME_LIMIT_SEC:
-            break
-
-        if cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
-            skipped_budget += 1
-            continue
-
-        candidates = (JobMatch.query
-                      .filter(JobMatch.user_id == user.id,
-                              JobMatch.match_score.is_(None),
-                              JobMatch.prefilter_score >= AUTO_CLAUDE_THRESHOLD,
-                              JobMatch.status == 'new')
-                      .order_by(JobMatch.prefilter_score.desc())
-                      .limit(user.job_claude_budget_per_tick).all())
-
-        for match in candidates:
-            if time.time() - started > HARD_TIME_LIMIT_SEC:
-                break
-            if _run_claude_match_for(client, user, match):
-                matched += 1
-            else:
-                # Wenn Budget gerade erschöpft wurde mid-loop → weiter zum nächsten User
-                if cost_tracker.user_today_cost_cents(user.id) >= user.job_daily_budget_cents:
-                    break
-
-        db.session.commit()
-
-    return jsonify({"matched": matched, "skipped_budget": skipped_budget,
-                    "duration_sec": round(time.time() - started, 2)}), 200
+    Cron-Script erfährt nur dass der Job angenommen wurde; das eigentliche
+    Resultat steht später unter GET /api/tasks/<id>.
+    """
+    from services.tasks.queue import enqueue_task
+    task_id = enqueue_task('cron_claude_match', _system_user_id(), {})
+    return jsonify({'task_id': task_id, 'status': 'queued'}), 202
 
 
 @jobs_cron_bp.post('/notify')
