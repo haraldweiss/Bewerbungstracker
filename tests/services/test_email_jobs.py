@@ -211,7 +211,7 @@ def test_ai_fallback_called_when_fields_missing(monkeypatch):
 
     adapter = EmailJobsAdapter(config={}, user=FakeUser(), platform_profile=PROFILES["indeed"])
 
-    def fake_ai_extract(user, subject, body):
+    def fake_ai_extract(user, subject, body, *, deadline=None):
         return {
             'title': 'AI Title',
             'company': 'AI Company',
@@ -352,7 +352,7 @@ def test_ai_fallback_budget_caps_calls(monkeypatch):
     adapter.AI_FALLBACK_BUDGET = 3  # für Test runter
 
     call_count = {'n': 0}
-    def fake_ai(user, subject, body):
+    def fake_ai(user, subject, body, *, deadline=None):
         call_count['n'] += 1
         return {'title': 'T', 'company': 'C', 'location': None,
                 'url': 'https://de.indeed.com/viewjob?jk=ai' + str(call_count['n'])}

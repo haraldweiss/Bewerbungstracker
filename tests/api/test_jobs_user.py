@@ -643,15 +643,15 @@ def test_score_bulk_evaluates_all_when_budget_sufficient(client, app, user_facto
     fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
                             tokens_in=10, tokens_out=10)
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.ProviderFactory.get_client", return_value=MagicMock()), \
          patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": ids}, headers=headers)
         assert r.status_code == 202
         body = _run_enqueued_claude_match_bulk_sync(app, r)
-
-    assert len(body["scored"]) == 3
-    assert body["skipped_budget"] == []
-    assert body["errors"] == []
+        assert len(body["scored"]) == 3
+        assert body["skipped_budget"] == []
+        assert body["errors"] == []
 
 
 def test_score_bulk_stops_at_budget(client, app, user_factory, auth_header):
@@ -680,15 +680,15 @@ def test_score_bulk_stops_at_budget(client, app, user_factory, auth_header):
     fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
                             tokens_in=10000, tokens_out=10000)
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.ProviderFactory.get_client", return_value=MagicMock()), \
          patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": ids}, headers=headers)
         assert r.status_code == 202
         body = _run_enqueued_claude_match_bulk_sync(app, r)
-
-    assert len(body["scored"]) >= 1
-    assert len(body["skipped_budget"]) >= 1
-    assert len(body["scored"]) + len(body["skipped_budget"]) == 3
+        assert len(body["scored"]) >= 1
+        assert len(body["skipped_budget"]) >= 1
+        assert len(body["scored"]) + len(body["skipped_budget"]) == 3
 
 
 def test_score_bulk_handles_mixed_ownership(client, app, user_factory, auth_header):
@@ -712,14 +712,14 @@ def test_score_bulk_handles_mixed_ownership(client, app, user_factory, auth_head
     fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
                             tokens_in=10, tokens_out=10)
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
+         patch("api.jobs_cron.ProviderFactory.get_client", return_value=MagicMock()), \
          patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": [m_mine.id, m_other.id]}, headers=headers)
         assert r.status_code == 202
         body = _run_enqueued_claude_match_bulk_sync(app, r)
-
-    assert len(body["scored"]) == 1
-    assert m_other.id in body["forbidden"]
+        assert len(body["scored"]) == 1
+        assert m_other.id in body["forbidden"]
 
 
 def test_score_bulk_validates_input(client, app, auth_header):

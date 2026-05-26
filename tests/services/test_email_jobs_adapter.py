@@ -46,7 +46,7 @@ def test_adapter_digest_triggers_ai_fallback(monkeypatch):
     )
     ai_called = {"count": 0, "hint": None}
 
-    def fake_ai(em):
+    def fake_ai(em, *, deadline=None):
         ai_called["count"] += 1
         ai_called["hint"] = adapter.profile.ai_hint
         from services.job_sources.base import FetchedJob
