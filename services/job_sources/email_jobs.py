@@ -312,7 +312,13 @@ _DB_PROFILE_HARD_BLACKLISTS: dict[str, "re.Pattern"] = {
         r"AGB|Datenschutzerk|Impressum|Newsletter\s+abmelden|"
         r"Direkt\s+bewerben|Job\s+anzeigen|Mehr\s+Jobs|"
         r"Jobs\s+aufs\s+Handy|Traumjob\s+finden|"
-        r"Wir\s+haben\s+neue\s+Jobs|HeyJobs(?:\s|$|\(|-)"
+        r"Wir\s+haben\s+neue\s+Jobs|"
+        # Email-Footer / Impressum / CTA die als Job-Cards durchrutschen:
+        r"HeyJobs\s+(?:GmbH|AG|UG|SE|Inc\.?|Ltd\.?)|"
+        r"Frage\s+jetzt\s+nach\s+Feedback|"
+        r"Paul-Lincke-Ufer|"
+        r"Geschäftsführer:|"
+        r"HeyJobs(?:\s|$|\(|-)"
         r")(?:\s|\(|$)",
         re.IGNORECASE,
     ),
