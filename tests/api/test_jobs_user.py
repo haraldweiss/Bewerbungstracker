@@ -457,7 +457,8 @@ def test_import_match_null_score(client, auth_header):
     m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
     db.session.add(m); db.session.commit()
 
-    r = client.post(f"/api/jobs/matches/{m.id}/import", headers=headers)
+    with patch("api.jobs_user._get_anthropic_client", return_value=None):
+        r = client.post(f"/api/jobs/matches/{m.id}/import", headers=headers)
     assert r.status_code == 201
     app_id = r.get_json()["application_id"]
     app_obj = Application.query.get(app_id)
@@ -507,7 +508,6 @@ def test_import_match_transfers_all_fields(client, auth_header):
 
 def test_score_single_returns_match_data(client, app, user_factory, auth_header):
     """POST /matches/<id>/score: ruft Claude, schreibt Score, returnt Daten."""
-    from unittest.mock import patch, MagicMock
     headers, user = auth_header
     user.cv_data_json = '{"cv": {"summary": "Python Dev", "skills": ["python"]}}'
     user.job_daily_budget_cents = 1000
@@ -525,7 +525,8 @@ def test_score_single_returns_match_data(client, app, user_factory, auth_header)
     fake_result = MagicMock(score=80, reasoning="passt gut",
                             missing_skills=["docker"], tokens_in=20, tokens_out=20)
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+         patch("services.job_matching.claude_utils.ProviderFactory.get_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.match_job_with_claude", return_value=fake_result):
         r = client.post(f"/api/jobs/matches/{m.id}/score", headers=headers)
 
     assert r.status_code == 200
@@ -553,7 +554,6 @@ def test_score_single_returns_402_when_budget_exhausted(client, app, user_factor
                            tokens_in=0, tokens_out=0, cost=1.00, key_owner='server'))
     db.session.commit()
 
-    from unittest.mock import patch, MagicMock
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()):
         r = client.post(f"/api/jobs/matches/{m.id}/score", headers=headers)
 
@@ -578,7 +578,6 @@ def test_score_single_returns_403_when_not_owner(client, app, user_factory, auth
 
 def test_score_single_returns_existing_score_when_already_matched(client, app, user_factory, auth_header):
     """Wenn match_score schon gesetzt: 200 mit Daten, kein Claude-Call."""
-    from unittest.mock import patch, MagicMock
     headers, user = auth_header
     src = JobSource(name="x", type="rss", config={"url": "x"})
     db.session.add(src); db.session.flush()
@@ -619,7 +618,6 @@ def _run_enqueued_claude_match_bulk_sync(app, r):
 
 def test_score_bulk_evaluates_all_when_budget_sufficient(client, app, user_factory, auth_header):
     """3 Matches, alle bewerten → scored hat 3, skipped_budget leer."""
-    from unittest.mock import patch, MagicMock
     headers, user = auth_header
     user.cv_data_json = '{"cv": {"summary": "Dev"}}'
     user.job_daily_budget_cents = 10000
@@ -643,8 +641,9 @@ def test_score_bulk_evaluates_all_when_budget_sufficient(client, app, user_facto
     fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
                             tokens_in=10, tokens_out=10)
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.ProviderFactory.get_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+         patch("services.job_matching.claude_utils._get_anthropic_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.ProviderFactory.get_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": ids}, headers=headers)
         assert r.status_code == 202
@@ -656,7 +655,6 @@ def test_score_bulk_evaluates_all_when_budget_sufficient(client, app, user_facto
 
 def test_score_bulk_stops_at_budget(client, app, user_factory, auth_header):
     """Budget mid-loop aufgebraucht: scored = N, skipped_budget = Rest."""
-    from unittest.mock import patch, MagicMock
     headers, user = auth_header
     user.cv_data_json = '{"cv": {"summary": "Dev"}}'
     # 1 Call = ~5 cents (10000 in + 10000 out @ Haiku-Pricing).
@@ -680,8 +678,9 @@ def test_score_bulk_stops_at_budget(client, app, user_factory, auth_header):
     fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
                             tokens_in=10000, tokens_out=10000)
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.ProviderFactory.get_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+         patch("services.job_matching.claude_utils._get_anthropic_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.ProviderFactory.get_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": ids}, headers=headers)
         assert r.status_code == 202
@@ -693,7 +692,6 @@ def test_score_bulk_stops_at_budget(client, app, user_factory, auth_header):
 
 def test_score_bulk_handles_mixed_ownership(client, app, user_factory, auth_header):
     """Match-IDs von anderem User landen in 'forbidden', kein 403 für ganzen Request."""
-    from unittest.mock import patch, MagicMock
     headers, user = auth_header
     other = user_factory(email="other@example.com")
     src = JobSource(name="x", type="rss", config={"url": "x"})
@@ -712,8 +710,9 @@ def test_score_bulk_handles_mixed_ownership(client, app, user_factory, auth_head
     fake_result = MagicMock(score=70, reasoning="ok", missing_skills=[],
                             tokens_in=10, tokens_out=10)
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.ProviderFactory.get_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+         patch("services.job_matching.claude_utils._get_anthropic_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.ProviderFactory.get_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": [m_mine.id, m_other.id]}, headers=headers)
         assert r.status_code == 202
@@ -735,7 +734,6 @@ def test_score_bulk_validates_input(client, app, auth_header):
 
 def test_score_bulk_classifies_claude_errors_correctly(client, app, user_factory, auth_header):
     """Claude-Exception (Helper returnt False, Budget OK) → landet in 'errors', nicht 'skipped_budget'."""
-    from unittest.mock import patch, MagicMock
     headers, user = auth_header
     user.cv_data_json = '{"cv": {"summary": "Dev"}}'
     user.job_daily_budget_cents = 10000   # viel Budget
@@ -751,7 +749,8 @@ def test_score_bulk_classifies_claude_errors_correctly(client, app, user_factory
     # Claude raises → Handler logs warning + returns False, match_score bleibt None.
     # Da Budget reichlich ist, soll der Handler dies als "errors" klassifizieren.
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.match_job_with_claude", side_effect=RuntimeError("API down")):
+         patch("services.job_matching.claude_utils._get_anthropic_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.match_job_with_claude", side_effect=RuntimeError("API down")):
         r = client.post("/api/jobs/matches/score-bulk",
                         json={"match_ids": [m.id]}, headers=headers)
         assert r.status_code == 202
@@ -834,7 +833,6 @@ def test_bulk_status_validates_input(client, app, auth_header):
 
 def test_import_runs_claude_when_match_score_none(client, app, user_factory, auth_header):
     """Import bei match_score=None → Claude wird gerufen, Score landet in DB + Notes."""
-    from unittest.mock import patch, MagicMock
     headers, user = auth_header
     user.cv_data_json = '{"cv": {"summary": "Dev"}}'
     user.job_daily_budget_cents = 1000
@@ -852,7 +850,8 @@ def test_import_runs_claude_when_match_score_none(client, app, user_factory, aut
     fake_result = MagicMock(score=88, reasoning="passt sehr gut",
                             missing_skills=["docker"], tokens_in=20, tokens_out=20)
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+         patch("services.job_matching.claude_utils.ProviderFactory.get_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.match_job_with_claude", return_value=fake_result):
         r = client.post(f"/api/jobs/matches/{m.id}/import", headers=headers)
 
     assert r.status_code == 201
@@ -885,7 +884,6 @@ def test_import_skips_claude_when_budget_exhausted_but_creates_application(
     m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
     db.session.add(m); db.session.commit()
 
-    from unittest.mock import patch, MagicMock
     with patch("api.jobs_user._get_anthropic_client", return_value=MagicMock()):
         r = client.post(f"/api/jobs/matches/{m.id}/import", headers=headers)
 
@@ -1070,7 +1068,7 @@ def test_create_raw_job_and_match_is_idempotent(app, user_factory):
     upstream verfehlt manche Faelle (Tracking-Suffixe in URL). Die innere
     Funktion muss defensiv sein.
     """
-    from api.jobs_user import _create_raw_job_and_match
+    from services.email_import_utils import create_raw_job_and_match
 
     user = user_factory()
     src = JobSource(name="indeed-test", type="indeed_email",
@@ -1087,14 +1085,14 @@ def test_create_raw_job_and_match_is_idempotent(app, user_factory):
     }
 
     # 1. Lauf: neu, soll RawJob + JobMatch anlegen
-    raw1, match1 = _create_raw_job_and_match(src, user.id, payload, match_status='new')
+    raw1, match1 = create_raw_job_and_match(src, user.id, payload, match_status='new')
     db.session.commit()
     assert raw1 is not None
     assert match1 is not None
 
     # 2. Lauf mit IDENTISCHEN Daten: darf KEINEN IntegrityError werfen.
     # Erwartet: (None, None) signalisiert "schon vorhanden, nichts angelegt".
-    raw2, match2 = _create_raw_job_and_match(src, user.id, payload, match_status='new')
+    raw2, match2 = create_raw_job_and_match(src, user.id, payload, match_status='new')
     db.session.commit()
     assert raw2 is None
     assert match2 is None

@@ -50,8 +50,8 @@ def handle_email_import(payload: dict, *, progress_cb: Optional[Callable] = None
             fetched = adapter.parse_emails(provided_emails)
             fetch_mode = 'apps_script'
         elif isinstance(script_url, str) and script_url:
-            from api.jobs_user import _fetch_apps_script_emails
-            emails, cache_hit = _fetch_apps_script_emails(
+            from services.email_import_utils import fetch_apps_script_emails
+            emails, cache_hit = fetch_apps_script_emails(
                 script_url, user_id=user.id, use_cache=not force_refresh,
             )
             fetched = adapter.parse_emails(emails)
@@ -79,9 +79,9 @@ def handle_email_import(payload: dict, *, progress_cb: Optional[Callable] = None
 
     window_days = int(user.job_reject_window_days or 180)
     reject_enabled = bool(user.job_reject_filter_enabled)
-    from api.jobs_user import _get_rejected_companies_lower
+    from services.email_import_utils import get_rejected_companies_lower
     rejected_companies = (
-        _get_rejected_companies_lower(user.id, window_days) if reject_enabled else set()
+        get_rejected_companies_lower(user.id, window_days) if reject_enabled else set()
     )
 
     new_for_dialog: list[dict] = []
@@ -106,10 +106,10 @@ def handle_email_import(payload: dict, *, progress_cb: Optional[Callable] = None
     if progress_cb:
         progress_cb(85, 'persisting')
 
-    from api.jobs_user import _create_raw_job_and_match
+    from services.email_import_utils import create_raw_job_and_match
     imported_count = 0
     for job_data in new_for_dialog:
-        raw, match = _create_raw_job_and_match(
+        raw, match = create_raw_job_and_match(
             src, user.id, job_data, match_status='new',
         )
         if raw is not None and match is not None:

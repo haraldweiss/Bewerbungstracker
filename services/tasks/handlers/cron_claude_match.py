@@ -22,7 +22,7 @@ def handle_cron_claude_match(payload: dict, *, progress_cb: Optional[Callable] =
     Returns: gleiches dict wie der frühere synchrone Endpoint.
     Raises: bei harten Fehlern; Worker markiert task=failed.
     """
-    from api.jobs_cron import (
+    from services.job_matching.claude_utils import (
         _run_claude_match_for, _get_anthropic_client,
         AUTO_CLAUDE_THRESHOLD, HARD_TIME_LIMIT_SEC,
     )

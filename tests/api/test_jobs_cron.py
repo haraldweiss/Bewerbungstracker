@@ -253,9 +253,9 @@ def test_claude_match_scores_top_n_per_user(app, client, user_factory):
     fake_result = MagicMock(score=88, reasoning="ok", missing_skills=[],
                             tokens_in=100, tokens_out=20)
     from services.tasks.handlers.cron_claude_match import handle_cron_claude_match
-    with patch("api.jobs_cron._get_anthropic_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.ProviderFactory.get_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+    with patch("services.job_matching.claude_utils._get_anthropic_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.ProviderFactory.get_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.match_job_with_claude", return_value=fake_result):
         r = client.post("/api/jobs/claude-match", headers={"X-Cron-Token": "test-token"})
         assert r.status_code == 202
         body = _run_cron_handler_sync(app, r, handle_cron_claude_match)
@@ -314,7 +314,6 @@ def test_cleanup_archives_old_unused_raw_jobs(app, client):
 def test_run_claude_match_for_idempotent(app, user_factory):
     """Wenn match_score schon gesetzt ist, returnt der Helper sofort False ohne Claude-Call."""
     from api.jobs_cron import _run_claude_match_for
-    from unittest.mock import MagicMock
 
     user = user_factory()
     src = JobSource(name="x", type="rss", config={"url": "x"})
@@ -336,7 +335,6 @@ def test_run_claude_match_for_idempotent(app, user_factory):
 def test_run_claude_match_for_returns_false_when_budget_exhausted(app, user_factory):
     """Wenn Tagesbudget erschöpft: Helper returnt False, kein Claude-Call."""
     from api.jobs_cron import _run_claude_match_for
-    from unittest.mock import MagicMock
 
     user = user_factory()
     user.job_daily_budget_cents = 50
@@ -363,7 +361,6 @@ def test_run_claude_match_for_returns_false_when_budget_exhausted(app, user_fact
 def test_run_claude_match_for_success_writes_all_fields(app, user_factory):
     """Helper schreibt match_score, reasoning, missing_skills, raw.crawl_status, ApiCall."""
     from api.jobs_cron import _run_claude_match_for
-    from unittest.mock import patch, MagicMock
 
     user = user_factory(cv_data_json='{"cv": {"summary": "Dev"}}')
     user.job_daily_budget_cents = 1000
@@ -381,7 +378,8 @@ def test_run_claude_match_for_success_writes_all_fields(app, user_factory):
                             missing_skills=["docker", "k8s"],
                             tokens_in=20, tokens_out=20)
     fake_client = MagicMock()
-    with patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+    with patch("services.job_matching.claude_utils.ProviderFactory.get_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.match_job_with_claude", return_value=fake_result):
         result = _run_claude_match_for(fake_client, user, m)
 
     assert result is True
@@ -398,7 +396,6 @@ def test_run_claude_match_for_success_writes_all_fields(app, user_factory):
 
 def test_auto_cron_skips_jobs_below_auto_threshold(app, user_factory, monkeypatch):
     """Auto-Cron bewertet nur prefilter_score >= AUTO_CLAUDE_THRESHOLD (50)."""
-    from unittest.mock import patch, MagicMock
     from api.jobs_cron import AUTO_CLAUDE_THRESHOLD
     from services.tasks.handlers.cron_claude_match import handle_cron_claude_match
 
@@ -428,8 +425,9 @@ def test_auto_cron_skips_jobs_below_auto_threshold(app, user_factory, monkeypatc
 
     fake_result = MagicMock(score=85, reasoning="ok",
                             missing_skills=[], tokens_in=10, tokens_out=10)
-    with patch("api.jobs_cron._get_anthropic_client", return_value=MagicMock()), \
-         patch("api.jobs_cron.match_job_with_claude", return_value=fake_result):
+    with patch("services.job_matching.claude_utils._get_anthropic_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.ProviderFactory.get_client", return_value=MagicMock()), \
+         patch("services.job_matching.claude_utils.match_job_with_claude", return_value=fake_result):
         client_t = app.test_client()
         r = client_t.post("/api/jobs/claude-match", headers={"X-Cron-Token": "test-token"})
         assert r.status_code == 202
@@ -445,7 +443,6 @@ def test_match_uses_feature_override(app, user_factory, db_session):
     """Wenn User feature_model_overrides für match gesetzt hat,
     wird der Override genutzt."""
     import json as _j
-    from unittest.mock import patch, MagicMock
     from api.jobs_cron import _run_claude_match_for
     from models import JobSource, RawJob, JobMatch
 
@@ -473,8 +470,8 @@ def test_match_uses_feature_override(app, user_factory, db_session):
         captured['provider'] = provider
         return MagicMock()
 
-    with patch('api.jobs_cron.ProviderFactory.get_client', side_effect=fake_get_client), \
-         patch('api.jobs_cron.match_job_with_claude', return_value=fake_result):
+    with patch('services.job_matching.claude_utils.ProviderFactory.get_client', side_effect=fake_get_client), \
+         patch('services.job_matching.claude_utils.match_job_with_claude', return_value=fake_result):
         _run_claude_match_for(None, user, m)
 
     assert captured.get('provider') == 'claude'

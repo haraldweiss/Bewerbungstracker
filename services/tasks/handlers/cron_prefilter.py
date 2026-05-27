@@ -24,7 +24,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
     Returns: gleiches dict wie der frühere synchrone Endpoint.
     Raises: bei harten Fehlern; Worker markiert task=failed.
     """
-    from api.jobs_cron import (
+    from services.job_matching.claude_utils import (
         _ai_confirm_prefilter_dismiss, _has_user_judgment, _build_cv_summary,
         MAX_PREFILTER_PER_TICK, PREFILTER_DISMISS_THRESHOLD, HARD_TIME_LIMIT_SEC,
         AI_CONFIRM_BUDGET,

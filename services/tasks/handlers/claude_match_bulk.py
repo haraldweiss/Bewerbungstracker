@@ -21,10 +21,7 @@ def handle_claude_match_bulk(payload: dict, *, progress_cb: Optional[Callable] =
     Returns: gleiches dict wie früher synchroner Endpoint —
         scored, skipped_budget, errors, forbidden, not_found
     """
-    # Lazy imports um zirkuläre Importe zu vermeiden — Endpoint-Helper
-    # liegen bewusst noch in api/jobs_user.py / api/jobs_cron.py.
-    from api.jobs_cron import _run_claude_match_for
-    from api.jobs_user import _get_anthropic_client
+    from services.job_matching.claude_utils import _run_claude_match_for, _get_anthropic_client
     from services import ai_provider_client, cost_tracker
 
     user = User.query.get(payload['user_id'])

@@ -13,24 +13,11 @@ from api.auth import token_required
 from services.ssrf_guard import is_url_safe_for_rss
 from services import ai_provider_client
 from api.jobs_cron import _run_claude_match_for, _is_failed_evaluation
+from services.job_matching.claude_utils import _get_anthropic_client
 from services import cost_tracker
 
 
 jobs_user_bp = Blueprint('jobs_user', __name__, url_prefix='/api/jobs')
-
-
-def _get_anthropic_client():
-    """Liefert einen Anthropic-Client oder None falls API-Key fehlt.
-
-    Eigene Kopie statt Reuse aus jobs_cron — sonst circular-import-Risiko
-    bei Test-Mocks via patch("api.jobs_user._get_anthropic_client").
-    """
-    import os
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        return None
-    from anthropic import Anthropic  # lazy import — nicht im venv bei Tests
-    return Anthropic(api_key=api_key)
 
 
 # Statische Non-Email-Types (RSS, API-basiert). Email-Types werden
@@ -89,6 +76,12 @@ def _email_default_folder(source_type: str) -> str:
 # Verbietet: Control-Chars (CR/LF/NULL → IMAP-Injection-Schutz),
 # doppelte Anführungszeichen und Backslashes.
 _INDEED_FOLDER_RE = re.compile(r'^[^\x00-\x1f\x7f"\\]{1,100}$')
+
+from services.email_import_utils import (
+    fetch_apps_script_emails,
+    get_rejected_companies_lower,
+    create_raw_job_and_match,
+)
 
 
 def _validate_config(source_type: str, config: dict) -> str | None:
@@ -803,168 +796,7 @@ def update_match_bulk(user):
 # Indeed-Email Import (manueller User-Action)
 # ---------------------------------------------------------------------------
 
-_INDEED_AUTO_DISABLE_THRESHOLD = 5
 
-# Apps-Script-Proxy: nur https://script.google.com/macros/s/{id}/(exec|dev) zulassen
-# (SSRF-Schutz — kein arbiträrer URL-Fetch durchs Backend).
-_APPS_SCRIPT_URL_RE = re.compile(
-    r'^https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/[a-z]+(?:\?[^\s]*)?$'
-)
-
-# Gmail-API hat ein hartes Tages-Limit (~250 search/Tag bei Consumer-Accounts).
-# Cache pro (user_id, url) für 1h, damit Mehrfach-Klicks / Retries die Quota
-# nicht killen. In-Memory pro Worker — bei Restart geleert (OK, Cache-Miss
-# kostet nur einen Apps-Script-Call).
-_APPS_SCRIPT_CACHE: dict[tuple[str, str], tuple[float, list[dict]]] = {}
-_APPS_SCRIPT_CACHE_TTL = 3600.0  # 1 Stunde
-
-
-def _fetch_apps_script_emails(url: str, user_id: str | None = None,
-                              use_cache: bool = True) -> tuple[list[dict], bool]:
-    """Server-side GET eines Apps-Script-Web-Endpoints (umgeht Browser-CORS).
-
-    URL-Validation gegen Whitelist (script.google.com/macros/s/…/exec) blockt
-    SSRF gegen interne Dienste. Google macht 30x-redirects nach
-    googleusercontent.com → wir folgen mit allow_redirects=True.
-
-    Cache: pro (user_id, url) für _APPS_SCRIPT_CACHE_TTL Sekunden. Spart
-    Gmail-API-Quota bei wiederholten Imports im selben Zeitfenster.
-    Setze use_cache=False für Force-Refresh.
-
-    Returns: (emails_list, cache_hit)
-    """
-    if not _APPS_SCRIPT_URL_RE.match(url or ''):
-        raise ValueError(
-            "Apps-Script-URL muss auf https://script.google.com/macros/s/.../exec passen"
-        )
-
-    import time
-    cache_key = (user_id or '', url)
-    now = time.time()
-
-    if use_cache:
-        entry = _APPS_SCRIPT_CACHE.get(cache_key)
-        if entry and (now - entry[0]) < _APPS_SCRIPT_CACHE_TTL:
-            return entry[1], True
-
-    import requests
-    try:
-        r = requests.get(url, timeout=60, allow_redirects=True)
-    except requests.RequestException as exc:
-        raise RuntimeError(f"Apps-Script nicht erreichbar: {exc}") from exc
-
-    if r.status_code != 200:
-        raise RuntimeError(f"Apps-Script HTTP {r.status_code}")
-
-    ctype = (r.headers.get('Content-Type') or '').lower()
-    text = r.text
-    if 'json' not in ctype and not text.lstrip().startswith('{'):
-        snippet = text[:120].replace('\n', ' ')
-        raise RuntimeError(
-            f"Apps-Script gibt HTML statt JSON zurück — Deploy-Access falsch? "
-            f"(Beginn: {snippet!r})"
-        )
-
-    try:
-        data = r.json()
-    except ValueError as exc:
-        raise RuntimeError(f"Apps-Script JSON-Parse-Fehler: {exc}") from exc
-
-    if data.get('status') and data['status'] != 'ok':
-        raise RuntimeError(f"Apps-Script-Error: {data.get('error') or data['status']}")
-
-    emails = data.get('emails') if isinstance(data.get('emails'), list) else []
-    _APPS_SCRIPT_CACHE[cache_key] = (now, emails)
-    return emails, False
-
-
-def _get_rejected_companies_lower(user_id: str, window_days: int) -> set[str]:
-    """Liefert lowercase company-Namen mit Status 'absage' im Reject-Fenster.
-
-    Spiegelt die Filter-Logik von list_matches (Zeile ~258), damit beim Import
-    dieselben Companies als "blocked" gekennzeichnet werden wie sie im
-    Vorschläge-Listing ausgeblendet wären.
-    """
-    cutoff_dt = datetime.utcnow() - timedelta(days=window_days)
-    cutoff_date = cutoff_dt.date()
-    q = (
-        db.session.query(db.func.lower(Application.company))
-        .filter(
-            Application.user_id == user_id,
-            Application.deleted == False,  # noqa: E712
-            Application.status.in_(['absage', 'rejected']),
-            Application.company.isnot(None),
-            db.or_(
-                Application.applied_date >= cutoff_date,
-                db.and_(Application.applied_date.is_(None),
-                        Application.created_at >= cutoff_dt),
-            ),
-        )
-        .distinct()
-    )
-    return {row[0] for row in q.all() if row[0]}
-
-
-def _create_raw_job_and_match(
-    src: JobSource,
-    user_id: str,
-    job_data: dict,
-    match_status: str,
-    feedback_text: str | None = None,
-) -> tuple[RawJob | None, JobMatch | None]:
-    """Erstellt RawJob + JobMatch in einer Transaktion. Caller commit()et.
-
-    Idempotent: existiert bereits ein RawJob mit gleichem (source_id, external_id)
-    UND ein JobMatch fuer denselben User, gibt die Funktion (None, None) zurueck
-    statt einen IntegrityError zu werfen. Existiert nur der RawJob (anderer User),
-    wird nur ein neuer JobMatch angelegt.
-    """
-    url = (job_data.get('url') or '').strip()
-    external_id = (job_data.get('external_id') or url or '')[:512]
-
-    # Idempotenz-Check: RawJob mit gleichem Schluessel schon vorhanden?
-    existing_raw = RawJob.query.filter_by(
-        source_id=src.id, external_id=external_id
-    ).first()
-    if existing_raw is not None:
-        existing_match = JobMatch.query.filter_by(
-            raw_job_id=existing_raw.id, user_id=user_id
-        ).first()
-        if existing_match is not None:
-            # Vollstaendiges Duplikat: nichts zu tun
-            return None, None
-        # RawJob existiert (z.B. von anderem User importiert) — nur Match anlegen
-        match = JobMatch(
-            raw_job_id=existing_raw.id,
-            user_id=user_id,
-            status=match_status,
-            feedback_text=feedback_text,
-        )
-        db.session.add(match)
-        return existing_raw, match
-
-    raw = RawJob(
-        source_id=src.id,
-        external_id=external_id,
-        title=(job_data.get('title') or '')[:512],
-        company=(job_data.get('company') or '')[:255] or None,
-        location=(job_data.get('location') or '')[:255] or None,
-        url=url[:4096],
-        description=(job_data.get('description') or '')[:2000] or None,
-        crawl_status='raw',
-    )
-    raw.raw_payload = job_data.get('raw') or {}
-    db.session.add(raw)
-    db.session.flush()  # raw.id verfügbar machen
-
-    match = JobMatch(
-        raw_job_id=raw.id,
-        user_id=user_id,
-        status=match_status,
-        feedback_text=feedback_text,
-    )
-    db.session.add(match)
-    return raw, match
 
 
 @jobs_user_bp.post('/sources/<int:source_id>/import-from-email')
@@ -1047,11 +879,11 @@ def approve_email_import(user, source_id: int):
             continue
 
         if action == 'import_as_new':
-            _create_raw_job_and_match(src, user.id, job, match_status='new')
+            create_raw_job_and_match(src, user.id, job, match_status='new')
             imported += 1
             existing_urls.add(url)
         elif action == 'skip':
-            _create_raw_job_and_match(
+            create_raw_job_and_match(
                 src, user.id, job,
                 match_status='dismissed',
                 feedback_text='rejection_blocked_skip',

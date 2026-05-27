@@ -496,7 +496,7 @@ def test_import_apps_script_proxy_mode_fetches_via_backend(client, auth_header, 
             return fake_response
 
     # Cache zwischen Tests leeren — wir wollen einen frischen Fetch sehen.
-    from api.jobs_user import _APPS_SCRIPT_CACHE
+    from services.email_import_utils import _APPS_SCRIPT_CACHE
     _APPS_SCRIPT_CACHE.clear()
 
     with patch('requests.get', return_value=FakeResp()):
@@ -532,7 +532,7 @@ def test_apps_script_cache_skips_second_fetch(client, auth_header, indeed_source
         text = '{"ok":1}'  # noqa
         def json(self): return fake_response
 
-    from api.jobs_user import _APPS_SCRIPT_CACHE
+    from services.email_import_utils import _APPS_SCRIPT_CACHE
     _APPS_SCRIPT_CACHE.clear()
 
     url = 'https://script.google.com/macros/s/CacheTest_-abc/exec'
@@ -568,7 +568,7 @@ def test_apps_script_force_refresh_bypasses_cache(client, auth_header, indeed_so
         text = '{}'
         def json(self): return fake_response
 
-    from api.jobs_user import _APPS_SCRIPT_CACHE
+    from services.email_import_utils import _APPS_SCRIPT_CACHE
     _APPS_SCRIPT_CACHE.clear()
 
     url = 'https://script.google.com/macros/s/ForceTest_-xyz/exec'
