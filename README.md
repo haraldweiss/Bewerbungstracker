@@ -82,8 +82,8 @@ Setup-Anleitung im jeweiligen Repo.
 ### 🔧 Technologie
 
 - **Frontend:** Vanilla JavaScript, HTML5, CSS3 (keine Frameworks), PWA mit Service-Worker
-- **Backend:** Python 3.12 (Flask) + SQLite + JWT-Auth
-- **Job-Pipeline:** 5 Cron-Stages (crawl → prefilter → claude-match → notify → cleanup), idempotent + Token-geschützt
+- **Backend:** Python 3.12 (Flask) + SQLite + JWT-Auth; modulare `services/`-Schicht für KI-Matching, Email-Import, Provider-Routing und Task-Queue-Worker
+- **Job-Pipeline:** 5 Cron-Stages (crawl → prefilter → claude-match → notify → cleanup), idempotent + Token-geschützt, teils über async Task-Queue
 - **Source-Adapter:** RSS (`feedparser`), Adzuna-API, Bundesagentur Jobsuche-API (mit parallel Detail-Fetch), Arbeitnow-API
 - **AI-Routing:** entweder Anthropic Claude SDK direkt (Default), oder Delegation an externen `ai-provider-service` (separates Repo) für Multi-Provider, Fallback und Queue-Persistenz. Beide Modi via gleicher User-Settings-UI bedienbar.
 - **Libraries:** jsPDF, TweetNaCl.js, Mammoth (DOCX), pdf.js, cryptography (Fernet)
@@ -186,7 +186,7 @@ instructions in the corresponding repo.
 ### 🔧 Technology
 
 - **Frontend:** Vanilla JavaScript, HTML5, CSS3 (no frameworks), PWA with service worker
-- **Backend:** Python 3.12 (Flask) + SQLite + JWT auth
+- **Backend:** Python 3.12 (Flask) + SQLite + JWT auth; modular `services/` layer for AI matching, email import, provider routing, and task-queue workers
 - **AI-Routing:** either Anthropic Claude SDK directly (default), or delegation to external `ai-provider-service` (separate repo) for multi-provider, fallback and queue persistence. Both modes operable through the same user settings UI.
 - **Libraries:** jsPDF, TweetNaCl.js (Encryption), Mammoth (DOCX), pdf.js, cryptography (Fernet)
 
