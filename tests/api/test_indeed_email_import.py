@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # © 2026 Harald Weiss
 """API-Tests für Indeed-Email Import + Approval Flow."""
+import uuid
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
 
 from database import db
-from models import Application, JobMatch, JobSource, RawJob
+from models import Application, JobMatch, JobSource, RawJob, User
 from services.job_sources.base import FetchedJob
 
 
@@ -766,6 +767,68 @@ def test_cron_endpoint_iterates_all_three_email_types(
     data = resp.get_json()
     assert data["total_sources"] == 3
     assert set(seen_types) == {"indeed", "linkedin", "xing"}
+
+
+def _make_admin():
+    admin = User(
+        id=str(uuid.uuid4()),
+        email=f"admin-{uuid.uuid4().hex[:8]}@test.de",
+        password_hash="$2b$12$dummy",
+        is_active=True,
+        email_confirmed=True,
+        is_admin=True,
+    )
+    db.session.add(admin)
+    db.session.commit()
+    return admin
+
+
+def test_cron_endpoint_returns_202_and_enqueues_one_task_per_eligible_source(
+    client, auth_header, monkeypatch,
+):
+    """Endpoint enqueueT EINE Task pro eligible Source und returnt 202+task_ids."""
+    headers, user = auth_header
+    _make_admin()
+    monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
+    monkeypatch.setenv("ENCRYPTION_KEY", "rYJrSGE_CPN0eL4Z5VYC0YMyhc4FU8X3uVlS8mPWyTw=")
+    from imap_service import IMAPCredentialManager
+    user.imap_host = "imap.example.com"
+    user.imap_user = "u@example.com"
+    user.imap_password_encrypted = IMAPCredentialManager.encrypt_password("pw")
+    db.session.commit()
+
+    for stype, name in [("indeed_email", "I"), ("linkedin_email", "L"),
+                        ("xing_email", "X")]:
+        s = JobSource(user_id=user.id, type=stype, name=name, enabled=True,
+                      crawl_interval_min=60)
+        s.config = {}
+        db.session.add(s)
+    db.session.commit()
+
+    r = client.post("/api/jobs/indeed-email-import-all",
+                    headers={"X-Cron-Token": "test-token"})
+    assert r.status_code == 202
+    data = r.get_json()
+    assert data["enqueued"] == 3
+    assert len(data["task_ids"]) == 3
+
+
+def test_cron_endpoint_skips_not_due_sources_at_enqueue_time(
+    client, auth_header, indeed_source, monkeypatch,
+):
+    """Source mit last_crawled_at < interval → KEINE Task wird enqueueT."""
+    _make_admin()
+    monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
+    indeed_source.last_crawled_at = datetime.utcnow()
+    indeed_source.crawl_interval_min = 60
+    db.session.commit()
+
+    r = client.post("/api/jobs/indeed-email-import-all",
+                    headers={"X-Cron-Token": "test-token"})
+    assert r.status_code == 202
+    data = r.get_json()
+    assert data["enqueued"] == 0
+    assert data["task_ids"] == []
 
 
 # ── Source-Type-Validation: linkedin_email + xing_email ───────────────────
