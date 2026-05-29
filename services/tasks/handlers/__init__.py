@@ -9,3 +9,4 @@ from services.tasks.handlers import cron_claude_match  # noqa: F401
 from services.tasks.handlers import cron_notify  # noqa: F401
 from services.tasks.handlers import cron_cleanup  # noqa: F401
 from services.tasks.handlers import cron_url_health_check  # noqa: F401
+from services.tasks.handlers import cron_indeed_email_import  # noqa: F401
