@@ -27,6 +27,27 @@ def _run_enqueued_handler_sync(client_response):
     return handle_email_import(json.loads(row.payload), progress_cb=None)
 
 
+def _run_enqueued_cron_source_tasks_sync(client_response):
+    """Führt alle gerade per /indeed-email-import-all enqueuten Tasks
+    synchron aus. Returnt list[per-source result dict] in Enqueue-Reihenfolge.
+    """
+    import json
+    from models import TaskQueue
+    from services.tasks.handlers.cron_indeed_email_import import (
+        handle_cron_indeed_email_import_source,
+    )
+    task_ids = client_response.get_json()['task_ids']
+    results = []
+    for tid in task_ids:
+        row = db.session.get(TaskQueue, tid)
+        results.append(
+            handle_cron_indeed_email_import_source(
+                json.loads(row.payload), progress_cb=None,
+            )
+        )
+    return results
+
+
 # ── Fixtures ──────────────────────────────────────────────────────────────
 
 
@@ -626,23 +647,27 @@ def test_import_empty_body_uses_imap_mode(client, auth_header, indeed_source):
 # ── Cron-Endpoint: Auto-Import alle eligible Sources ─────────────────────
 
 
-def test_cron_indeed_email_import_skips_source_without_credentials(client, auth_header, indeed_source, monkeypatch):
+def test_cron_indeed_email_import_skips_source_without_credentials(
+    client, auth_header, indeed_source, monkeypatch,
+):
     """Source ohne IMAP-Creds und ohne indeedScriptUrl → skipped_no_credentials."""
+    _make_admin()
     monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
     r = client.post(
         "/api/jobs/indeed-email-import-all",
         headers={"X-Cron-Token": "test-token"},
     )
-    assert r.status_code == 200
-    data = r.get_json()
-    assert data["total_sources"] == 1
-    assert any(run["status"] == "skipped_no_credentials" for run in data["runs"])
+    assert r.status_code == 202
+    results = _run_enqueued_cron_source_tasks_sync(r)
+    assert len(results) == 1
+    assert results[0]["status"] == "skipped_no_credentials"
 
 
 def test_cron_indeed_email_import_runs_via_imap_when_credentials_present(
     client, auth_header, indeed_source, monkeypatch
 ):
     headers, user = auth_header
+    _make_admin()
     # User mit IMAP-Creds versehen (Test-Modus: encryption_key gesetzt)
     monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
     monkeypatch.setenv("ENCRYPTION_KEY", "rYJrSGE_CPN0eL4Z5VYC0YMyhc4FU8X3uVlS8mPWyTw=")
@@ -663,16 +688,16 @@ def test_cron_indeed_email_import_runs_via_imap_when_credentials_present(
             "/api/jobs/indeed-email-import-all",
             headers={"X-Cron-Token": "test-token"},
         )
-    assert r.status_code == 200
-    data = r.get_json()
-    assert data["total_imported"] == 1
-    assert any(run.get("status") == "ok" and run.get("mode") == "imap"
-               for run in data["runs"])
+        assert r.status_code == 202
+        results = _run_enqueued_cron_source_tasks_sync(r)
+    assert any(rr.get("status") == "ok" and rr.get("mode") == "imap"
+               and rr.get("imported") == 1
+               for rr in results)
 
 
 def test_cron_skips_not_due_sources(client, auth_header, indeed_source, monkeypatch):
     """Source mit last_crawled_at < interval → skip (kein run-entry)."""
-    headers, user = auth_header
+    _make_admin()
     monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
 
     # Source wurde gerade gecrawlt, Interval ist 60 Min → nicht due.
@@ -684,11 +709,11 @@ def test_cron_skips_not_due_sources(client, auth_header, indeed_source, monkeypa
         "/api/jobs/indeed-email-import-all",
         headers={"X-Cron-Token": "test-token"},
     )
-    assert r.status_code == 200
+    assert r.status_code == 202
     data = r.get_json()
-    # Quelle existiert (total_sources=1) aber wurde nicht verarbeitet (kein run)
-    assert data["total_sources"] == 1
-    assert data["processed_runs"] == 0
+    assert data["total_eligible"] == 1
+    assert data["enqueued"] == 0
+    assert data["skipped_not_due"] == 1
 
 
 def test_cron_requires_token(client, indeed_source):
@@ -724,6 +749,7 @@ def test_cron_endpoint_iterates_all_three_email_types(
     """Cron-Endpoint /api/jobs/indeed-email-import-all verarbeitet
     indeed_email, linkedin_email, xing_email gleichzeitig."""
     headers, user = auth_header
+    _make_admin()
     monkeypatch.setenv("JOB_CRON_TOKEN", "test-token")
     monkeypatch.setenv("ENCRYPTION_KEY", "rYJrSGE_CPN0eL4Z5VYC0YMyhc4FU8X3uVlS8mPWyTw=")
 
@@ -763,9 +789,9 @@ def test_cron_endpoint_iterates_all_three_email_types(
         "/api/jobs/indeed-email-import-all",
         headers={"X-Cron-Token": "test-token"},
     )
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["total_sources"] == 3
+    assert resp.status_code == 202
+    results = _run_enqueued_cron_source_tasks_sync(resp)
+    assert len(results) == 3
     assert set(seen_types) == {"indeed", "linkedin", "xing"}
 
 
