@@ -121,6 +121,15 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
 - Getestet: kein Code angefasst, README-Links manuell verifiziert
 - NICHT deployed to IONOS
 
+### 2026-06-01 — Containerisierung: Dockerfile + 5 Podman Quadlets
+- Dockerfile: single-stage python:3.12-slim, multi-role (app/worker/imap-proxy/email-service/cron)
+- 5 Quadlet `.container` files passend zum ai-provider-service-Pattern
+- Cron-Container mit supercronic + crontab (alle 5 Stages + indeed-email-import + backup)
+- `.dockerignore` aktualisiert (imap_proxy/email_service nicht mehr exkludiert)
+- `deploy/container/setup-vps.sh` für Einmal-Setup auf dem VPS
+- GETESTET: kein Lauf — muss auf VPS gebaut und getestet werden
+- NICHT deployed to IONOS
+
 ### 2026-06-01 — Learned-Patterns-Table zeigt Custom-Plattformen
 - Bug: `loadLearnedPatterns()` in `index.html:4089` hatte Plattformen hardcodiert auf `['indeed', 'linkedin', 'xing']` — Patterns für Custom-Plattformen (via PlatformProfileRow) wurden nie angezeigt
 - Fix: iteriert jetzt über alle Einträge der API-Antwort + Built-in-Defaults, sortiert nach Name
