@@ -100,7 +100,8 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
 |---|---|
 | Run dev | `python app.py` (or per `DEPLOYMENT.md`) |
 | Tests | `pytest tests/` |
-| Production deploy | see `DEPLOYMENT_IONOS.md` |
+| Production deploy (bare-metal) | see `DEPLOYMENT_IONOS.md` |
+| Container deploy (Podman Quadlet) | see `deploy/container/setup-vps.sh` |
 | Services layer | `services/` — business logic |
 | API layer | `api/` — thin routing only |
 | Async tasks | `services/tasks/handlers/` |
