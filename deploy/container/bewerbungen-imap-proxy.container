@@ -13,7 +13,7 @@ Wants=network-online.target
 Image=localhost/bewerbungen:latest
 ContainerName=bewerbungen-imap-proxy
 
-Exec=/app/docker-entrypoint.sh imap-proxy
+Exec=imap-proxy
 
 PublishPort=127.0.0.1:8765:8765
 

@@ -15,7 +15,7 @@ ContainerName=bewerbungen-worker
 
 # No published ports — internal-only.
 # Override CMD to run the worker.
-Exec=/app/docker-entrypoint.sh worker
+Exec=worker
 
 Volume=/opt/bewerbungen-data:/app/data:Z
 Volume=/opt/bewerbungen-data/instance:/app/instance:Z

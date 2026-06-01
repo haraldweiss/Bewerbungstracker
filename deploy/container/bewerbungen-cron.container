@@ -14,7 +14,7 @@ Wants=network-online.target bewerbungentracker-app.service
 Image=localhost/bewerbungen:latest
 ContainerName=bewerbungen-cron
 
-Exec=/app/docker-entrypoint.sh cron
+Exec=cron
 
 # No published ports — curl-only.
 Volume=/opt/bewerbungen-data:/app/data:Z

@@ -12,7 +12,7 @@ Wants=network-online.target
 Image=localhost/bewerbungen:latest
 ContainerName=bewerbungen-email-service
 
-Exec=/app/docker-entrypoint.sh email-service
+Exec=email-service
 
 PublishPort=127.0.0.1:8766:8766
 
