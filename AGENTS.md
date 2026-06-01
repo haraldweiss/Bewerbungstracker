@@ -113,6 +113,14 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
 
 ## 7. Handoff zone (free-form, append-only)
 
+### 2026-06-01 — Learned-Patterns-Table zeigt Custom-Plattformen
+- Bug: `loadLearnedPatterns()` in `index.html:4089` hatte Plattformen hardcodiert auf `['indeed', 'linkedin', 'xing']` — Patterns für Custom-Plattformen (via PlatformProfileRow) wurden nie angezeigt
+- Fix: iteriert jetzt über alle Einträge der API-Antwort + Built-in-Defaults, sortiert nach Name
+- Feature: Training-Toasts zeigen jetzt die Quellen-Plattform an (z.B. `🧠 STEPSTONE: 30%…`)
+- Nur JS-Änderungen in `index.html` (35 insertions, 13 deletions)
+- Getestet: `pytest tests/api/test_pattern_learner_api.py` (12/12 passed)
+- NICHT deployed to IONOS
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/

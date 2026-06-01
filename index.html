@@ -4052,7 +4052,7 @@ const JdSourcesUI = (() => {
         );
         if (!confirm(confirmText)) return;
         const showToast = typeof window.showToast === 'function' ? window.showToast : ((m) => alert(m));
-        showToast('🧠 Pattern-Train laeuft... (kann 30-60s dauern)', 'info');
+        showToast('🧠 ' + platform.toUpperCase() + ': Pattern-Train gestartet... (30-60s)', 'info');
         try {
             // Endpoint gibt 202 + {task_id} zurück.
             const enqRes = await Auth.fetch('/jobs/sources/' + sourceId + '/train-pattern', {
@@ -4063,12 +4063,12 @@ const JdSourcesUI = (() => {
             // Ergebnis hat dieselbe Form wie früher: ok, hit_rate, sample_count, …
             const r = await pollTask(enqRes.task_id, task => {
                 if (task.progress != null) {
-                    showToast('🧠 Pattern-Train: ' + task.progress + '%…', 'info');
+                    showToast('🧠 ' + platform.toUpperCase() + ': ' + task.progress + '%…', 'info');
                 }
             });
             if (r && r.ok) {
                 const pct = Math.round((r.hit_rate || 0) * 100);
-                showToast('✅ Pattern gelernt: ' + pct + '% Hit-Rate auf ' + r.sample_count + ' Test-Mails', 'success');
+                showToast('✅ ' + platform.toUpperCase() + ' Pattern gelernt: ' + pct + '% Hit-Rate auf ' + r.sample_count + ' Test-Mails', 'success');
                 refresh();
                 if (typeof loadLearnedPatterns === 'function') loadLearnedPatterns();
             } else if (r && r.error) {
@@ -4086,27 +4086,49 @@ const JdSourcesUI = (() => {
         try {
             const r = await Auth.fetch('/jobs/learned-patterns', { method: 'GET' });
             const list = (r && r.patterns) || [];
-            const PLATFORMS = ['indeed', 'linkedin', 'xing'];
-            const rows = PLATFORMS.map(function(platform) {
+            const BUILTIN_PLATFORMS = ['indeed', 'linkedin', 'xing'];
+            const seen = {};
+            const rows = [];
+            BUILTIN_PLATFORMS.forEach(function(platform) {
                 const entry = list.find(function(p) { return p.platform === platform; });
-                if (!entry) {
-                    return '<tr><td style="padding:0.4rem">' + escapeHtml(platform.toUpperCase()) + '</td>' +
-                        '<td>—</td><td colspan="2" style="color:var(--text-muted)">(Hardcoded Default)</td><td>—</td></tr>';
+                if (entry) {
+                    seen[platform] = true;
+                    const pct = Math.round((entry.hit_rate || 0) * 100);
+                    const date = entry.trained_at ? new Date(entry.trained_at).toLocaleString('de-DE') : '—';
+                    const rollbackBtn = entry.history_count >= 1
+                        ? '<button class="btn btn-sm btn-secondary" onclick="JdSourcesUI.rollbackPattern(\'' + escapeHtml(platform) + '\')" title="Zur Vorversion zurueck">↶ Rollback</button>'
+                        : '<span style="color:var(--text-muted)">—</span>';
+                    rows.push({ sortKey: platform, html: '<tr style="border-bottom:1px solid var(--border)">' +
+                        '<td style="padding:0.4rem">' + escapeHtml(platform.toUpperCase()) + '</td>' +
+                        '<td>' + pct + '%</td>' +
+                        '<td>' + escapeHtml(date) + '</td>' +
+                        '<td>' + (entry.history_count + 1) + '</td>' +
+                        '<td>' + rollbackBtn + '</td>' +
+                        '</tr>' });
+                } else {
+                    rows.push({ sortKey: platform, html: '<tr style="border-bottom:1px solid var(--border)">' +
+                        '<td style="padding:0.4rem">' + escapeHtml(platform.toUpperCase()) + '</td>' +
+                        '<td>—</td><td colspan="2" style="color:var(--text-muted)">(Hardcoded Default)</td><td>—</td></tr>' });
                 }
+            });
+            list.forEach(function(entry) {
+                if (seen[entry.platform]) return;
+                seen[entry.platform] = true;
                 const pct = Math.round((entry.hit_rate || 0) * 100);
                 const date = entry.trained_at ? new Date(entry.trained_at).toLocaleString('de-DE') : '—';
                 const rollbackBtn = entry.history_count >= 1
-                    ? '<button class="btn btn-sm btn-secondary" onclick="JdSourcesUI.rollbackPattern(\'' + escapeHtml(platform) + '\')" title="Zur Vorversion zurueck">↶ Rollback</button>'
+                    ? '<button class="btn btn-sm btn-secondary" onclick="JdSourcesUI.rollbackPattern(\'' + escapeHtml(entry.platform) + '\')" title="Zur Vorversion zurueck">↶ Rollback</button>'
                     : '<span style="color:var(--text-muted)">—</span>';
-                return '<tr style="border-bottom:1px solid var(--border)">' +
-                    '<td style="padding:0.4rem">' + escapeHtml(platform.toUpperCase()) + '</td>' +
+                rows.push({ sortKey: entry.platform, html: '<tr style="border-bottom:1px solid var(--border)">' +
+                    '<td style="padding:0.4rem">' + escapeHtml(entry.platform.toUpperCase()) + '</td>' +
                     '<td>' + pct + '%</td>' +
                     '<td>' + escapeHtml(date) + '</td>' +
                     '<td>' + (entry.history_count + 1) + '</td>' +
                     '<td>' + rollbackBtn + '</td>' +
-                    '</tr>';
+                    '</tr>' });
             });
-            tbody.innerHTML = rows.join('');
+            rows.sort(function(a, b) { return a.sortKey.localeCompare(b.sortKey); });
+            tbody.innerHTML = rows.map(function(r) { return r.html; }).join('');
         } catch (e) {
             tbody.innerHTML = '<tr><td colspan="5" style="padding:0.6rem;color:var(--danger)">Fehler: ' + escapeHtml(e.message || 'unbekannt') + '</td></tr>';
         }
