@@ -30,7 +30,7 @@ If `user.email` is unset, empty, or fake — **stop, fix it, then proceed**. Pas
 ## 2. Agent routing
 
 ### opencode (Throughput)
-- `api/` → `services/` extraction-style refactors (recent pattern in `a573167`)
+- `api/` → `services/` extraction-style refactors (recent pattern in `816cd7c`)
 - Test-mock-path cleanup after refactor
 - README / doc updates
 - Blacklist/keyword tuning in `services/job_sources/`

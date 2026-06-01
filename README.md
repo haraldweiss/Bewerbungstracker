@@ -174,10 +174,12 @@ instructions in the corresponding repo.
 - **[Features](docs/FEATURES/)** - Detailed feature documentation
   - [CV Comparison & Processing](docs/FEATURES/CV.md)
   - [Email Integration](docs/FEATURES/EMAIL.md)
+  - [Job-Discovery](docs/FEATURES/JOB_DISCOVERY.md)
 - **[Deployment](docs/DEPLOYMENT/)** - Installation & hosting
   - [Generic Server](docs/DEPLOYMENT/DEPLOYMENT_GENERIC.md)
   - [IONOS Shared Hosting](docs/DEPLOYMENT/DEPLOYMENT_IONOS.md)
   - [API key rotation](docs/DEPLOYMENT/KEY_ROTATION.md) - Rotate the Anthropic key on the VPS via `bewerbungen-rotate-anthropic-key`
+- **[Apache ProxyPass Deployment Rules](DEPLOYMENT.md)** - ⚠️ Safety-Checklist for multi-service VPS with safeguards against config conflicts
 - **[Setup Guides](docs/GUIDES/)** - Provider-specific configuration
   - [Gmail Setup](docs/GUIDES/SETUP_GMAIL.md)
   - [Outlook Setup](docs/GUIDES/SETUP_OUTLOOK.md)
@@ -187,6 +189,8 @@ instructions in the corresponding repo.
 
 - **Frontend:** Vanilla JavaScript, HTML5, CSS3 (no frameworks), PWA with service worker
 - **Backend:** Python 3.12 (Flask) + SQLite + JWT auth; modular `services/` layer for AI matching, email import, provider routing, and task-queue workers
+- **Job-Pipeline:** 5 cron stages (crawl → prefilter → claude-match → notify → cleanup), idempotent + token-protected, partly via async task queue
+- **Source-Adapter:** RSS (`feedparser`), Adzuna API, Bundesagentur Jobsuche API (with parallel detail fetch), Arbeitnow API
 - **AI-Routing:** either Anthropic Claude SDK directly (default), or delegation to external `ai-provider-service` (separate repo) for multi-provider, fallback and queue persistence. Both modes operable through the same user settings UI.
 - **Libraries:** jsPDF, TweetNaCl.js (Encryption), Mammoth (DOCX), pdf.js, cryptography (Fernet)
 
