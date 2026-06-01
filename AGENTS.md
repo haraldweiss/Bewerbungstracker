@@ -131,6 +131,14 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
 6. **Netzwerk:** Custom `bewerbungen-net` damit Container-DNS funktioniert
 7. **supercronic PID-1 Bug:** Kein `exec` in cron-Rolle
 
+### 2026-06-01 — Email/IMAP-Container: BIND_HOST-Fix
+- IMAP-Proxy und Email-Service banden an `127.0.0.1` → nach DNAT (host→container) kamen Pakete auf eth0 an, Service hörte nur auf lo → Connection Refused
+- Fix: `BIND_HOST=0.0.0.0` per env-var, überschreibt config.json + Default
+- `imap_proxy.py`: zusätzlich `os.getenv('BIND_HOST')` in load_config → gewinnt immer
+- `email_service.py`: `HOST = os.getenv('BIND_HOST', '127.0.0.1')`
+- GETESTET: IMAP 400, Email 404 (korrekt — Services laufen und antworten)
+- DEPLOYED to IONOS VPS
+
 ### 2026-06-01 — Containerisierung: Dockerfile + 5 Podman Quadlets
 - Dockerfile: single-stage python:3.12-slim, multi-role (app/worker/imap-proxy/email-service/cron)
 - 5 Quadlet `.container` files passend zum ai-provider-service-Pattern
