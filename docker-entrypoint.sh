@@ -44,7 +44,9 @@ case "$ROLE" in
     cron)
         # Cron-Jobs laufen via crontab + curl auf den internen App-Endpoint.
         # JOB_CRON_TOKEN muss im Container gesetzt sein.
-        exec supercronic /app/deploy/container/crontab
+        # Ohne exec: supercronic 0.2.33 hat einen Bug als PID 1
+        # ("Failed to fork exec" bei vollem crontab).
+        supercronic /app/deploy/container/crontab
         ;;
     *)
         echo "Unknown role: $ROLE"
