@@ -20,7 +20,7 @@ Volume=/opt/bewerbungen-data:/app/data:Z
 Volume=/opt/bewerbungen-data/instance:/app/instance:Z
 Volume=/opt/bewerbungen-data/logs:/app/logs:Z
 
-HealthCmd=curl -fsS http://127.0.0.1:5000/health
+HealthCmd=curl -fsS http://127.0.0.1:5000/
 HealthInterval=30s
 HealthTimeout=5s
 HealthRetries=3
