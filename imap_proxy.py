@@ -55,6 +55,9 @@ def load_config():
 
     if not os.path.exists(config_path):
         print('[Config] config.json nicht gefunden – verwende Defaults')
+        bh = os.getenv('BIND_HOST')
+        if bh:
+            defaults['server']['host'] = bh
         return defaults
 
     try:
@@ -68,7 +71,11 @@ def load_config():
             'cache': {**defaults['cache'], **user_config.get('cache', {})},
             'search': {**defaults['search'], **user_config.get('search', {})},
         }
-        print(f'[Config] config.json geladen: Port {config["server"]["port"]}, Timeout {config["connection"]["timeout_seconds"]}s')
+        # Env-var override (z.B. BIND_HOST=0.0.0.0 for container deployment)
+        bh = os.getenv('BIND_HOST')
+        if bh:
+            config['server']['host'] = bh
+        print(f'[Config] config.json geladen: host={config["server"]["host"]} Port {config["server"]["port"]}, Timeout {config["connection"]["timeout_seconds"]}s')
         return config
     except (json.JSONDecodeError, IOError) as e:
         print(f'[Config] Fehler beim Lesen von config.json: {e} – verwende Defaults')
