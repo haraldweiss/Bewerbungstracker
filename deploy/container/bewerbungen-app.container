@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
+#
+# Quadlet for the Bewerbungstracker Flask application (gunicorn).
+# Install: cp to /etc/containers/systemd/ then:
+#   systemctl daemon-reload && systemctl start bewerbungentracker-app
+
+[Unit]
+Description=Bewerbungstracker Flask Application
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/bewerbungen:latest
+ContainerName=bewerbungen-app
+
+PublishPort=127.0.0.1:5000:5000
+
+Volume=/opt/bewerbungen-data:/app/data:Z
+Volume=/opt/bewerbungen-data/instance:/app/instance:Z
+Volume=/opt/bewerbungen-data/logs:/app/logs:Z
+
+HealthCmd=curl -fsS http://127.0.0.1:5000/health
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=15s
+
+EnvironmentFile=/etc/bewerbungen/bewerbungen.env
+
+Environment=DATABASE_URL=sqlite:////app/data/instance/bewerbungstracker.db
+Environment=FLASK_ENV=production
+Environment=PORT=5000
+Environment=GUNICORN_WORKERS=4
+Environment=GUNICORN_TIMEOUT=60
+Environment=TZ=Europe/Berlin
+Environment=IMAP_PROXY_URL=http://127.0.0.1:8765
+
+Memory=1024m
+LogDriver=journald
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

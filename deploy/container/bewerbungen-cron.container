@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
+#
+# Quadlet for the Bewerbungstracker Cron container.
+# Runs supercronic with a crontab that triggers the 5 cron stages + backup
+# via curl against the internal app container endpoint.
+
+[Unit]
+Description=Bewerbungstracker Cron (Job-Pipeline + Backup)
+After=network-online.target
+Wants=network-online.target bewerbungentracker-app.service
+
+[Container]
+Image=localhost/bewerbungen:latest
+ContainerName=bewerbungen-cron
+
+Exec=/app/docker-entrypoint.sh cron
+
+# No published ports — curl-only.
+Volume=/opt/bewerbungen-data:/app/data:Z
+Volume=/opt/bewerbungen-data/instance:/app/instance:Z
+Volume=/opt/bewerbungen-data/backups:/app/backups:Z
+
+EnvironmentFile=/etc/bewerbungen/bewerbungen.env
+Environment=APP_INTERNAL_URL=http://bewerbungen-app:5000
+Environment=FLASK_ENV=production
+Environment=TZ=Europe/Berlin
+Environment=BACKUP_DIR=/app/backups
+Environment=RETENTION_DAYS=30
+
+Memory=128m
+LogDriver=journald
+
+[Service]
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

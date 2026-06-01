@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
+#
+# Crontab for the cron container. Runs inside supercronic.
+# APP_INTERNAL_URL and JOB_CRON_TOKEN come from the container environment.
+# All times in UTC (unless TZ=Europe/Berlin is set).
+
+# ── Job-Discovery Pipeline (5 stages, staggered every 15 min) ──────────
+# crawl-source – alle 60 Minuten
+0 */1 * * * /usr/bin/curl -fsS -X POST -H "Authorization: Bearer ${JOB_CRON_TOKEN}" ${APP_INTERNAL_URL}/api/jobs/crawl-source
+
+# prefilter – alle 60 Minuten, 5 min nach crawl
+5 */1 * * * /usr/bin/curl -fsS -X POST -H "Authorization: Bearer ${JOB_CRON_TOKEN}" ${APP_INTERNAL_URL}/api/jobs/prefilter
+
+# claude-match – alle 60 Minuten, 10 min nach crawl
+10 */1 * * * /usr/bin/curl -fsS -X POST -H "Authorization: Bearer ${JOB_CRON_TOKEN}" ${APP_INTERNAL_URL}/api/jobs/claude-match
+
+# notify – alle 60 Minuten, 15 min nach crawl
+15 */1 * * * /usr/bin/curl -fsS -X POST -H "Authorization: Bearer ${JOB_CRON_TOKEN}" ${APP_INTERNAL_URL}/api/jobs/notify
+
+# cleanup – alle 24h um 02:00 UTC
+0 2 * * * /usr/bin/curl -fsS -X POST -H "Authorization: Bearer ${JOB_CRON_TOKEN}" ${APP_INTERNAL_URL}/api/jobs/cleanup
+
+# ── URL Health Check – alle 24h um 02:30 UTC ──────────────────────────
+30 2 * * * /usr/bin/curl -fsS -X POST -H "Authorization: Bearer ${JOB_CRON_TOKEN}" ${APP_INTERNAL_URL}/api/jobs/url-health-check
+
+# ── Indeed Email Import – alle 60 Minuten ─────────────────────────────
+25 */1 * * * /usr/bin/curl -fsS -X POST -H "Authorization: Bearer ${JOB_CRON_TOKEN}" ${APP_INTERNAL_URL}/api/jobs/indeed-email-import-all
+
+# ── DB Backup – täglich um 03:00 UTC ──────────────────────────────────
+0 3 * * * /usr/local/bin/python /app/scripts/backup_db.py

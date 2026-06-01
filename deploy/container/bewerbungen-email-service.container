@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
+#
+# Quadlet for the Bewerbungstracker Email Service (SMTP/IMAP credential store).
+
+[Unit]
+Description=Bewerbungstracker Email Service
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/bewerbungen:latest
+ContainerName=bewerbungen-email-service
+
+Exec=/app/docker-entrypoint.sh email-service
+
+PublishPort=127.0.0.1:8766:8766
+
+Volume=/opt/bewerbungen-data:/app/data:Z
+Volume=/opt/bewerbungen-data/instance:/app/instance:Z
+Volume=/opt/bewerbungen-data/logs:/app/logs:Z
+
+EnvironmentFile=/etc/bewerbungen/bewerbungen.env
+
+Environment=DATABASE_URL=sqlite:////app/data/instance/bewerbungstracker.db
+Environment=FLASK_ENV=production
+Environment=TZ=Europe/Berlin
+
+Memory=256m
+LogDriver=journald
+
+[Service]
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
+#
+# Quadlet for the Bewerbungstracker background task worker.
+# Depends on the app container's DB volume.
+
+[Unit]
+Description=Bewerbungstracker Task Worker (Background-Jobs)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/bewerbungen:latest
+ContainerName=bewerbungen-worker
+
+# No published ports — internal-only.
+# Override CMD to run the worker.
+Exec=/app/docker-entrypoint.sh worker
+
+Volume=/opt/bewerbungen-data:/app/data:Z
+Volume=/opt/bewerbungen-data/instance:/app/instance:Z
+Volume=/opt/bewerbungen-data/logs:/app/logs:Z
+
+EnvironmentFile=/etc/bewerbungen/bewerbungen.env
+
+Environment=DATABASE_URL=sqlite:////app/data/instance/bewerbungstracker.db
+Environment=FLASK_ENV=production
+Environment=TASK_WORKER_COUNT=2
+Environment=TZ=Europe/Berlin
+
+Memory=512m
+LogDriver=journald
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target
