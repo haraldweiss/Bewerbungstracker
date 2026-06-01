@@ -18,9 +18,9 @@ ContainerName=bewerbungen-worker
 Exec=worker
 Network=bewerbungen-net
 
-Volume=/opt/bewerbungen-data:/app/data:Z
-Volume=/opt/bewerbungen-data/instance:/app/instance:Z
-Volume=/opt/bewerbungen-data/logs:/app/logs:Z
+Volume=/opt/bewerbungen-data:/app/data:z
+Volume=/opt/bewerbungen-data/instance:/app/instance:z
+Volume=/opt/bewerbungen-data/logs:/app/logs:z
 
 EnvironmentFile=/etc/bewerbungen/bewerbungen.env
 

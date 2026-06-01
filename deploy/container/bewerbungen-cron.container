@@ -19,9 +19,9 @@ Exec=cron
 # No published ports — curl-only.
 Network=bewerbungen-net
 
-Volume=/opt/bewerbungen-data:/app/data:Z
-Volume=/opt/bewerbungen-data/instance:/app/instance:Z
-Volume=/opt/bewerbungen-data/backups:/app/backups:Z
+Volume=/opt/bewerbungen-data:/app/data:z
+Volume=/opt/bewerbungen-data/instance:/app/instance:z
+Volume=/opt/bewerbungen-data/backups:/app/backups:z
 
 EnvironmentFile=/etc/bewerbungen/bewerbungen.env
 Environment=APP_INTERNAL_URL=http://bewerbungen-app:5000

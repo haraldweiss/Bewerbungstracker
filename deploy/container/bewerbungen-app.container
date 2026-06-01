@@ -17,9 +17,9 @@ ContainerName=bewerbungen-app
 PublishPort=127.0.0.1:5000:5000
 Network=bewerbungen-net
 
-Volume=/opt/bewerbungen-data:/app/data:Z
-Volume=/opt/bewerbungen-data/instance:/app/instance:Z
-Volume=/opt/bewerbungen-data/logs:/app/logs:Z
+Volume=/opt/bewerbungen-data:/app/data:z
+Volume=/opt/bewerbungen-data/instance:/app/instance:z
+Volume=/opt/bewerbungen-data/logs:/app/logs:z
 
 HealthCmd=curl -fsS http://127.0.0.1:5000/
 HealthInterval=30s
