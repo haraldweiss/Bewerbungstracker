@@ -34,7 +34,7 @@ try:
 except ImportError:
     Fernet = None
 
-HOST = '127.0.0.1'
+HOST = os.getenv('BIND_HOST', '127.0.0.1')
 PORT = 8766
 DB_FILE = 'email_config.db'
 MAX_REQUEST_SIZE_BYTES = 1024 * 1024  # 1MB

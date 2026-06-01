@@ -26,6 +26,7 @@ EnvironmentFile=/etc/bewerbungen/bewerbungen.env
 Environment=DATABASE_URL=sqlite:////app/data/instance/bewerbungstracker.db
 Environment=FLASK_ENV=production
 Environment=TZ=Europe/Berlin
+Environment=BIND_HOST=0.0.0.0
 
 Memory=256m
 LogDriver=journald

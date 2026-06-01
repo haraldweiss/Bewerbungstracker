@@ -40,7 +40,7 @@ import os
 def load_config():
     """Load config from config.json, fallback to defaults if not found or invalid."""
     defaults = {
-        'server': {'host': '127.0.0.1', 'port': 8765},
+        'server': {'host': os.getenv('BIND_HOST', '127.0.0.1'), 'port': 8765},
         'connection': {'timeout_seconds': 20, 'fallback_days': 90},
         'cache': {'ttl_seconds': 300},
         'search': {
@@ -482,7 +482,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         # Defence-in-depth: reject non-localhost even though we bind to 127.0.0.1
-        if self.client_address[0] not in ('127.0.0.1', '::1'):
+        allowed = {'127.0.0.1', '::1'}
+        if os.getenv('BIND_HOST', '127.0.0.1') != '127.0.0.1':
+            allowed.add(self.client_address[0])  # allow container-internal traffic
+        if self.client_address[0] not in allowed:
             self._json({'error': 'Nur lokaler Zugriff erlaubt'}, 403)
             return
 
