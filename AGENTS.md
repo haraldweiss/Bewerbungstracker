@@ -122,6 +122,15 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
 - Getestet: kein Code angefasst, README-Links manuell verifiziert
 - NICHT deployed to IONOS
 
+### 2026-06-01 — Containerisierung deployed + Fixes (3 Runden)
+1. **Erster Deploy:** Alle 5 Container auf VPS, App HTTP 200 ✓
+2. **Bugfix Runde 1:** `Exec` überschreibt CMD, nicht ENTRYPOINT → nur Rollenname
+3. **Bugfix Runde 2:** `.env` überschrieb `AI_PROVIDER_SERVICE_URL` mit `127.0.0.1` → Container-Env via Quadlet ging verloren. Fix: `.env` korrigiert + Image neugebaut
+4. **Bugfix Runde 3:** `host.containers.internal` resolvt auf `bewerbungen-net` Gateway (10.89.1.1), nicht zum `podman`-Bridge (10.88.0.1) wo ai-provider lauscht. Fix: `http://10.88.0.1:8767`
+5. **SELinux:** `:Z` → `:z` für Shared-Volume-Zugriff (app+worker+imap+email+cron)
+6. **Netzwerk:** Custom `bewerbungen-net` damit Container-DNS funktioniert
+7. **supercronic PID-1 Bug:** Kein `exec` in cron-Rolle
+
 ### 2026-06-01 — Containerisierung: Dockerfile + 5 Podman Quadlets
 - Dockerfile: single-stage python:3.12-slim, multi-role (app/worker/imap-proxy/email-service/cron)
 - 5 Quadlet `.container` files passend zum ai-provider-service-Pattern
