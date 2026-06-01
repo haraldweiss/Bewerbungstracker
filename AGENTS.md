@@ -128,8 +128,9 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
 - Cron-Container mit supercronic + crontab (alle 5 Stages + indeed-email-import + backup)
 - `.dockerignore` aktualisiert (imap_proxy/email_service nicht mehr exkludiert)
 - `deploy/container/setup-vps.sh` für Einmal-Setup auf dem VPS
-- GETESTET: kein Lauf — muss auf VPS gebaut und getestet werden
-- NICHT deployed to IONOS
+- GETESTET: `podman build` + alle 5 Container laufen auf dem VPS, App antwortet HTTP 200, API HTTP 401 (korrekt)
+- DEPLOYED TO IONOS VPS (Podman Quadlets, Rocky Linux 9.8)
+- **Wichtig bei Podman-Updates:** supercronic hat einen PID-1-Bug — docker-entrypoint.sh verwendet nicht `exec` für die cron-Rolle
 
 ### 2026-06-01 — Learned-Patterns-Table zeigt Custom-Plattformen
 - Bug: `loadLearnedPatterns()` in `index.html:4089` hatte Plattformen hardcodiert auf `['indeed', 'linkedin', 'xing']` — Patterns für Custom-Plattformen (via PlatformProfileRow) wurden nie angezeigt
