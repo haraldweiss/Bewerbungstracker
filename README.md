@@ -70,8 +70,8 @@ Setup-Anleitung im jeweiligen Repo.
   - [Email-Integration](docs/FEATURES/EMAIL.md)
   - [Job-Discovery](docs/FEATURES/JOB_DISCOVERY.md)
 - **[Deployment](docs/DEPLOYMENT/)** - Installation & Hosting
-  - [Generic Server](docs/DEPLOYMENT/DEPLOYMENT_GENERIC.md)
-  - [IONOS Shared Hosting](docs/DEPLOYMENT/DEPLOYMENT_IONOS.md)
+  - [Generic Server](docs/DEPLOYMENT_PRODUCTION.md)
+  - [IONOS Shared Hosting](DEPLOYMENT_IONOS.md)
   - [API-Key Rotation](docs/DEPLOYMENT/KEY_ROTATION.md) - Anthropic-Key auf VPS rotieren via `bewerbungen-rotate-anthropic-key`
   - **[Apache ProxyPass Deployment Rules](DEPLOYMENT.md)** - ⚠️ Safety-Checklist für Multi-Service VPS mit Safeguards gegen Config-Konflikte
 - **[Setup Guides](docs/GUIDES/)** - Provider-spezifische Konfiguration
@@ -176,8 +176,8 @@ instructions in the corresponding repo.
   - [Email Integration](docs/FEATURES/EMAIL.md)
   - [Job-Discovery](docs/FEATURES/JOB_DISCOVERY.md)
 - **[Deployment](docs/DEPLOYMENT/)** - Installation & hosting
-  - [Generic Server](docs/DEPLOYMENT/DEPLOYMENT_GENERIC.md)
-  - [IONOS Shared Hosting](docs/DEPLOYMENT/DEPLOYMENT_IONOS.md)
+  - [Generic Server](docs/DEPLOYMENT_PRODUCTION.md)
+  - [IONOS Shared Hosting](DEPLOYMENT_IONOS.md)
   - [API key rotation](docs/DEPLOYMENT/KEY_ROTATION.md) - Rotate the Anthropic key on the VPS via `bewerbungen-rotate-anthropic-key`
 - **[Apache ProxyPass Deployment Rules](DEPLOYMENT.md)** - ⚠️ Safety-Checklist for multi-service VPS with safeguards against config conflicts
 - **[Setup Guides](docs/GUIDES/)** - Provider-specific configuration

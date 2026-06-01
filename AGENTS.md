@@ -113,6 +113,14 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
 
 ## 7. Handoff zone (free-form, append-only)
 
+### 2026-06-01 — README-Links gefixt, .serena/ ignoriert, AGENTS-Hash korrigiert
+- README English: fehlende Job-Discovery/DEPLOYMENT.md/Technology Bullets ergänzt
+- README: 4 broken Deployment-Links korrigiert (`docs/DEPLOYMENT/DEPLOYMENT_*.md` → `DEPLOYMENT_*.md` im Root bzw. `docs/DEPLOYMENT_PRODUCTION.md`)
+- AGENTS.md: Commit-Hash `a573167` → `816cd7c` korrigiert
+- `.gitignore`: `.serena/` hinzugefügt
+- Getestet: kein Code angefasst, README-Links manuell verifiziert
+- NICHT deployed to IONOS
+
 ### 2026-06-01 — Learned-Patterns-Table zeigt Custom-Plattformen
 - Bug: `loadLearnedPatterns()` in `index.html:4089` hatte Plattformen hardcodiert auf `['indeed', 'linkedin', 'xing']` — Patterns für Custom-Plattformen (via PlatformProfileRow) wurden nie angezeigt
 - Fix: iteriert jetzt über alle Einträge der API-Antwort + Built-in-Defaults, sortiert nach Name
