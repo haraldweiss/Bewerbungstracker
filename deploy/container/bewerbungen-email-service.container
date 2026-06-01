@@ -13,6 +13,7 @@ Image=localhost/bewerbungen:latest
 ContainerName=bewerbungen-email-service
 
 Exec=email-service
+Network=bewerbungen-net
 
 PublishPort=127.0.0.1:8766:8766
 

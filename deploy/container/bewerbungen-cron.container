@@ -17,6 +17,8 @@ ContainerName=bewerbungen-cron
 Exec=cron
 
 # No published ports — curl-only.
+Network=bewerbungen-net
+
 Volume=/opt/bewerbungen-data:/app/data:Z
 Volume=/opt/bewerbungen-data/instance:/app/instance:Z
 Volume=/opt/bewerbungen-data/backups:/app/backups:Z

@@ -16,6 +16,7 @@ ContainerName=bewerbungen-worker
 # No published ports — internal-only.
 # Override CMD to run the worker.
 Exec=worker
+Network=bewerbungen-net
 
 Volume=/opt/bewerbungen-data:/app/data:Z
 Volume=/opt/bewerbungen-data/instance:/app/instance:Z

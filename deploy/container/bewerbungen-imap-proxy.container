@@ -14,6 +14,7 @@ Image=localhost/bewerbungen:latest
 ContainerName=bewerbungen-imap-proxy
 
 Exec=imap-proxy
+Network=bewerbungen-net
 
 PublishPort=127.0.0.1:8765:8765
 
