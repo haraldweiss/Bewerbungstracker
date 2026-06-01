@@ -21,6 +21,7 @@ class ProviderConfig:
     OPENAI = 'openai'
     MAMMOUTH = 'mammouth'
     CUSTOM = 'custom'
+    OPENCODE = 'opencode'
 
     PROVIDERS = {
         CLAUDE: {
@@ -54,7 +55,12 @@ class ProviderConfig:
             'requires': ['api_endpoint'],
             'optional': ['api_key', 'name'],
             'scope': 'user',
-        }
+        },
+        OPENCODE: {
+            'name': 'Opencode.ai (Zen)',
+            'requires': ['api_key'],
+            'scope': 'user',
+        },
     }
 
 
