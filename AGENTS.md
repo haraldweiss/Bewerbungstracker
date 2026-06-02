@@ -172,6 +172,12 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
   - `_require_paid()`: ohne eigenen User-Key sind nur Free-Modelle nutzbar
   - Paid-Modelle → ValueError "erfordert eigenen opencode.ai API-Key"
   - ValueError propagiert direkt → kein Fallback/Queue (fix in `dispatcher.py`)
+- **Daily-Limit für Free-Modelle** (`config.py`, `dispatcher.py`):
+  - `FREE_MODEL_DAILY_LIMIT=500` (Default, via env konfigurierbar)
+  - `FREE_MODEL_ADMIN_RESERVE=100` (davon reserviert für Admin `harald`)
+  - `FREE_MODEL_ADMIN_UID=harald`
+  - Zählt via `UsageEvent`-DB (nur `status=success`)
+  - Nicht-Admin-User werden bei `limit - reserve` gestoppt
 - **Hotfix** (`api/profile.py:234`): `VALID_PROVIDERS` hatte eigenes Set ohne `opencode` → `cover_letter: unbekannter Provider opencode` beim Speichern von Pro-Task-Overrides
 - Deployed to IONOS VPS (beide Images neugebaut + Container restarted)
 - Getestet: App→AI-Provider kommuniziert, Ollama 15 Models, Opencode 45 Models (deepseek-v4-flash etc.)
