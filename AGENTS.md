@@ -178,6 +178,7 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
   - `FREE_MODEL_ADMIN_UID=harald`
   - Zählt via `UsageEvent`-DB (nur `status=success`)
   - Nicht-Admin-User werden bei `limit - reserve` gestoppt
+  - Budget-Überschreitung = RuntimeError (kein ValueError) → löst Fallback/Queue aus
 - **Hotfix** (`api/profile.py:234`): `VALID_PROVIDERS` hatte eigenes Set ohne `opencode` → `cover_letter: unbekannter Provider opencode` beim Speichern von Pro-Task-Overrides
 - Deployed to IONOS VPS (beide Images neugebaut + Container restarted)
 - Getestet: App→AI-Provider kommuniziert, Ollama 15 Models, Opencode 45 Models (deepseek-v4-flash etc.)
