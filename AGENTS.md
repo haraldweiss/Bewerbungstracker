@@ -166,7 +166,12 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
 - **ai-provider-service (Image neugebaut):**
   - `config.py`: `OPENCODE_API_KEY` env var
   - `opencode.py`: Fallback auf `Config.OPENCODE_API_KEY`
-  - Registry: `system: True`, `requires: []`, `UNGATED_PROVIDERS+=opencode`
+   - Registry: `system: True`, `requires: []`, `UNGATED_PROVIDERS+=opencode`
+- **Free-Model-Gating** (`opencode.py`, `dispatcher.py`):
+  - `FREE_MODELS = frozenset({'deepseek-v4-flash-free'})`
+  - `_require_paid()`: ohne eigenen User-Key sind nur Free-Modelle nutzbar
+  - Paid-Modelle → ValueError "erfordert eigenen opencode.ai API-Key"
+  - ValueError propagiert direkt → kein Fallback/Queue (fix in `dispatcher.py`)
 - **Hotfix** (`api/profile.py:234`): `VALID_PROVIDERS` hatte eigenes Set ohne `opencode` → `cover_letter: unbekannter Provider opencode` beim Speichern von Pro-Task-Overrides
 - Deployed to IONOS VPS (beide Images neugebaut + Container restarted)
 - Getestet: App→AI-Provider kommuniziert, Ollama 15 Models, Opencode 45 Models (deepseek-v4-flash etc.)
