@@ -149,6 +149,27 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
 - DEPLOYED TO IONOS VPS (Podman Quadlets, Rocky Linux 9.8)
 - **Wichtig bei Podman-Updates:** supercronic hat einen PID-1-Bug — docker-entrypoint.sh verwendet nicht `exec` für die cron-Rolle
 
+### 2026-06-02 — Ollama-Modelle + opencode.ai als zentraler Provider
+- **Bug: AI Provider zeigte "Keine Models verfügbar"** — 3 Ursachen:
+  1. App-Container auf `bewerbungen-net` (10.89.x.x), AI-Provider hatte nur Pasta-Netzwerk → unterschiedliche Netze, `10.88.0.1:8767` unerreichbar
+  2. `OLLAMA_URL=http://host.containers.internal:11434` → DNS löst auf dem Host/Container nicht auf
+  3. Container-Image hatte baked-in `.env` mit veralteter `AI_PROVIDER_SERVICE_URL` → Eintrypoint `source .env` überschrieb `EnvironmentFile`
+- Fixes (VPS, rootless Podman):
+  - `Network=bewerbungen-net` zum ai-provider Quadlet hinzugefügt
+  - `AI_PROVIDER_SERVICE_URL=http://ai-provider:8767` (DNS auf Bridge)
+  - `OLLAMA_URL=http://10.89.0.1:11434` (Host-Bridge-IP, SSH-Tunnel auf `0.0.0.0`)
+  - Volume-Mount `/etc/bewerbungen/bewerbungen.env:/app/.env:Z` + chmod 644
+- **Feature: opencode.ai als zentraler Provider** (`api/providers.py`, `index.html`):
+  - `'opencode'` in `VALID_PROVIDERS` + `USER_PROVIDERS`
+  - Config-UI mit API-Key + optionalem Endpoint im Frontend
+  - Backup-KI (Fallback) zeigt opencode automatisch (filtert `configured=true`)
+- **ai-provider-service (Image neugebaut):**
+  - `config.py`: `OPENCODE_API_KEY` env var
+  - `opencode.py`: Fallback auf `Config.OPENCODE_API_KEY`
+  - Registry: `system: True`, `requires: []`, `UNGATED_PROVIDERS+=opencode`
+- Deployed to IONOS VPS (beide Images neugebaut + Container restarted)
+- Getestet: App→AI-Provider kommuniziert, Ollama 15 Models, Opencode 45 Models (deepseek-v4-flash etc.)
+
 ### 2026-06-01 — Learned-Patterns-Table zeigt Custom-Plattformen
 - Bug: `loadLearnedPatterns()` in `index.html:4089` hatte Plattformen hardcodiert auf `['indeed', 'linkedin', 'xing']` — Patterns für Custom-Plattformen (via PlatformProfileRow) wurden nie angezeigt
 - Fix: iteriert jetzt über alle Einträge der API-Antwort + Built-in-Defaults, sortiert nach Name

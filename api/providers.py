@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 
 providers_bp = Blueprint('providers', __name__, url_prefix='/api/providers')
 
-VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom'}
+VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom', 'opencode'}
 # Provider die User-spezifisch konfiguriert werden können (eigener API-Key etc).
 # Claude ist hier drin, weil neue User (außer dem Server-Key-Allowlist-Owner)
 # einen eigenen Anthropic-Key hinterlegen müssen, um Claude nutzen zu können.
-USER_PROVIDERS = {'claude', 'openai', 'mammouth', 'custom'}
+USER_PROVIDERS = {'claude', 'openai', 'mammouth', 'custom', 'opencode'}
 
 
 def _validate_model_for_provider(user_id: str, provider: str, model: str) -> str | None:
@@ -262,6 +262,7 @@ def save_provider_config(user, provider_id):
         'openai': ['api_key'],
         'mammouth': ['api_endpoint'],
         'custom': ['api_endpoint'],
+        'opencode': ['api_key'],
     }.get(provider_id, [])
     missing = [f for f in required if not data.get(f)]
     if missing:
