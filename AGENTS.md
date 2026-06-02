@@ -167,6 +167,7 @@ For changes that touch IMAP / email cron / Anthropic API: state explicitly wheth
   - `config.py`: `OPENCODE_API_KEY` env var
   - `opencode.py`: Fallback auf `Config.OPENCODE_API_KEY`
   - Registry: `system: True`, `requires: []`, `UNGATED_PROVIDERS+=opencode`
+- **Hotfix** (`api/profile.py:234`): `VALID_PROVIDERS` hatte eigenes Set ohne `opencode` → `cover_letter: unbekannter Provider opencode` beim Speichern von Pro-Task-Overrides
 - Deployed to IONOS VPS (beide Images neugebaut + Container restarted)
 - Getestet: App→AI-Provider kommuniziert, Ollama 15 Models, Opencode 45 Models (deepseek-v4-flash etc.)
 
