@@ -1471,7 +1471,9 @@
             tbody.appendChild(loadingRow);
 
             try {
-                const response = await Auth.fetch('/api/tasks?limit=20', { method: 'GET' });
+                // Auth.fetch already prepends `/api`, so use `/tasks` here — not `/api/tasks`
+                // (was producing /api/api/tasks → 404 → "Fehler beim Laden der Jobs").
+                const response = await Auth.fetch('/tasks?limit=20', { method: 'GET' });
                 const tasks = (response && response.tasks) || [];
 
                 while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
