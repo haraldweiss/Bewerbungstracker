@@ -302,9 +302,8 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
 
     try:
         response = call_match(raw.description)
-    except AIProviderQueuedError as e:
-        logger.info(f'match queued: queue_id={e.queue_id} user={user.id} provider={provider}')
-        return False
+    except AIProviderQueuedError:
+        raise
     except Exception as e:
         logger.warning(
             "service-match failed for match=%s user=%s provider=%s: %s: %s",
@@ -344,9 +343,8 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
                     response.usage.input_tokens += response2.usage.input_tokens
                     response.usage.output_tokens += response2.usage.output_tokens
                     text = text2
-        except AIProviderQueuedError as e:
-            logger.info(f'summarize-retry queued: queue_id={e.queue_id}')
-            return False
+        except AIProviderQueuedError:
+            raise
         except Exception as e:
             logger.warning(f'summarize-retry failed for match={match.id}: {e}')
 

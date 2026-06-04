@@ -12,6 +12,7 @@ from models import JobSource, RawJob, JobMatch, Application
 from api.auth import token_required
 from services.ssrf_guard import is_url_safe_for_rss
 from services import ai_provider_client
+from services.ai_provider_client import AIProviderQueuedError
 from api.jobs_cron import _run_claude_match_for, _is_failed_evaluation
 from services.job_matching.claude_utils import _get_anthropic_client
 from services import cost_tracker
@@ -703,7 +704,12 @@ def score_match(user, match_id: int):
         if client is None:
             return jsonify({"error": "Weder AI_PROVIDER_SERVICE_URL noch ANTHROPIC_API_KEY gesetzt"}), 503
 
-    success = _run_claude_match_for(client, user, m)
+    try:
+        success = _run_claude_match_for(client, user, m)
+    except AIProviderQueuedError:
+        db.session.rollback()
+        return jsonify({"queued": True, "message": "Bewertung in Warteschlange — wird automatisch verarbeitet"}), 202
+
     if not success:
         db.session.rollback()
         # Nochmal Budget prüfen — kann sich gerade in der Helper-Schleife geändert haben

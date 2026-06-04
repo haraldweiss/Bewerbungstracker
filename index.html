@@ -5307,6 +5307,10 @@ const JobsView = (() => {
                         showToast(`Bewertung erstellt: ${r.match_score.toFixed(0)}/100${via}`, 'success');
                     }
                     await fetchMatches();
+                } else if (r && r.queued) {
+                    if (typeof showToast === 'function') {
+                        showToast('Bewertung in Warteschlange — wird automatisch verarbeitet', 'info');
+                    }
                 } else if (r && r.error) {
                     if (typeof showToast === 'function') {
                         showToast(r.error, 'warning');
@@ -5317,7 +5321,10 @@ const JobsView = (() => {
             } catch (e) {
                 if (typeof showToast === 'function') {
                     showToast('Bewertung fehlgeschlagen', 'error');
+                } else {
+                    alert('Fehler: ' + e.message);
                 }
+                await fetchMatches();
             }
         },
         toggleSelection(id, isChecked) {
@@ -5409,21 +5416,22 @@ const JobsView = (() => {
                 }
             } catch (e) { /* silent */ }
 
-            const updateProgress = (done, total, ok, fail, skipped, fallbackUsed) => {
+            const updateProgress = (done, total, ok, fail, skipped, fallbackUsed, queued) => {
                 if (!progressEl) return;
                 const parts = [];
                 if (providerLabel) parts.push(`🤖 ${providerLabel}`);
                 parts.push(`${done}/${total}`);
                 if (ok > 0) parts.push(`✓ ${ok}`);
                 if (fallbackUsed > 0) parts.push(`↪ ${fallbackUsed} Fallback`);
+                if (queued > 0) parts.push(`⏳ ${queued} in Warteschlange`);
                 if (fail > 0) parts.push(`✗ ${fail}`);
                 if (skipped > 0) parts.push(`⊘ ${skipped} Budget`);
                 progressEl.textContent = parts.join(' · ');
             };
 
             const total = ids.length;
-            let done = 0, ok = 0, fail = 0, skipped = 0, fallbackUsed = 0, budgetExhausted = false;
-            updateProgress(0, total, 0, 0, 0, 0);
+            let done = 0, ok = 0, fail = 0, skipped = 0, fallbackUsed = 0, budgetExhausted = false, queued = 0;
+            updateProgress(0, total, 0, 0, 0, 0, 0);
             if (skippedAlreadyScored > 0 && typeof showToast === 'function') {
                 showToast(`${skippedAlreadyScored} bereits bewertet — werden übersprungen`, 'info');
             }
@@ -5435,7 +5443,7 @@ const JobsView = (() => {
                         // Restliche Items als skipped zählen
                         skipped++;
                         done++;
-                        updateProgress(done, total, ok, fail, skipped);
+                        updateProgress(done, total, ok, fail, skipped, fallbackUsed, queued);
                         continue;
                     }
 
@@ -5444,13 +5452,12 @@ const JobsView = (() => {
                         if (r && r.match_score != null) {
                             ok++;
                             if (r.fallback_used) fallbackUsed++;
-                            // Wenn der Service einen Fallback genutzt hat, im Provider-Label
-                            // klar machen welcher Provider tatsächlich antwortet.
                             if (r.provider_used && r.provider_used !== (providerLabel.split(' · ')[0])) {
                                 providerLabel = `${r.provider_used} (Fallback)`;
                             }
+                        } else if (r && r.queued) {
+                            queued++;
                         } else if (r && r.error) {
-                            // 402 = Budget erschöpft — restliche Aufrufe sparen
                             if (/budget/i.test(r.error)) {
                                 skipped++;
                                 budgetExhausted = true;
@@ -5464,12 +5471,13 @@ const JobsView = (() => {
                         fail++;
                     }
                     done++;
-                    updateProgress(done, total, ok, fail, skipped, fallbackUsed);
+                    updateProgress(done, total, ok, fail, skipped, fallbackUsed, queued);
                 }
 
                 // Zusammenfassung
                 let msg = `${ok} bewertet`;
                 if (fallbackUsed > 0) msg += ` (${fallbackUsed}× via Fallback)`;
+                if (queued > 0) msg += `, ${queued} in Warteschlange`;
                 if (skipped > 0) msg += `, ${skipped} wegen Budget übersprungen`;
                 if (skippedAlreadyScored > 0) msg += `, ${skippedAlreadyScored} bereits bewertet`;
                 if (fail > 0) msg += `, ${fail} fehlgeschlagen`;
