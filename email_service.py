@@ -719,6 +719,8 @@ def check_and_send_summary(html_content='', text_content=''):
 
     if not html_content:
         stats = _query_weekly_stats()
+        total = stats.get('total_applications', 'error') if stats else 'no-db'
+        print(f"📊 Sending summary: total={total}, stats present={stats is not None}")
         html_content = _build_summary_html(stats, app_url)
         text_content = f"Wochenrückblick {app_url}"
 
