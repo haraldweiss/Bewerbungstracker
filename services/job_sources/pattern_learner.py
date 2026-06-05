@@ -622,62 +622,6 @@ def _build_user_prompt(
     return "\n".join(lines)
 
 
-def _ai_learn_opencode(train_samples: list[dict], platform: str,
-                       model: str = 'deepseek-v4-flash-free') -> dict:
-    """Direct opencode.ai API call for pattern training (free model)."""
-    import requests as _req
-    prompt = _build_user_prompt(train_samples, platform)
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": prompt},
-    ]
-    last_error = None
-    for attempt in (1, 2):
-        try:
-            resp = _req.post(
-                'https://api.opencode.ai/v1/chat/completions',
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "max_tokens": 2000,
-                    "temperature": 0.3,
-                },
-                timeout=120,
-            )
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"]
-        except Exception as exc:
-            last_error = f"opencode call failed: {exc}"
-            logger.warning("_ai_learn_opencode attempt %d: %s", attempt, last_error)
-            continue
-        # Parse and validate same as main path
-        content = content.strip()
-        if content.startswith("```"):
-            content = content.split("```", 2)[1]
-            if content.startswith("json"):
-                content = content[4:]
-            content = content.rstrip("`").strip()
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError as exc:
-            last_error = f"opencode JSON parse failed: {exc}"
-            continue
-        try:
-            parsed = normalize_pattern(parsed)
-        except ValueError as exc:
-            last_error = f"opencode normalize failed: {exc}"
-            continue
-        errors = validate_pattern_schema(parsed)
-        if errors:
-            last_error = f"opencode schema errors: {'; '.join(errors[:3])}"
-            continue
-        parsed = _filter_hallucinated_url_labels(parsed, train_samples)
-        return parsed
-    raise RuntimeError(
-        f"opencode pattern learning failed after 2 attempts: {last_error}"
-    )
-
-
 def ai_learn_pattern(user, train_samples: list[dict], platform: str,
                      provider_override: str | None = None,
                      model_override: str | None = None) -> dict:
@@ -694,13 +638,11 @@ def ai_learn_pattern(user, train_samples: list[dict], platform: str,
     # Use get_client() in prod (returns None if not configured); in tests the
     # `.chat` method is monkey-patched on the class, so a dummy instance is
     # sufficient.
-    # For opencode provider: use direct API call (avoids Claude costs).
-    # The ai-provider-service may not be running, so we bypass it.
-    if provider_override == 'opencode':
-        return _ai_learn_opencode(train_samples, platform, model_override)
-
     client = _aip.get_client()
     if client is None:
+        # Tests patch chat() on the class — instantiate with placeholder creds
+        # so __init__ doesn't reject empty env. Real calls would already have
+        # returned a configured client from get_client().
         client = _aip.AIProviderClient(base_url="http://test", token="test")
 
     last_error = None

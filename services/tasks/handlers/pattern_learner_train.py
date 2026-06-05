@@ -79,7 +79,6 @@ def handle_pattern_learner_train(payload: dict, *, progress_cb: Optional[Callabl
         progress_cb(30, 'ai-training pattern')
 
     try:
-        # Use cheap/free model for pattern training (no need for expensive Claude)
         pattern = pl.ai_learn_pattern(
             user, train_samples=train, platform=platform,
             provider_override='opencode',
