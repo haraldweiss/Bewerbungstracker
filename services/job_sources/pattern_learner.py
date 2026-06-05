@@ -11,7 +11,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 try:
     from jsonschema import Draft7Validator
@@ -622,6 +622,72 @@ def _build_user_prompt(
     return "\n".join(lines)
 
 
+_OPENCODE_API_KEY = os.getenv('OPENCODE_API_KEY', 'sk-2bITlBUQARtQyEMz3d25duW9kpqWzElVM3O73qvQ6VUUhjUchYl721AU7fAKob5Q')
+_OPENCODE_BASE = os.getenv('OPENCODE_BASE_URL', 'https://opencode.ai/zen/v1')
+
+
+def _ai_chat_opencode(messages: list[dict], model: str = 'deepseek-v4-flash-free') -> str:
+    """Direct call to opencode.ai API (bypasses ai-provider-service)."""
+    import requests as _req
+    resp = _req.post(
+        f'{_OPENCODE_BASE}/chat/completions',
+        json={"model": model, "messages": messages, "max_tokens": 2000, "temperature": 0.3},
+        headers={"Authorization": f"Bearer {_OPENCODE_API_KEY}"},
+        timeout=120,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
+
+
+def _ai_learn_via_provider(
+    provider_call: Callable[[list[dict]], str],
+    train_samples: list[dict], platform: str,
+) -> dict:
+    """AI-Pattern-Learning mit beliebigem Provider (Callable).
+
+    provider_call: Funktion die Messages-Liste entgegennimmt und Content-String returned.
+    """
+    last_error = None
+    for attempt in (1, 2):
+        strict = (attempt == 2)
+        prompt = _build_user_prompt(train_samples, platform, strict=strict)
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            content = provider_call(messages)
+        except Exception as exc:
+            last_error = f"AI-Call failed: {exc}"
+            logger.warning("_ai_learn_via_provider attempt %d: %s", attempt, last_error)
+            continue
+        content = (content or "").strip()
+        if content.startswith("```"):
+            content = content.split("```", 2)[1]
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.rstrip("`").strip()
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            last_error = f"AI-Output kein valides JSON: {exc}"
+            continue
+        try:
+            parsed = normalize_pattern(parsed)
+        except ValueError as exc:
+            last_error = f"Normalize-Fehler: {exc}"
+            continue
+        errors = validate_pattern_schema(parsed)
+        if errors:
+            last_error = f"Schema-Fehler: {'; '.join(errors[:3])}"
+            continue
+        parsed = _filter_hallucinated_url_labels(parsed, train_samples)
+        return parsed
+    raise RuntimeError(
+        f"Pattern learning failed after 2 attempts: {last_error}"
+    )
+
+
 def ai_learn_pattern(user, train_samples: list[dict], platform: str,
                      provider_override: str | None = None,
                      model_override: str | None = None) -> dict:
@@ -638,6 +704,14 @@ def ai_learn_pattern(user, train_samples: list[dict], platform: str,
     # Use get_client() in prod (returns None if not configured); in tests the
     # `.chat` method is monkey-patched on the class, so a dummy instance is
     # sufficient.
+    # Direct opencode.ai call for free model training (bypasses ai-provider-service)
+    if provider_override == 'opencode':
+        use_model = model_override or 'deepseek-v4-flash-free'
+        return _ai_learn_via_provider(
+            provider_call=lambda msgs: _ai_chat_opencode(msgs, use_model),
+            train_samples=train_samples, platform=platform,
+        )
+
     client = _aip.get_client()
     if client is None:
         # Tests patch chat() on the class — instantiate with placeholder creds
@@ -645,29 +719,18 @@ def ai_learn_pattern(user, train_samples: list[dict], platform: str,
         # returned a configured client from get_client().
         client = _aip.AIProviderClient(base_url="http://test", token="test")
 
-    last_error = None
-    for attempt in (1, 2):
-        strict = (attempt == 2)
-        prompt = _build_user_prompt(train_samples, platform, strict=strict)
-        try:
-            result = client.chat(
-                user_id=getattr(user, "id", None),
-                provider=provider_override or getattr(user, "ai_provider", None),
-                model=model_override or getattr(user, "ai_provider_model", None),
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=2000,
-            )
-        except Exception as exc:
-            last_error = f"AI-Call failed: {exc}"
-            logger.warning(
-                "ai_learn_pattern attempt %d: %s", attempt, last_error,
-            )
-            continue
-        # Tests mock chat() to return a dict {"content": "..."}; the real
-        # AIProviderClient.chat returns a ChatResponse dataclass. Support both.
+    # Default: use ai_provider_client
+    provider = provider_override or getattr(user, "ai_provider", None)
+    model = model_override or getattr(user, "ai_provider_model", None)
+
+    def _provider_call(messages):
+        result = client.chat(
+            user_id=getattr(user, "id", None),
+            provider=provider,
+            model=model,
+            messages=messages,
+            max_tokens=2000,
+        )
         if isinstance(result, dict):
             content = (result.get("content") or "")
         else:
@@ -676,47 +739,6 @@ def ai_learn_pattern(user, train_samples: list[dict], platform: str,
                 contents[0].text if contents and hasattr(contents[0], "text")
                 else ""
             )
-        content = (content or "").strip()
-        # Strip optional markdown fences
-        if content.startswith("```"):
-            content = content.split("```", 2)[1]
-            if content.startswith("json"):
-                content = content[4:]
-            content = content.rstrip("`").strip()
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError as exc:
-            last_error = f"AI-Output kein valides JSON: {exc}"
-            logger.warning(
-                "ai_learn_pattern attempt %d: %s", attempt, last_error,
-            )
-            continue
-        # Normalize: dropt unbekannte Felder, fuellt Defaults. Schwache LLMs
-        # (Ollama qwen3-coder etc.) halluzinieren oft 'footer' oder benennen
-        # body_card.fields_before_url um zu 'fields'. Statt zu rejecten,
-        # cleanen wir das auf.
-        try:
-            parsed = normalize_pattern(parsed)
-        except ValueError as exc:
-            last_error = f"Normalize-Fehler: {exc}"
-            logger.warning(
-                "ai_learn_pattern attempt %d: %s", attempt, last_error,
-            )
-            continue
-        errors = validate_pattern_schema(parsed)
-        if errors:
-            last_error = f"Schema-Fehler: {'; '.join(errors[:3])}"
-            logger.warning(
-                "ai_learn_pattern attempt %d: %s", attempt, last_error,
-            )
-            continue
-        # Hallucination filter: strip url_labels the AI invented out of thin air
-        # (substrings that don't actually occur in any sample mail body).
-        # Runs AFTER schema validation: an empty url_labels list is fine here —
-        # the downstream body_card_re will simply not match, and the runtime
-        # adapter falls back to subject+URL parsing.
-        parsed = _filter_hallucinated_url_labels(parsed, train_samples)
-        return parsed
-    raise RuntimeError(
-        f"ai_learn_pattern failed after 2 attempts: {last_error}"
-    )
+        return content
+
+    return _ai_learn_via_provider(_provider_call, train_samples, platform)
