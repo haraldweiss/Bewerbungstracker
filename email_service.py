@@ -440,6 +440,7 @@ def _get_main_db_path():
         return _MAIN_DB_PATH
 
     db_url = os.getenv('DATABASE_URL', '')
+    print(f"🔍 _get_main_db_path: DATABASE_URL={db_url!r}")
     if db_url and db_url.startswith('sqlite:////'):
         # sqlite:////abs/path → /abs/path (4 slashes = protocol + absolute path)
         _MAIN_DB_PATH = '/' + db_url[len('sqlite:////'):]
@@ -448,6 +449,7 @@ def _get_main_db_path():
         _MAIN_DB_PATH = db_url[len('sqlite:///'):]
     else:
         _MAIN_DB_PATH = 'instance/bewerbungstracker.db'
+    print(f"🔍 _get_main_db_path: result={_MAIN_DB_PATH!r}")
     return _MAIN_DB_PATH
 
 
