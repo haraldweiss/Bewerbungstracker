@@ -729,8 +729,9 @@ def should_send_summary():
 def check_and_send_summary(html_content='', text_content=''):
     """Check schedule and send summary if needed.
 
-    If summary_recipient is configured, sends one global summary there.
-    Otherwise sends per-user summaries to each active user.
+    Sends per-user summaries to all active users with data.
+    If summary_recipient is additionally configured, also sends a
+    global admin summary to that address.
     """
     if not should_send_summary():
         return False
@@ -738,43 +739,41 @@ def check_and_send_summary(html_content='', text_content=''):
     app_url = _get_app_url()
     subject = f"📋 Bewerbungs-Tracker Wochenrückblick - {datetime.now().strftime('%d.%m.%Y')}"
 
-    recipient = get_config('summary_recipient')
-    if recipient:
-        # Legacy single-recipient mode: global stats
-        if not html_content:
-            stats = _query_weekly_stats()
-            html_content = _build_summary_html(stats, app_url)
-            text_content = f"Wochenrückblick {app_url}"
-        ok = send_email(recipient, subject, html_content, text_content)
-        if ok:
-            set_config('last_sent', datetime.now().isoformat())
-        return ok
-
-    # Per-user mode: send personalized summary to each active user
     users = _get_active_users()
     if not users:
-        print("⚠️  No active users found for per-user summary")
+        print("⚠️  No active users found")
         set_config('last_sent', datetime.now().isoformat())
         return False
 
     sent_count = 0
+
+    # 1. Per-user summaries for all active users with data
     for u in users:
-        uid = u['id']
         email = u['email']
-        stats = _query_weekly_stats(user_id=uid)
-        # Skip users with no data at all
+        stats = _query_weekly_stats(user_id=u['id'])
         if not stats or stats['total_applications'] == 0:
             continue
         html = _build_summary_html(stats, app_url)
         txt = f"Wochenrückblick {app_url}"
         if send_email(email, subject, html, txt):
             sent_count += 1
-            print(f"📧 Per-user summary sent to {email}")
+            print(f"📧 Summary sent to {email}")
         else:
-            print(f"⚠️  Failed to send per-user summary to {email}")
+            print(f"⚠️  Failed to send summary to {email}")
+
+    # 2. Global admin summary (summary_recipient, if configured and not already sent)
+    recipient = get_config('summary_recipient')
+    if recipient and recipient not in {u['email'] for u in users}:
+        stats = _query_weekly_stats()
+        if stats and stats['total_applications'] > 0:
+            html = _build_summary_html(stats, app_url)
+            txt = f"Wochenrückblick {app_url}"
+            if send_email(recipient, subject, html, txt):
+                sent_count += 1
+                print(f"📧 Global summary sent to {recipient}")
 
     set_config('last_sent', datetime.now().isoformat())
-    print(f"📧 Per-user summary: {sent_count} emails sent")
+    print(f"📧 Summary: {sent_count} emails sent")
     return sent_count > 0
 
 # ── Email Monitoring ──────────────────────────────────────────────────
