@@ -1202,6 +1202,23 @@
                 Firmen, die dich kürzlich abgelehnt haben, erscheinen für die gewählte Zeit nicht mehr in den Vorschlägen.
             </div>
         </div>
+        <div class="form-group" style="margin-bottom:0.75rem;padding-top:0.5rem;border-top:1px solid var(--border);">
+            <label style="display:block;margin-bottom:0.3rem;font-size:0.9rem">Job-Typen ausblenden</label>
+            <div style="display:flex;gap:1rem;flex-wrap:wrap">
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+                    <input type="checkbox" id="jtBlacklistWerkstudent" value="werkstudent" style="width:18px;height:18px"> Werkstudenten-Stellen
+                </label>
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+                    <input type="checkbox" id="jtBlacklistFreelance" value="freelance" style="width:18px;height:18px"> Freelancer / Freiberuflich
+                </label>
+                <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+                    <input type="checkbox" id="jtBlacklistTempAgency" value="temp_agency" style="width:18px;height:18px"> Arbeitnehmerüberlassung (AÜ)
+                </label>
+            </div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem">
+                Stellen mit diesen Typ-Schlüsselwörtern im Titel werden automatisch verworfen.
+            </div>
+        </div>
         <button class="btn btn-primary" onclick="saveJobDiscoveryFilters()">💾 Filter speichern</button>
         <div id="jdFiltersStatus" style="margin-top:0.5rem;font-size:0.85em;color:var(--text-muted)"></div>
     </div>
@@ -3355,6 +3372,11 @@ async function loadJobDiscoveryFilters() {
         if (rejWindow && typeof f.job_reject_window_days === 'number') {
             rejWindow.value = f.job_reject_window_days;
         }
+        // Job-Type-Blacklist aus Backend laden
+        const blacklist = (f.job_type_blacklist) || [];
+        document.getElementById('jtBlacklistWerkstudent').checked = blacklist.includes('werkstudent');
+        document.getElementById('jtBlacklistFreelance').checked = blacklist.includes('freelance');
+        document.getElementById('jtBlacklistTempAgency').checked = blacklist.includes('temp_agency');
     } catch (e) {
         // silent — Endpoint braucht ggf. Re-Login
     }
@@ -3414,6 +3436,11 @@ async function saveJobDiscoveryFilters() {
                 job_notification_threshold: notification_threshold,
                 job_reject_filter_enabled: rejectEnabled,
                 job_reject_window_days: rejectWindow,
+                job_type_blacklist: [
+                    ...(document.getElementById('jtBlacklistWerkstudent').checked ? ['werkstudent'] : []),
+                    ...(document.getElementById('jtBlacklistFreelance').checked ? ['freelance'] : []),
+                    ...(document.getElementById('jtBlacklistTempAgency').checked ? ['temp_agency'] : []),
+                ],
             }),
         });
         // Frontend-Cache für nächsten Load
@@ -12004,34 +12031,71 @@ function loadCoverLetterPage() {
             <button class="modal-close" onclick="closeModal('dismissFeedbackModal')">✕</button>
         </div>
         <form id="dismissFeedbackForm" style="padding:1.5rem;">
-            <p style="margin-top:0;color:var(--text-muted);font-size:0.9rem">
-                Optional: Hilf dem System zu lernen, welche Jobs nicht passen.
-            </p>
-            <fieldset style="border:1px solid var(--border);border-radius:6px;padding:0.75rem 1rem;margin:0 0 1rem;">
-                <legend style="padding:0 0.5rem;font-size:0.85rem;color:var(--text-muted)">Gründe (mehrere möglich)</legend>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem 1rem;">
-                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="wrong_location"> Falscher Ort</label>
-                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="salary_too_low"> Gehalt zu niedrig</label>
-                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="missing_skills"> Fehlende Skills</label>
-                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="wrong_industry"> Falsche Branche</label>
-                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="overqualified"> Überqualifiziert</label>
-                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="underqualified"> Unterqualifiziert</label>
-                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="wrong_seniority"> Falsches Level</label>
-                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="other"> Sonstiges</label>
+            <fieldset id="quickActionBlock" style="border:1px solid var(--border);border-radius:6px;padding:0.75rem 1rem;margin:0 0 1rem;">
+                <legend style="padding:0 0.5rem;font-size:0.85rem;color:var(--text-muted)">Direkt-Aktion</legend>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                    <button type="button" class="btn btn-secondary qa-btn" data-action="company_rejected" style="text-align:left;padding:0.6rem 0.75rem;">
+                        <span style="font-weight:500">🚫 Firma hat schon abgelehnt</span>
+                        <span style="display:block;font-size:0.75rem;color:var(--text-muted);font-weight:normal">Future-Block für Firma</span>
+                    </button>
+                    <button type="button" class="btn btn-secondary qa-btn" data-action="already_applied" style="text-align:left;padding:0.6rem 0.75rem;">
+                        <span style="font-weight:500">🔁 Schon dort beworben</span>
+                        <span style="display:block;font-size:0.75rem;color:var(--text-muted);font-weight:normal">Als beworben markieren</span>
+                    </button>
+                    <button type="button" class="btn btn-secondary qa-btn" data-action="job_unavailable" style="text-align:left;padding:0.6rem 0.75rem;">
+                        <span style="font-weight:500">📋 Stelle nicht mehr verfügbar</span>
+                        <span style="display:block;font-size:0.75rem;color:var(--text-muted);font-weight:normal">Marker für Phrasen-Lernen</span>
+                    </button>
+                    <button type="button" class="btn btn-secondary qa-btn" data-action="wrong_job_type" style="text-align:left;padding:0.6rem 0.75rem;">
+                        <span style="font-weight:500">🏷️ Falscher Job-Typ</span>
+                        <span style="display:block;font-size:0.75rem;color:var(--text-muted);font-weight:normal">Aktiviert Filter im Profil</span>
+                    </button>
+                </div>
+                <div id="qaJobTypeSubchoice" style="display:none;margin-top:0.75rem;padding-top:0.75rem;border-top:1px dashed var(--border)">
+                    <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.4rem">Welcher Typ?</div>
+                    <div style="display:flex;gap:0.6rem;flex-wrap:wrap">
+                        <label><input type="radio" name="qa_job_type" value="werkstudent"> Werkstudent</label>
+                        <label><input type="radio" name="qa_job_type" value="freelance"> Freelancer / Freiberuflich</label>
+                        <label><input type="radio" name="qa_job_type" value="temp_agency"> Arbeitnehmerüberlassung (AÜ)</label>
+                    </div>
+                    <button type="button" class="btn btn-primary btn-sm" id="qaJobTypeSubmit" style="margin-top:0.5rem">Anwenden + Verwerfen</button>
                 </div>
             </fieldset>
-            <label style="display:block;margin-bottom:1rem">
-                <span style="font-size:0.85rem;color:var(--text-muted)">Freitext (optional, max 500 Zeichen)</span>
-                <textarea name="feedback_text" maxlength="500" rows="3"
-                          style="width:100%;margin-top:0.25rem;padding:0.5rem;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:0.9rem;box-sizing:border-box"
-                          placeholder="z.B. Stellenanzeige zu vage, Remote-Anteil nicht klar, ..."></textarea>
-            </label>
+
+            <details style="margin:0 0 1rem;">
+                <summary style="cursor:pointer;color:var(--text-muted);font-size:0.85rem">Optional: AI-Match-Feedback geben</summary>
+                <fieldset style="border:1px solid var(--border);border-radius:6px;padding:0.75rem 1rem;margin:0.75rem 0;">
+                    <legend style="padding:0 0.5rem;font-size:0.85rem;color:var(--text-muted)">Gründe (mehrere möglich)</legend>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem 1rem;">
+                        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="wrong_location"> Falscher Ort</label>
+                        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="salary_too_low"> Gehalt zu niedrig</label>
+                        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="missing_skills"> Fehlende Skills</label>
+                        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="wrong_industry"> Falsche Branche</label>
+                        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="overqualified"> Überqualifiziert</label>
+                        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="underqualified"> Unterqualifiziert</label>
+                        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="wrong_seniority"> Falsches Level</label>
+                        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer"><input type="checkbox" name="reason" value="other"> Sonstiges</label>
+                    </div>
+                </fieldset>
+                <label style="display:block;margin-bottom:0">
+                    <span style="font-size:0.85rem;color:var(--text-muted)">Freitext (optional, max 500 Zeichen)</span>
+                    <textarea name="feedback_text" maxlength="500" rows="3"
+                              style="width:100%;margin-top:0.25rem;padding:0.5rem;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:0.9rem;box-sizing:border-box"
+                              placeholder="z.B. Stellenanzeige zu vage, Remote-Anteil nicht klar, ..."></textarea>
+                </label>
+            </details>
+
             <div class="modal-footer" style="margin:0 -1.5rem -1.5rem;">
                 <button type="button" class="btn btn-secondary" id="dismissCancelBtn" onclick="closeModal('dismissFeedbackModal')">Abbrechen</button>
                 <button type="button" class="btn btn-secondary" id="dismissSkipBtn">Skip (ohne Feedback)</button>
                 <button type="submit" class="btn btn-danger" id="dismissSubmitBtn">Verwerfen mit Feedback</button>
             </div>
         </form>
+        <style>
+            @media (max-width: 600px) {
+                #quickActionBlock > div:first-of-type { grid-template-columns: 1fr !important; }
+            }
+        </style>
     </div>
 </div>
 
@@ -12049,8 +12113,11 @@ function loadCoverLetterPage() {
         const form = document.getElementById('dismissFeedbackForm');
         if (form) {
             form.querySelectorAll('input[name="reason"]').forEach(cb => { cb.checked = false; });
+            form.querySelectorAll('input[name="qa_job_type"]').forEach(rb => { rb.checked = false; });
             const ta = form.querySelector('textarea[name="feedback_text"]');
             if (ta) ta.value = '';
+            const sub = document.getElementById('qaJobTypeSubchoice');
+            if (sub) sub.style.display = 'none';
         }
         if (typeof openModal === 'function') {
             openModal('dismissFeedbackModal');
@@ -12060,21 +12127,34 @@ function loadCoverLetterPage() {
         }
     };
 
-    async function performDismiss(reasons, text) {
+    async function performDismiss(reasons, text, quickAction, jobType) {
         const id = pendingMatchId;
         if (!id) return;
         const body = { status: 'dismissed' };
-        if (Array.isArray(reasons) && reasons.length) body.feedback_reasons = reasons;
-        if (text) body.feedback_text = text;
+        if (quickAction) {
+            body.quick_action = quickAction;
+            if (jobType) body.job_type = jobType;
+        } else {
+            if (Array.isArray(reasons) && reasons.length) body.feedback_reasons = reasons;
+            if (text) body.feedback_text = text;
+        }
         try {
             await Auth.fetch(`/jobs/matches/${id}`, {
                 method: 'PATCH',
                 body: JSON.stringify(body),
             });
             if (typeof showToast === 'function') {
-                showToast(body.feedback_reasons || body.feedback_text
-                    ? 'Verworfen — danke für das Feedback'
-                    : 'Verworfen', 'success');
+                const msg = quickAction
+                    ? ({
+                        company_rejected: '\u{1F6AB} Firma blockiert + verworfen',
+                        already_applied: '\u{1F501} Als beworben markiert',
+                        job_unavailable: '\u{1F4CB} Markiert als nicht mehr verf\u00fcgbar',
+                        wrong_job_type: '\u{1F3F7}\uFE0F Job-Typ-Filter aktiviert + verworfen',
+                    }[quickAction]) || 'Verworfen'
+                    : (reasons && reasons.length || text
+                        ? 'Verworfen \u2014 danke f\u00fcr das Feedback'
+                        : 'Verworfen');
+                showToast(msg, 'success');
             }
             const cb = onDoneCallback;
             pendingMatchId = null;
@@ -12094,16 +12174,42 @@ function loadCoverLetterPage() {
     document.addEventListener('DOMContentLoaded', () => {
         const form = document.getElementById('dismissFeedbackForm');
         const skipBtn = document.getElementById('dismissSkipBtn');
+        const jobTypeSubchoice = document.getElementById('qaJobTypeSubchoice');
+        const jobTypeSubmit = document.getElementById('qaJobTypeSubmit');
+
         if (form) {
             form.addEventListener('submit', (e) => {
                 e.preventDefault();
                 const reasons = Array.from(form.querySelectorAll('input[name="reason"]:checked')).map(cb => cb.value);
                 const text = (form.querySelector('textarea[name="feedback_text"]').value || '').trim();
-                performDismiss(reasons, text);
+                performDismiss(reasons, text, null, null);
             });
         }
         if (skipBtn) {
-            skipBtn.addEventListener('click', () => performDismiss([], ''));
+            skipBtn.addEventListener('click', () => performDismiss([], '', null, null));
+        }
+
+        document.querySelectorAll('.qa-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.action;
+                if (action === 'wrong_job_type') {
+                    if (jobTypeSubchoice) jobTypeSubchoice.style.display = 'block';
+                } else {
+                    performDismiss([], '', action, null);
+                }
+            });
+        });
+        if (jobTypeSubmit) {
+            jobTypeSubmit.addEventListener('click', () => {
+                const checked = document.querySelector('input[name="qa_job_type"]:checked');
+                if (!checked) {
+                    if (typeof showToast === 'function') {
+                        showToast('Bitte einen Job-Typ w\u00e4hlen', 'warning');
+                    }
+                    return;
+                }
+                performDismiss([], '', 'wrong_job_type', checked.value);
+            });
         }
     });
 })();
