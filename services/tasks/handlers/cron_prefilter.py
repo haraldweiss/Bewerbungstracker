@@ -29,7 +29,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
         AI_CONFIRM_BUDGET,
     )
     from services.job_matching.cv_tokenizer import tokenize_cv
-    from services.job_matching.prefilter import score_job, PrefilterContext
+    from services.job_matching.prefilter import score_job, PrefilterContext, detect_job_type
     from services.email_import_utils import (
         get_rejected_companies_lower, normalize_company,
     )
@@ -44,11 +44,13 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
     user_cache: dict = {}
     ctx_cache: dict = {}
     rejected_companies_cache: dict = {}
+    job_type_blacklist_cache: dict = {}
     scored = 0
     dismissed = 0
     ai_confirm_used = 0
     ai_confirm_overruled = 0
     rejected_company_dismissed = 0
+    wrong_job_type_dismissed = 0
 
     def _rejected_companies_for(user_id: str, window_days: int) -> set:
         if user_id not in rejected_companies_cache:
@@ -74,6 +76,13 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
                 language_filter=user.job_language_filter,
                 region_filter=user.job_region_filter,
             )
+            import json as _json
+            try:
+                job_type_blacklist_cache[match.user_id] = set(
+                    _json.loads(user.job_type_blacklist or '[]')
+                )
+            except (ValueError, TypeError):
+                job_type_blacklist_cache[match.user_id] = set()
 
         raw = RawJob.query.get(match.raw_job_id)
 
@@ -113,6 +122,13 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
                 if normalize_company(raw.company) in rejected_set:
                     is_rejected_company = True
 
+        blacklist = job_type_blacklist_cache.get(match.user_id, set())
+        is_blacklisted_job_type = False
+        if blacklist:
+            detected = detect_job_type(raw.title)
+            if detected and detected in blacklist:
+                is_blacklisted_job_type = True
+
         user_has_judgment = _has_user_judgment(match)
 
         if is_rejected_company:
@@ -121,6 +137,12 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
                 match.feedback_text = 'company_already_rejected'
             dismissed += 1
             rejected_company_dismissed += 1
+        elif is_blacklisted_job_type:
+            match.status = 'dismissed'
+            if not user_has_judgment:
+                match.feedback_text = 'wrong_job_type_blocked'
+            dismissed += 1
+            wrong_job_type_dismissed += 1
         elif is_duplicate:
             match.status = 'dismissed'
             if not user_has_judgment:
@@ -163,6 +185,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
         "scored": scored,
         "dismissed": dismissed,
         "rejected_company_dismissed": rejected_company_dismissed,
+        "wrong_job_type_dismissed": wrong_job_type_dismissed,
         "ai_confirm_used": ai_confirm_used,
         "ai_confirm_overruled": ai_confirm_overruled,
         "duration_sec": round(time.time() - started, 2),
