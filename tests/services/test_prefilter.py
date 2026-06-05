@@ -65,3 +65,48 @@ def test_text_blob_cv_normalization_capped():
     # Vor dem Cap-Fix wäre der Score ~1-2% gewesen (4 Hits / 304 Pool).
     # Nach Cap auf 50: 4 / 50 = 8% → noch besser durch zusätzliche Token-Hits.
     assert score >= 8, f"Erwarte score >= 8, got {score}"
+
+
+from services.job_matching.prefilter import detect_job_type
+
+
+def test_detect_job_type_werkstudent():
+    assert detect_job_type("Werkstudent IT-Support (m/w/d)") == "werkstudent"
+    assert detect_job_type("Werkstudentin Data") == "werkstudent"
+    assert detect_job_type("Werkstudierende Cloud") == "werkstudent"
+
+
+def test_detect_job_type_freelance():
+    assert detect_job_type("Freelancer Kundenberater") == "freelance"
+    assert detect_job_type("Senior Engineer (freiberuflich)") == "freelance"
+    assert detect_job_type("Freiberufler Backend") == "freelance"
+
+
+def test_detect_job_type_temp_agency_full_word():
+    assert detect_job_type("IT-Support via Arbeitnehmerüberlassung") == "temp_agency"
+    assert detect_job_type("Zeitarbeit Logistik") == "temp_agency"
+    assert detect_job_type("Leiharbeit Kundenservice") == "temp_agency"
+
+
+def test_detect_job_type_au_only_as_standalone_word():
+    # Positivfall: "AÜ" als eigenes Wort
+    assert detect_job_type("Senior Engineer (AÜ)") == "temp_agency"
+    # Negativfall: "AÜ" als Substring darf NICHT matchen
+    assert detect_job_type("Bautätigkeit prüfen") is None
+    assert detect_job_type("Genauigkeit zählt") is None
+
+
+def test_detect_job_type_returns_none_for_normal_title():
+    assert detect_job_type("Senior Cyber Security Analyst (m/w/d)") is None
+    assert detect_job_type("DevOps Engineer Berlin") is None
+
+
+def test_detect_job_type_handles_none_and_empty():
+    assert detect_job_type(None) is None
+    assert detect_job_type("") is None
+    assert detect_job_type("   ") is None
+
+
+def test_detect_job_type_case_insensitive():
+    assert detect_job_type("WERKSTUDENT") == "werkstudent"
+    assert detect_job_type("FreElAnCeR") == "freelance"
