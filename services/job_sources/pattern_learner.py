@@ -608,7 +608,7 @@ def _build_user_prompt(
     lines.append("Sample-Mails (Layout aus diesen ableiten):")
     for i, em in enumerate(train_samples):
         subj = (em.get("subject") or "")[:200]
-        body = (em.get("body") or "")[:6000]
+        body = (em.get("body") or "")[:3000]
         lines.append(f"\n--- Mail {i+1} ---\nSubject: {subj}\nBody:\n{body}\n")
     lines.append(
         "\nNur das JSON zurueckgeben, EXAKT mit den 3 Top-Level-Keys "
@@ -634,10 +634,18 @@ def _ai_chat_opencode(messages: list[dict], model: str = 'deepseek-v4-flash-free
         f'{_OPENCODE_BASE}/chat/completions',
         json={"model": model, "messages": messages, "max_tokens": 2000, "temperature": 0.3},
         headers={"Authorization": f"Bearer {_OPENCODE_API_KEY}"},
-        timeout=120,
+        timeout=180,
     )
+    if resp.status_code != 200:
+        logger.error("opencode API returned %s: %s", resp.status_code, resp.text[:200])
     resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    data = resp.json()
+    content = data["choices"][0]["message"]["content"] or ""
+    if not content:
+        logger.warning("opencode returned empty content. Finish: %s, Model: %s",
+                       data["choices"][0].get("finish_reason"),
+                       data.get("model"))
+    return content
 
 
 def _ai_learn_via_provider(
