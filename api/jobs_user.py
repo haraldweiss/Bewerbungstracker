@@ -546,6 +546,29 @@ def update_match(user, match_id: int):
     if m.user_id != user.id:
         return jsonify({"error": "Forbidden"}), 403
     data = request.get_json() or {}
+
+    # Quick-Action (Phase 1): triggert Folgeaktionen + setzt status='dismissed'
+    quick_action = data.get('quick_action')
+    if quick_action is not None:
+        from services.job_matching.quick_actions import (
+            apply_quick_action, FEEDBACK_TEXT_BY_ACTION, QuickActionError,
+        )
+        raw = RawJob.query.get(m.raw_job_id)
+        if raw is None:
+            return jsonify({"error": "RawJob nicht gefunden"}), 500
+        try:
+            apply_quick_action(
+                user=user, match=m, raw=raw,
+                action=quick_action,
+                job_type=data.get('job_type'),
+            )
+        except QuickActionError as exc:
+            return jsonify({"error": str(exc)}), 400
+        m.status = 'dismissed'
+        m.feedback_text = FEEDBACK_TEXT_BY_ACTION[quick_action]
+        db.session.commit()
+        return jsonify({"id": m.id, "status": m.status}), 200
+
     new_status = data.get("status")
     if new_status not in ('unbewertet', 'dismissed', 'new'):
         return jsonify({"error": "status muss 'unbewertet'|'dismissed'|'new' sein"}), 400

@@ -10,6 +10,18 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
+from services.job_matching.quick_actions import VALID_JOB_TYPES as _VALID_JOB_TYPES
+
+
+def _parse_job_type_blacklist(raw):
+    if not raw:
+        return []
+    try:
+        v = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    return [x for x in v if isinstance(x, str) and x in _VALID_JOB_TYPES]
+
 from api.auth import token_required
 from database import db
 
@@ -159,6 +171,7 @@ def get_job_discovery_status(user):
             'job_notification_threshold': user.job_notification_threshold,
             'job_reject_filter_enabled': user.job_reject_filter_enabled,
             'job_reject_window_days': user.job_reject_window_days,
+            'job_type_blacklist': _parse_job_type_blacklist(user.job_type_blacklist),
         },
     }, 200
 
@@ -205,6 +218,15 @@ def update_job_discovery_filters(user):
 
     if 'job_reject_filter_enabled' in data:
         user.job_reject_filter_enabled = bool(data['job_reject_filter_enabled'])
+
+    if 'job_type_blacklist' in data:
+        v = data['job_type_blacklist']
+        if not isinstance(v, list) or any(not isinstance(x, str) for x in v):
+            return {'error': 'job_type_blacklist muss list of strings sein'}, 400
+        invalid = [x for x in v if x not in _VALID_JOB_TYPES]
+        if invalid:
+            return {'error': f'unbekannte job_types: {invalid}'}, 400
+        user.job_type_blacklist = json.dumps(sorted(set(v)))
 
     if 'job_reject_window_days' in data:
         try:
