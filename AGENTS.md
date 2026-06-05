@@ -73,6 +73,24 @@ If `user.email` is unset, empty, or fake — **stop, fix it, then proceed**. Pas
 - Nicht für einmalige Tasks. Nicht als Ersatz für `/schedule` / scheduled-tasks (das ist für längere/cron-artige Routinen außerhalb der laufenden Session).
 - **opencode**: Stand 2026-06-05 ist kein direktes `/loop`-Äquivalent bekannt. Falls eine opencode-Session Polling braucht → Frage an User stellen oder die Polling-Aufgabe an Claude Code abgeben. Wenn ein opencode-Pendant auftaucht, hier ergänzen.
 
+### 3.7 Session-Limit-Handoff bei ~90 % (Pflicht, gilt allgemein)
+**Sobald Anzeichen vorliegen, dass die Session ~90 % des Context-/Token-Limits erreicht hat — VOR weiteren Aktionen Übergabe schreiben und stoppen.**
+
+Anzeichen (eines reicht): wiederholte System-Compression-Hinweise; sehr viele/große Tool-Outputs in der laufenden Session; lange ununterbrochene Arbeit mit mehreren Subagent-Dispatches; Auto-Compression-Trigger feuert demnächst.
+
+**Übergabe = neuer datierter Eintrag in §7 (Handoff zone)** mit mindestens:
+- Was fertig wurde in dieser Session: Commits (SHA), Branches, PRs (Link).
+- Was lokal noch nicht committed / nicht gepusht ist (Pfad + Kurzbeschreibung).
+- Was als nächstes ansteht und WO exakt weitergemacht werden kann (Datei + Zeile, oder Task-Nummer im Plan).
+- Bei Subagent-Driven-Development aktiv: zuletzt abgeschlossener Task, nächster auszuführender Task, offene Reviewer-Issues.
+
+**Nach der Übergabe:**
+- KEINE weiteren Subagents dispatchen.
+- KEINE Pushes / PR-Updates / Merges / Deploys.
+- Eine knappe Schluss-Nachricht: „Session bei ~90 %, Übergabe in §7 geschrieben, hier ist Schluss."
+
+**Faustregel:** Im Zweifel zu früh übergeben statt zu spät. Eine zu früh geschriebene Übergabe kostet wenig; eine bei einem Subagent-Push abgebrochene Session kostet richtig (verlorener Kontext + halbe Reviews + möglicherweise inkonsistente Commit-Reihenfolge).
+
 ---
 
 ## 4. Verification standards
