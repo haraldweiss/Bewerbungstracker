@@ -14,17 +14,17 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade():
+def upgrade() -> None:
     op.add_column(
         'users',
         sa.Column(
             'job_type_blacklist',
             sa.Text(),
             nullable=False,
-            server_default="'[]'",
+            server_default='[]',
         ),
     )
 
 
-def downgrade():
+def downgrade() -> None:
     op.drop_column('users', 'job_type_blacklist')

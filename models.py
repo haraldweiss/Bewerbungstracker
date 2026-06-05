@@ -58,7 +58,7 @@ class User(db.Model):
     job_learn_min_samples = db.Column(db.Integer, default=3, nullable=False)
     job_learn_weight_pct = db.Column(db.Integer, default=30, nullable=False)
     job_type_blacklist = db.Column(db.Text, nullable=False, default='[]',
-                                    server_default="'[]'")
+                                    server_default='[]')
 
     # AI Provider Settings (Phase B)
     ai_provider = db.Column(db.String(50), default='claude', nullable=False)  # 'claude', 'ollama', 'openai', etc.
