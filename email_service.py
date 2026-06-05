@@ -393,10 +393,13 @@ def send_email(recipient, subject, html_body, text_body=''):
             log_email(recipient, subject, 'failed', error)
             return False
 
+        # From address: use mail_from config if set, otherwise SMTP username
+        mail_from = get_config('mail_from') or smtp_user
+
         # Create message
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
-        msg['From'] = smtp_user
+        msg['From'] = mail_from
         msg['To'] = recipient
 
         if text_body:
