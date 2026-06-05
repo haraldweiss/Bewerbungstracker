@@ -482,23 +482,43 @@ def _query_weekly_stats():
         )
         stats['new_applications'] = cur.fetchone()[0]
 
+        # Status counts (current state, not just this week)
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='absage' AND created_at >= ?",
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='absage'"
+        )
+        stats['rejected_total'] = cur.fetchone()[0]
+
+        # New status creations this week (created_at = when entered in system)
+        cur.execute(
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='beworben' AND created_at >= ?",
+            (week_ago,),
+        )
+        stats['new_applications_week'] = cur.fetchone()[0]
+
+        # Status changes this week (updated_at = when record last changed)
+        cur.execute(
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='absage' AND updated_at >= ?",
             (week_ago,),
         )
         stats['rejections_week'] = cur.fetchone()[0]
 
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='interview' AND created_at >= ?",
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='interview' AND updated_at >= ?",
             (week_ago,),
         )
         stats['interviews_week'] = cur.fetchone()[0]
 
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='zusage' AND created_at >= ?",
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='zusage' AND updated_at >= ?",
             (week_ago,),
         )
         stats['offers_week'] = cur.fetchone()[0]
+
+        cur.execute(
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='beworben' AND updated_at >= ?",
+            (week_ago,),
+        )
+        stats['new_applications_updated_week'] = cur.fetchone()[0]
 
         cur.execute(
             "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='beworben'"
@@ -514,11 +534,11 @@ def _query_weekly_stats():
         )
         stats['dismissed_week'] = cur.fetchone()[0]
 
-        # Recent status changes (last 7 days)
+        # Recent status changes (last 7 days, by updated_at)
         cur.execute(
-            """SELECT company, position, status, created_at FROM applications
-               WHERE deleted=0 AND created_at >= ?
-               ORDER BY created_at DESC LIMIT 10""",
+            """SELECT company, position, status, updated_at FROM applications
+               WHERE deleted=0 AND updated_at >= ?
+               ORDER BY updated_at DESC LIMIT 10""",
             (week_ago,),
         )
         stats['recent_changes'] = [dict(r) for r in cur.fetchall()]
@@ -555,7 +575,7 @@ def _build_summary_html(stats, app_url):
         return html
 
     total = stats.get('total_applications', 0)
-    new_apps = stats.get('new_applications', 0)
+    new_beworben = stats.get('new_applications_week', 0)
     rejections = stats.get('rejections_week', 0)
     interviews = stats.get('interviews_week', 0)
     offers = stats.get('offers_week', 0)
@@ -595,7 +615,7 @@ def _build_summary_html(stats, app_url):
         <table style="width:100%;border-collapse:collapse;margin:8px 0;">
             <tr>
                 <td style="text-align:center;padding:10px;background:#F0FDF4;border-radius:8px 0 0 0;width:25%;">
-                    <div style="font-size:1.5em;font-weight:bold;color:#16A34A;">{new_apps}</div>
+                    <div style="font-size:1.5em;font-weight:bold;color:#16A34A;">{new_beworben}</div>
                     <div style="font-size:0.75em;color:#666;">Neu beworben</div>
                 </td>
                 <td style="text-align:center;padding:10px;background:#FFF7ED;width:25%;">
