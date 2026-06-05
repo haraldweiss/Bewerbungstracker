@@ -151,6 +151,38 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 
 ## 7. Handoff zone (free-form, append-only)
 
+### 2026-06-05 — Quick-Reasons-UI Phase 1: Tasks 1+2+3 implementiert, Übergabe per §3.7
+
+**Status:** Subagent-Driven-Development läuft. **3 von 9 Tasks fertig**, lokal committed, NICHT gepusht. Übergabe weil Session-Limit naht (neue Regel §3.7).
+
+**Branch:** `claude/modest-goldberg-c98a13` (Worktree: `.claude/worktrees/modest-goldberg-c98a13/`).
+**Offener PR:** [#20](https://github.com/haraldweiss/Bewerbungstracker/pull/20) (für Auto-Reject-Schärfung — Quick-Reasons-Commits liegen im selben Branch und würden beim Push den PR aufblähen; vor Push überlegen ob neuer Branch).
+
+**Lokale Commits seit `9eda949` (origin/master):**
+- `34d7152` Fix: Auto-Reject matcht Firmen mit/ohne Rechtsform-Suffix (PR #20)
+- `82d301f` Add: AGENTS.md §3.6 — /loop-Regel
+- `5c44fce` Fix: Status 'ghosting' zaehlt als Reject
+- `8790048` Add: AGENTS.md §7 Handoff (Auto-Reject 2026-06-05)
+- `c1a0e90` Add: Design-Spec Quick-Reasons-UI
+- `d5c028c` Add: Implementation-Plan Quick-Reasons-UI (9 Tasks)
+- `6037597` + `1b8ab56` **Task 1** ✅ — Migration `a9b8c7d6e5f4` + `User.job_type_blacklist TEXT NOT NULL DEFAULT '[]'`. Fix-Commit korrigiert `server_default="'[]'"` → `'[]'` (bare, war Bug im Plan). 2 Tests grün.
+- `d957441` Add: AGENTS.md §3.7 — Pflicht-Handoff bei ~90 % Session-Limit
+- `fdabc3b` + `2a31597` **Task 2** ✅ — `detect_job_type()` in `services/job_matching/prefilter.py` + 7 (→9) Unit-Tests. Fix-Commit nach Review: `auf rechnung` → `auf rechnungsbasis` (false-positive-Guard), `werkstudenten`-Plural ergänzt, Test-Import oben.
+- `86c1abb` **Task 3** ✅ Implementer + Spec-Review noch offen — `cron_prefilter` integriert `detect_job_type` (Reihenfolge: rejected_company → wrong_job_type → duplicate → low_score). 3 neue Handler-Tests grün, 41/41 Regression grün. Return-Dict um `wrong_job_type_dismissed` erweitert.
+
+**Wo genau weitermachen:**
+- **Task 3 Spec-Review** noch nicht gelaufen. Dispatch-Prompt-Pattern siehe Task 1 + 2 (gleiche Struktur). BASE_SHA `2a31597`, HEAD_SHA `86c1abb`.
+- **Task 3 Code-Quality-Review** nach Spec-Review.
+- Danach **Tasks 4-9** aus dem Plan: [`docs/superpowers/plans/2026-06-05-quick-reasons-ui.md`](docs/superpowers/plans/2026-06-05-quick-reasons-ui.md).
+- TaskCreate-Liste (#1-#9) ist persistiert; #1+#2 completed, #3 in_progress, #4-#9 pending.
+
+**Wichtige Lessons-Learned für nächste Session:**
+- Plan hatte `server_default="'[]'"` — falsch. Konvention im Repo (siehe `platform_profiles`-Migration) ist `server_default='[]'` bare. Sollte im Plan korrigiert werden bevor Task 1 wiederholt würde.
+- `JobSource` hat kein `config_json`-Kwarg im Constructor, sondern Property-Setter `src.config = {}` (Pattern aus `test_handler_cron_indeed_email_import.py`).
+- `auf rechnung` als Freelance-Signal ist zu breit — `auf rechnungsbasis` ist die saubere Variante.
+
+**Nicht gepusht, nicht deployed.** PR #20 ist MERGEABLE aber stale gegenüber lokalem Stand. Beim Push entscheiden: PR #20 erweitern oder neuen Branch für Quick-Reasons.
+
 ### 2026-06-05 — Auto-Reject-Analyse + Quick-Win-Fixes
 - **Analyse Prod-DB:** 1.786/1.891 JobMatches dismissed (94 %), aber `company_already_rejected` traf nur 7×. Den 138 manuellen User-Texten standen 12+ Fälle „X hat schon abgesagt" gegenüber → zwei Lücken identifiziert: (a) Suffix-Mismatch („Signal Iduna" vs. „Signal Iduna Group AG"), (b) Status `ghosting` nicht in Reject-Set.
 - **Fix 1 — Company-Normalisierung:** Neuer Helper `services/email_import_utils.py::normalize_company()` (Rechtsformen-Strip GmbH/AG/KG/SE/Ltd/Inc + „Group/Holding/International" + Trailing-Klammern). `get_rejected_companies_lower()` liefert normalisiertes Set. Alle 4 Vergleichsstellen umgestellt (cron_prefilter, email_import, cron_indeed_email_import, api/jobs_user). Inline-Duplikat in cron_prefilter entfernt.
