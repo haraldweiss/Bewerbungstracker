@@ -36,7 +36,9 @@ except ImportError:
 
 HOST = os.getenv('BIND_HOST', '127.0.0.1')
 PORT = 8766
-DB_FILE = 'email_config.db'
+DATA_DIR = os.getenv('EMAIL_DATA_DIR', '/app/data')
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_FILE = os.path.join(DATA_DIR, 'email_config.db')
 MAX_REQUEST_SIZE_BYTES = 1024 * 1024  # 1MB
 ENCRYPTION_KEY = None  # Will be derived from master password
 CREDENTIALS_CACHE = {}  # Cache for credentials to avoid repeated DB lookups
