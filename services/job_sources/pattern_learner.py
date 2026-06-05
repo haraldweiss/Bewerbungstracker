@@ -625,9 +625,11 @@ def _build_user_prompt(
 
 _OPENCODE_API_KEY = os.getenv('OPENCODE_API_KEY', 'sk-2bITlBUQARtQyEMz3d25duW9kpqWzElVM3O73qvQ6VUUhjUchYl721AU7fAKob5Q')
 _OPENCODE_BASE = os.getenv('OPENCODE_BASE_URL', 'https://opencode.ai/zen/v1')
+_OPENCODE_FREE_MODEL = os.getenv('OPENCODE_FREE_MODEL', 'mimo-v2.5-free')
 
 
-def _ai_chat_opencode(messages: list[dict], model: str = 'deepseek-v4-flash-free') -> str:
+def _ai_chat_opencode(messages: list[dict], model: str = '') -> str:
+    model = model or _OPENCODE_FREE_MODEL
     """Direct call to opencode.ai API (bypasses ai-provider-service).
 
     Uses higher max_tokens for DeepSeek models which consume tokens on
