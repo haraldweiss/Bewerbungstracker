@@ -2753,6 +2753,9 @@ async function init() {
     loadSMTPSettings();
     loadEmailMonitoringSettings();
 
+    // Model benchmarks laden (für capability score)
+    loadBenchmarks();
+
     // Benachrichtigungen initialisieren
     if (state.settings.pushNotificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
         console.log('Push-Benachrichtigungen aktiv');
@@ -10467,6 +10470,11 @@ function capabilityScore(provider, model) {
     if (!model) return 50;
     const m = String(model).toLowerCase();
 
+    // Use benchmark data if available (most accurate)
+    if (_benchmarkCache[model] && _benchmarkCache[model].overall != null) {
+        return _benchmarkCache[model].overall;
+    }
+
     // Embedding-Modelle: NICHT für Chat/JSON-Tasks geeignet
     if (m.includes('embed') || m.includes('embedding') ||
         m.includes('bge-') || m.includes('e5-') || m.includes('nomic-')) {
@@ -10562,6 +10570,17 @@ function modelRecommendation(provider, model, feature) {
 
 let _featureOverridesState = {};
 let _standardModelState = { provider: '', model: '' };
+let _benchmarkCache = {};
+
+async function loadBenchmarks() {
+    try {
+        const r = await fetchAPI('/api/providers/benchmarks');
+        if (r.ok) {
+            const data = await r.json();
+            _benchmarkCache = data.models || {};
+        }
+    } catch (e) { /* silent */ }
+}
 
 async function loadFeatureOverrides() {
     try {
@@ -11075,6 +11094,10 @@ async function openModelComparisonModal() {
         thModel.style.cssText = 'padding:0.5rem;text-align:left;';
         thModel.textContent = 'Modell';
         headerRow.appendChild(thModel);
+        const thBench = document.createElement('th');
+        thBench.style.cssText = 'padding:0.5rem;text-align:center;font-size:0.8rem;';
+        thBench.textContent = '📊 Test';
+        headerRow.appendChild(thBench);
         for (const f of features) {
             const th = document.createElement('th');
             th.style.cssText = 'padding:0.5rem;text-align:center;';
@@ -11125,7 +11148,7 @@ async function openModelComparisonModal() {
             tbody.appendChild(sepTr);
 
             for (const r of freeRows) {
-                renderModelRow(tbody, r, features, initialSelection);
+                renderModelRow(tbody, r, features, initialSelection, _benchmarkCache);
             }
         }
 
@@ -11141,7 +11164,7 @@ async function openModelComparisonModal() {
             tbody.appendChild(sepTr);
 
             for (const r of paidRows) {
-                renderModelRow(tbody, r, features, initialSelection);
+                renderModelRow(tbody, r, features, initialSelection, _benchmarkCache);
             }
         }
 
@@ -11178,7 +11201,7 @@ function closeModelComparisonModal() {
     document.getElementById('modelComparisonModal').style.display = 'none';
 }
 
-function renderModelRow(tbody, r, features, initialSelection) {
+function renderModelRow(tbody, r, features, initialSelection, benchmarks) {
     const tr = document.createElement('tr');
     tr.style.borderTop = '1px solid var(--border)';
     const tdModel = document.createElement('td');
@@ -11189,6 +11212,21 @@ function renderModelRow(tbody, r, features, initialSelection) {
     tdModel.appendChild(muted);
     tdModel.appendChild(document.createTextNode(r.model));
     tr.appendChild(tdModel);
+
+    // Benchmark-score cell
+    const tdBench = document.createElement('td');
+    tdBench.style.cssText = 'padding:0.4rem;text-align:center;font-size:0.8rem;';
+    const benchEntry = benchmarks && benchmarks[r.model];
+    if (benchEntry && benchEntry.overall != null) {
+        const score = benchEntry.overall;
+        tdBench.textContent = score + '/100';
+        tdBench.style.color = score >= 70 ? '#46b450' : (score >= 50 ? '#f0ad4e' : '#dc3232');
+        tdBench.title = 'Benchmark: ' + Object.entries(benchEntry.scores || {}).map(([k,v]) => k + '=' + v).join(', ');
+    } else {
+        tdBench.textContent = '—';
+        tdBench.style.color = '#ccc';
+    }
+    tr.appendChild(tdBench);
 
     const rowValue = r.provider + '|' + r.model;
     for (const f of features) {

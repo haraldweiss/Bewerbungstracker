@@ -7,6 +7,10 @@ ProviderFactory (Local-Dev ohne Service).
 Frontend bleibt unverändert — die API-Surface ist identisch zum Vor-Migrations-Stand.
 """
 
+import json
+import os
+import logging
+
 from flask import Blueprint, request, jsonify
 from api.auth import token_required
 from models import User
@@ -337,6 +341,21 @@ _DEFAULT_MODELS = {
     'claude': 'claude-haiku-4-5-20251001',
     'ollama': 'mistral-nemo:12b-instruct-2407-q5_K_M',
 }
+
+
+_BENCHMARK_FILE = '/tmp/model_benchmarks.json'
+
+
+@providers_bp.route('/benchmarks', methods=['GET'])
+def get_model_benchmarks():
+    """Gibt gespeicherte Benchmark-Ergebnisse für alle getesteten Modelle zurück."""
+    if not os.path.exists(_BENCHMARK_FILE):
+        return jsonify({'models': {}, 'tests': []})
+    try:
+        data = json.load(open(_BENCHMARK_FILE))
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @providers_bp.route('/chat', methods=['POST'])
