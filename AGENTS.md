@@ -157,8 +157,20 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 - **Task 7** ✅ — Frontend: 4 Quick-Action-Buttons im Dismiss-Modal, AI-Reasons in `<details>` zugeklappt. Mobile-Responsive.
 - **Task 8** ✅ — Frontend: 3 Job-Typ-Checkboxes im Profil-Tab. Load/Save via loadJobDiscoveryFilters/saveJobDiscoveryFilters.
 - **Task 9** ✅ — `pytest tests/services/ tests/api/` → 298 passed, 0 failed. Keine Regression.
-- NICHT deployed to IONOS. Alle Commits auf Branch `claude/quick-reasons-ui-phase1`.
-- **Nächste Schritte:** Deploy auf IONOS.
+- Deployed to IONOS VPS.
+- **Nächste Schritte:** —
+### 2026-06-05 — Weekly Summary mit dynamischen Inhalten
+- **email_service.py:** `check_and_send_summary()` erzeugt jetzt eine HTML-E-Mail mit:
+  - Gesamtstatistik (Bewerbungen, Status-Verteilung)
+  - Wochen-Werte (neue, Absagen, Gespräche, Zusagen)
+  - Neue/Vorworfene Job-Vorschläge
+  - Letzte Aktivitäten (10 neueste Status-Änderungen)
+  - Korrekter Link zur App (`APP_URL` statt `localhost:8080`)
+- **DB-Pfad-Fix:** `_get_main_db_path()` parsed `sqlite:////abs/path` korrekt (fehlender führender `/`)
+- **SMTP-Encryption-Fix:** Encryption-Key wird in Config persistiert, überlebt Container-Neustarts
+- **email_config.db** liegt jetzt auf dem schreibbaren Volume (`/app/data/`)
+- **SMTP-Konfiguration** aktualisiert (IONOS-Passwort neu gesetzt)
+- Deployed to IONOS VPS (Container-Image neugebaut + Email-Service restarted)
 ### 2026-06-05 — Auto-Reject-Analyse + Quick-Win-Fixes
 - **Analyse Prod-DB:** 1.786/1.891 JobMatches dismissed (94 %), aber `company_already_rejected` traf nur 7×. Den 138 manuellen User-Texten standen 12+ Fälle „X hat schon abgesagt" gegenüber → zwei Lücken identifiziert: (a) Suffix-Mismatch („Signal Iduna" vs. „Signal Iduna Group AG"), (b) Status `ghosting` nicht in Reject-Set.
 - **Fix 1 — Company-Normalisierung:** Neuer Helper `services/email_import_utils.py::normalize_company()` (Rechtsformen-Strip GmbH/AG/KG/SE/Ltd/Inc + „Group/Holding/International" + Trailing-Klammern). `get_rejected_companies_lower()` liefert normalisiertes Set. Alle 4 Vergleichsstellen umgestellt (cron_prefilter, email_import, cron_indeed_email_import, api/jobs_user). Inline-Duplikat in cron_prefilter entfernt.
