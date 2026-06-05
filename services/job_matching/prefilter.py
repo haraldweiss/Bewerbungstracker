@@ -30,12 +30,12 @@ _PLZ_RE = re.compile(r"\b\d{5}\b")
 # Keywords case-insensitive, Word-Boundary via re.search r'\b...\b'.
 _JOB_TYPE_PATTERNS = [
     ('werkstudent', re.compile(
-        r'\b(?:werkstudent|werkstudentin|werkstudierende)\b',
+        r'\b(?:werkstudent|werkstudenten|werkstudentin|werkstudierende)\b',
         re.IGNORECASE,
     )),
     ('freelance', re.compile(
         r'\b(?:freelancer|freelance|freiberuflich|freiberufler|'
-        r'selbstständig|auf rechnung)\b',
+        r'selbstständig|auf rechnungsbasis)\b',
         re.IGNORECASE,
     )),
     ('temp_agency', re.compile(

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # © 2026 Harald Weiss
 from services.job_matching.cv_tokenizer import CVTokens
-from services.job_matching.prefilter import score_job, PrefilterContext
+from services.job_matching.prefilter import score_job, PrefilterContext, detect_job_type
 
 
 def _ctx(language_filter=None, region_filter=None):
@@ -67,19 +67,21 @@ def test_text_blob_cv_normalization_capped():
     assert score >= 8, f"Erwarte score >= 8, got {score}"
 
 
-from services.job_matching.prefilter import detect_job_type
-
-
 def test_detect_job_type_werkstudent():
     assert detect_job_type("Werkstudent IT-Support (m/w/d)") == "werkstudent"
     assert detect_job_type("Werkstudentin Data") == "werkstudent"
     assert detect_job_type("Werkstudierende Cloud") == "werkstudent"
+    assert detect_job_type("Werkstudenten gesucht") == "werkstudent"
 
 
 def test_detect_job_type_freelance():
     assert detect_job_type("Freelancer Kundenberater") == "freelance"
     assert detect_job_type("Senior Engineer (freiberuflich)") == "freelance"
     assert detect_job_type("Freiberufler Backend") == "freelance"
+    # 'auf Rechnungsbasis' = klar freelance; bare 'auf Rechnung' (Zahlungsart)
+    # ist KEIN Freelance-Signal und darf NICHT matchen.
+    assert detect_job_type("Tätigkeit auf Rechnungsbasis") == "freelance"
+    assert detect_job_type("Zahlung auf Rechnung möglich") is None
 
 
 def test_detect_job_type_temp_agency_full_word():
