@@ -628,13 +628,23 @@ _OPENCODE_BASE = os.getenv('OPENCODE_BASE_URL', 'https://opencode.ai/zen/v1')
 
 
 def _ai_chat_opencode(messages: list[dict], model: str = 'deepseek-v4-flash-free') -> str:
-    """Direct call to opencode.ai API (bypasses ai-provider-service)."""
+    """Direct call to opencode.ai API (bypasses ai-provider-service).
+
+    Uses higher max_tokens for DeepSeek models which consume tokens on
+    chain-of-thought reasoning before generating the actual response.
+    """
     import requests as _req
     resp = _req.post(
         f'{_OPENCODE_BASE}/chat/completions',
-        json={"model": model, "messages": messages, "max_tokens": 2000, "temperature": 0.3},
+        json={
+            "model": model,
+            "messages": messages,
+            "max_tokens": 4096,
+            "temperature": 0.3,
+            "max_reasoning_tokens": 1024,
+        },
         headers={"Authorization": f"Bearer {_OPENCODE_API_KEY}"},
-        timeout=180,
+        timeout=300,
     )
     if resp.status_code != 200:
         logger.error("opencode API returned %s: %s", resp.status_code, resp.text[:200])
