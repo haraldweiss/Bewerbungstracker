@@ -151,6 +151,16 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 
 ## 7. Handoff zone (free-form, append-only)
 
+### 2026-06-05 — Quick-Reasons-UI Phase 1: Tasks 4-9 implementiert (durch opencode)
+- **Task 4** ✅ — `services/job_matching/quick_actions.py` + 11 Unit-Tests. `apply_quick_action()` mit 4 Aktionen (company_rejected, already_applied, job_unavailable, wrong_job_type). Idempotent, ProtectedStatuses gegen Downgrade. QuickActionError -> 400.
+- **Task 5** ✅ — PATCH `/api/jobs/matches/<id>` versteht `quick_action` + `job_type`. Setzt status='dismissed' implizit, ignoriert user-feedback_text bei quick_action. 6 Integration-Tests.
+- **Task 6** ✅ — `/api/profile/job-discovery` GET+PATCH für `job_type_blacklist`. Validierung via `VALID_JOB_TYPES`. 6 Tests.
+- **Task 7** ✅ — Frontend: 4 Quick-Action-Buttons im Dismiss-Modal, AI-Reasons in `<details>` zugeklappt. Mobile-Responsive.
+- **Task 8** ✅ — Frontend: 3 Job-Typ-Checkboxes im Profil-Tab. Load/Save via loadJobDiscoveryFilters/saveJobDiscoveryFilters.
+- **Task 9** ✅ — `pytest tests/services/ tests/api/` → 298 passed, 0 failed. Keine Regression.
+- NICHT deployed to IONOS. Alle Commits auf Branch `claude/modest-goldberg-c98a13`.
+- **Nächste Schritte:** PR #20 erweitern oder neuen Branch öffnen; Deploy auf IONOS.
+
 ### 2026-06-05 — Quick-Reasons-UI Phase 1: Tasks 1+2+3 implementiert, Übergabe per §3.7
 
 **Status:** Subagent-Driven-Development läuft. **3 von 9 Tasks fertig**, lokal committed, NICHT gepusht. Übergabe weil Session-Limit naht (neue Regel §3.7).
