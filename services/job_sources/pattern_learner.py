@@ -727,7 +727,7 @@ def ai_learn_pattern(user, train_samples: list[dict], platform: str,
     # sufficient.
     # Direct opencode.ai call for free model training (bypasses ai-provider-service)
     if provider_override == 'opencode':
-        use_model = model_override or 'deepseek-v4-flash-free'
+        use_model = model_override or _OPENCODE_FREE_MODEL
         return _ai_learn_via_provider(
             provider_call=lambda msgs: _ai_chat_opencode(msgs, use_model),
             train_samples=train_samples, platform=platform,
