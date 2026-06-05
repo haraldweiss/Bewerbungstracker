@@ -577,6 +577,151 @@ def _query_weekly_stats(user_id=None):
         return None
 
 
+def _query_admin_stats():
+    """Query system-wide operational stats for admin summary (no user details)."""
+    db_path = _get_main_db_path()
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        now = datetime.now()
+        week_ago = (now - timedelta(days=7)).isoformat()
+
+        stats = {}
+
+        cur.execute("SELECT COUNT(*) FROM users WHERE is_active=1")
+        stats['active_users'] = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM users")
+        stats['total_users'] = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM applications WHERE deleted=0")
+        stats['total_applications'] = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM applications WHERE deleted=0 AND created_at >= ?", (week_ago,))
+        stats['new_applications_week'] = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM job_matches")
+        stats['total_matches'] = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM job_matches WHERE created_at >= ?", (week_ago,))
+        stats['new_matches_week'] = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM job_matches WHERE status='dismissed'")
+        stats['dismissed_matches'] = cur.fetchone()[0]
+
+        conn.close()
+
+        # DB file size (human-readable)
+        try:
+            size = os.path.getsize(db_path)
+            if size > 1048576:
+                stats['db_size'] = f"{size / 1048576:.1f} MB"
+            else:
+                stats['db_size'] = f"{size / 1024:.0f} KB"
+        except OSError:
+            stats['db_size'] = '?'
+
+        # Email delivery stats from email_config.db
+        try:
+            econ = sqlite3.connect(DB_FILE)
+            ec = econ.cursor()
+            ec.execute("SELECT COUNT(*) FROM email_log WHERE sent_at >= ?", (week_ago,))
+            stats['emails_total_week'] = ec.fetchone()[0]
+            ec.execute("SELECT COUNT(*) FROM email_log WHERE sent_at >= ? AND status='success'", (week_ago,))
+            stats['emails_ok_week'] = ec.fetchone()[0]
+            ec.execute("SELECT COUNT(*) FROM email_log WHERE sent_at >= ? AND status='failed'", (week_ago,))
+            stats['emails_failed_week'] = ec.fetchone()[0]
+            econ.close()
+        except Exception:
+            stats['emails_total_week'] = stats['emails_ok_week'] = stats['emails_failed_week'] = 0
+
+        return stats
+    except Exception as e:
+        print(f"⚠️  Error querying admin stats: {e}")
+        return None
+
+
+def _build_admin_summary_html(stats, app_url):
+    """Build system/operations HTML email for admin (no user-application details)."""
+    now = datetime.now()
+    week_start = (now - timedelta(days=7)).strftime('%d.%m.%Y')
+    week_end = now.strftime('%d.%m.%Y')
+
+    t = lambda k, d=0: stats.get(k, d)  # noqa: E731
+
+    html = f"""
+    <html style="font-family:Arial,sans-serif;">
+    <body style="background:#f5f5f5;padding:20px;">
+    <div style="background:white;padding:30px;border-radius:10px;max-width:600px;margin:0 auto;">
+        <h1 style="color:#4F46E5;margin-top:0;">⚙️ Systembericht</h1>
+        <p style="color:#666;font-size:0.9em;">{week_start} – {week_end}</p>
+
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+            <tr>
+                <td style="text-align:center;padding:14px;background:#EEF2FF;border-radius:8px 0 0 8px;width:33%;">
+                    <div style="font-size:1.8em;font-weight:bold;color:#4F46E5;">{t('active_users')}</div>
+                    <div style="font-size:0.8em;color:#666;">aktive Nutzer</div>
+                </td>
+                <td style="text-align:center;padding:14px;background:#F5F3FF;width:33%;">
+                    <div style="font-size:1.8em;font-weight:bold;color:#7C3AED;">{t('total_users')}</div>
+                    <div style="font-size:0.8em;color:#666;">Nutzer gesamt</div>
+                </td>
+                <td style="text-align:center;padding:14px;background:#F0FDF4;border-radius:0 8px 8px 0;width:33%;">
+                    <div style="font-size:1.8em;font-weight:bold;color:#16A34A;">{t('db_size')}</div>
+                    <div style="font-size:0.8em;color:#666;">DB-Größe</div>
+                </td>
+            </tr>
+        </table>
+
+        <h2 style="font-size:1.1em;color:#333;margin:20px 0 10px;">📊 Bewerbungen</h2>
+        <table style="width:100%;border-collapse:collapse;margin:8px 0;">
+            <tr>
+                <td style="text-align:center;padding:10px;background:#F0FDF4;border-radius:8px 0 0 8px;width:33%;">
+                    <div style="font-size:1.5em;font-weight:bold;color:#16A34A;">{t('total_applications')}</div>
+                    <div style="font-size:0.75em;color:#666;">Gesamt</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#EEF2FF;width:33%;">
+                    <div style="font-size:1.5em;font-weight:bold;color:#4F46E5;">{t('new_applications_week')}</div>
+                    <div style="font-size:0.75em;color:#666;">diese Woche</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#F5F3FF;border-radius:0 8px 8px 0;width:33%;">
+                    <div style="font-size:1.5em;font-weight:bold;color:#7C3AED;">{t('total_matches')}</div>
+                    <div style="font-size:0.75em;color:#666;">Job-Matches</div>
+                </td>
+            </tr>
+        </table>
+
+        <h2 style="font-size:1.1em;color:#333;margin:20px 0 10px;">📧 E-Mail-Versand (diese Woche)</h2>
+        <table style="width:100%;border-collapse:collapse;margin:8px 0;">
+            <tr>
+                <td style="text-align:center;padding:10px;background:#F0FDF4;border-radius:8px 0 0 8px;width:33%;">
+                    <div style="font-size:1.5em;font-weight:bold;color:#16A34A;">{t('emails_ok_week')}</div>
+                    <div style="font-size:0.75em;color:#666;">Erfolgreich</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#FEF2F2;width:33%;">
+                    <div style="font-size:1.5em;font-weight:bold;color:#DC2626;">{t('emails_failed_week')}</div>
+                    <div style="font-size:0.75em;color:#666;">Fehlgeschlagen</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#F5F5F5;border-radius:0 8px 8px 0;width:33%;">
+                    <div style="font-size:1.5em;font-weight:bold;color:#666;">{t('emails_total_week')}</div>
+                    <div style="font-size:0.75em;color:#666;">Gesamt</div>
+                </td>
+            </tr>
+        </table>
+
+        <p style="margin-top:24px;">
+            <a href="{app_url}" style="display:inline-block;background:#4F46E5;color:white;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Zur App →</a>
+        </p>
+        <p style="font-size:0.8em;color:#999;margin-top:16px;">
+            Systembericht des Bewerbungs-Trackers · {week_end}
+        </p>
+    </div>
+    </body>
+    </html>
+    """
+    return html
+
+
 def _build_summary_html(stats, app_url):
     """Build rich HTML summary email from stats dict."""
     now = datetime.now()
@@ -764,13 +909,13 @@ def check_and_send_summary(html_content='', text_content=''):
     # 2. Global admin summary (summary_recipient, if configured and not already sent)
     recipient = get_config('summary_recipient')
     if recipient and recipient not in {u['email'] for u in users}:
-        stats = _query_weekly_stats()
-        if stats and stats['total_applications'] > 0:
-            html = _build_summary_html(stats, app_url)
-            txt = f"Wochenrückblick {app_url}"
+        admin_stats = _query_admin_stats()
+        if admin_stats:
+            html = _build_admin_summary_html(admin_stats, app_url)
+            txt = f"Systembericht {app_url}"
             if send_email(recipient, subject, html, txt):
                 sent_count += 1
-                print(f"📧 Global summary sent to {recipient}")
+                print(f"📧 Admin summary sent to {recipient}")
 
     set_config('last_sent', datetime.now().isoformat())
     print(f"📧 Summary: {sent_count} emails sent")
