@@ -611,6 +611,40 @@ def _query_admin_stats():
 
         conn.close()
 
+        # AI usage from api_calls table
+        try:
+            conn2 = sqlite3.connect(db_path)
+            c2 = conn2.cursor()
+            c2.execute("SELECT COUNT(*) FROM api_calls WHERE timestamp >= ?", (week_ago,))
+            stats['api_calls_week'] = c2.fetchone()[0]
+
+            c2.execute("SELECT COUNT(*), COALESCE(SUM(cost),0) FROM api_calls WHERE timestamp >= ? AND key_owner='server'", (week_ago,))
+            row = c2.fetchone()
+            stats['api_calls_server_week'] = row[0]
+            stats['api_cost_server_week'] = round(row[1], 4)
+
+            c2.execute("SELECT COUNT(*) FROM api_calls WHERE timestamp >= ? AND key_owner='user'", (week_ago,))
+            stats['api_calls_user_week'] = c2.fetchone()[0]
+
+            c2.execute("SELECT COUNT(*) FROM api_calls WHERE timestamp >= ? AND key_owner='custom_endpoint'", (week_ago,))
+            stats['api_calls_custom_week'] = c2.fetchone()[0]
+
+            # Per-user breakdown (for admin — shows user email, model, count, cost)
+            c2.execute("""SELECT u.email, a.model, a.key_owner, COUNT(*) as cnt, COALESCE(SUM(a.cost),0) as total_cost
+                          FROM api_calls a JOIN users u ON a.user_id=u.id
+                          WHERE a.timestamp >= ?
+                          GROUP BY u.email, a.model, a.key_owner
+                          ORDER BY total_cost DESC""", (week_ago,))
+            stats['api_by_user'] = [dict(zip(['email', 'model', 'key_owner', 'count', 'cost'], r)) for r in c2.fetchall()]
+
+            c2.execute("SELECT COALESCE(SUM(cost),0) FROM api_calls WHERE key_owner='server'")
+            stats['api_cost_server_total'] = round(c2.fetchone()[0], 2)
+
+            conn2.close()
+        except Exception as e:
+            stats['api_calls_week'] = stats.get('api_calls_week', 0)
+            stats['api_by_user'] = []
+
         # DB file size (human-readable)
         try:
             size = os.path.getsize(db_path)
@@ -691,6 +725,66 @@ def _build_admin_summary_html(stats, app_url):
             </tr>
         </table>
 
+        <h2 style="font-size:1.1em;color:#333;margin:20px 0 10px;">🧠 KI-Nutzung (diese Woche)</h2>
+        <table style="width:100%;border-collapse:collapse;margin:8px 0;">
+            <tr>
+                <td style="text-align:center;padding:10px;background:#F5F3FF;border-radius:8px 0 0 0;width:25%;">
+                    <div style="font-size:1.3em;font-weight:bold;color:#7C3AED;">{t('api_calls_week')}</div>
+                    <div style="font-size:0.75em;color:#666;">API-Calls</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#FEF2F2;width:25%;">
+                    <div style="font-size:1.3em;font-weight:bold;color:#DC2626;">{t('api_calls_server_week')}</div>
+                    <div style="font-size:0.75em;color:#666;">davon Server-Key</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#F0FDF4;width:25%;">
+                    <div style="font-size:1.3em;font-weight:bold;color:#16A34A;">{t('api_calls_user_week')}</div>
+                    <div style="font-size:0.75em;color:#666;">eigener Key</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#F0FDF4;border-radius:0 8px 0 0;width:25%;">
+                    <div style="font-size:1.3em;font-weight:bold;color:#16A34A;">{t('api_calls_custom_week')}</div>
+                    <div style="font-size:0.75em;color:#666;">Custom-Endpoint</div>
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align:center;padding:10px;background:#FFF7ED;border-radius:0 0 0 8px;">
+                    <div style="font-size:1.3em;font-weight:bold;color:#EA580C;">{t('api_cost_server_total', '0')} USD</div>
+                    <div style="font-size:0.75em;color:#666;">Kosten gesamt (Server-Key)</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#FFF7ED;">
+                    <div style="font-size:1.1em;font-weight:bold;color:#EA580C;">{t('api_cost_server_week', 0):.4f} USD</div>
+                    <div style="font-size:0.75em;color:#666;">diese Woche</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#F5F5F5;" colspan="2">
+                    <div style="font-size:0.85em;color:#666;">Server-Key = zentraler API-Key (Kosten trägst du)</div>
+                </td>
+            </tr>
+        </table>"""
+
+    api_rows = stats.get('api_by_user', [])
+    if api_rows:
+        html += """
+        <h3 style="font-size:0.95em;color:#555;margin:12px 0 6px;">Pro Nutzer & Modell</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:0.85em;">
+            <tr style="background:#f9f9f9;">
+                <th style="padding:5px 8px;text-align:left;border-bottom:1px solid #ddd;">Nutzer</th>
+                <th style="padding:5px 8px;text-align:left;border-bottom:1px solid #ddd;">Modell</th>
+                <th style="padding:5px 8px;text-align:center;border-bottom:1px solid #ddd;">Key</th>
+                <th style="padding:5px 8px;text-align:right;border-bottom:1px solid #ddd;">Calls</th>
+                <th style="padding:5px 8px;text-align:right;border-bottom:1px solid #ddd;">Kosten</th>
+            </tr>"""
+        for r in api_rows:
+            key_label = {'server': '🔑 Server', 'user': '👤 Eigen', 'custom_endpoint': '🔗 Custom'}.get(r.get('key_owner',''), r.get('key_owner',''))
+            email_short = r.get('email', '?').split('@')[0]
+            html += f"""<tr>
+                <td style="padding:4px 8px;border-bottom:1px solid #eee;">{email_short}</td>
+                <td style="padding:4px 8px;border-bottom:1px solid #eee;">{r.get('model', '?')}</td>
+                <td style="padding:4px 8px;text-align:center;border-bottom:1px solid #eee;">{key_label}</td>
+                <td style="padding:4px 8px;text-align:right;border-bottom:1px solid #eee;">{r.get('count', 0)}</td>
+                <td style="padding:4px 8px;text-align:right;border-bottom:1px solid #eee;">{r.get('cost', 0):.4f} USD</td>
+            </tr>"""
+        html += "</table>"
+
+    html += f"""
         <h2 style="font-size:1.1em;color:#333;margin:20px 0 10px;">📧 E-Mail-Versand (diese Woche)</h2>
         <table style="width:100%;border-collapse:collapse;margin:8px 0;">
             <tr>
@@ -717,8 +811,7 @@ def _build_admin_summary_html(stats, app_url):
         </p>
     </div>
     </body>
-    </html>
-    """
+    </html>"""
     return html
 
 
