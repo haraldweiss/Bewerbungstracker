@@ -66,6 +66,13 @@ If `user.email` is unset, empty, or fake — **stop, fix it, then proceed**. Pas
 - Long-running work goes through `services/tasks/handlers/`. Don't block the Flask request thread for >1s.
 - Cron tasks defined in `services/tasks/handlers/cron_*.py`.
 
+### 3.6 `/loop` für Polling / wiederkehrende Tasks (Claude Code)
+- Wenn eine Aufgabe Polling, periodische Status-Checks oder wiederholtes Ausführen desselben Prompts / Slash-Commands erfordert, **`/loop` nutzen** statt sequenzieller Sleep-Schleifen oder manuellem Wiederausführen.
+- Typische Fälle: Deploy-Status auf VPS überwachen, Cron-Run abwarten, `/babysit-prs`-artige Routinen, „prüfe alle 5 Minuten ob X fertig ist".
+- Faustregel: ab **2 Wiederholungen mit Zeit-/Intervall-Komponente** ist `/loop` vorteilhaft. Für reine Hintergrund-Tasks, bei denen das System Claude ohnehin per Notification weckt (`run_in_background`), KEIN `/loop` — das ist Polling-Verschwendung.
+- Nicht für einmalige Tasks. Nicht als Ersatz für `/schedule` / scheduled-tasks (das ist für längere/cron-artige Routinen außerhalb der laufenden Session).
+- **opencode**: Stand 2026-06-05 ist kein direktes `/loop`-Äquivalent bekannt. Falls eine opencode-Session Polling braucht → Frage an User stellen oder die Polling-Aufgabe an Claude Code abgeben. Wenn ein opencode-Pendant auftaucht, hier ergänzen.
+
 ---
 
 ## 4. Verification standards
@@ -125,6 +132,15 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 ---
 
 ## 7. Handoff zone (free-form, append-only)
+
+### 2026-06-05 — Auto-Reject-Analyse + Quick-Win-Fixes
+- **Analyse Prod-DB:** 1.786/1.891 JobMatches dismissed (94 %), aber `company_already_rejected` traf nur 7×. Den 138 manuellen User-Texten standen 12+ Fälle „X hat schon abgesagt" gegenüber → zwei Lücken identifiziert: (a) Suffix-Mismatch („Signal Iduna" vs. „Signal Iduna Group AG"), (b) Status `ghosting` nicht in Reject-Set.
+- **Fix 1 — Company-Normalisierung:** Neuer Helper `services/email_import_utils.py::normalize_company()` (Rechtsformen-Strip GmbH/AG/KG/SE/Ltd/Inc + „Group/Holding/International" + Trailing-Klammern). `get_rejected_companies_lower()` liefert normalisiertes Set. Alle 4 Vergleichsstellen umgestellt (cron_prefilter, email_import, cron_indeed_email_import, api/jobs_user). Inline-Duplikat in cron_prefilter entfernt.
+- **Fix 2 — Status-Set:** `'ghosting'` zum Reject-Set ergänzt (`_REJECTING_STATUSES`). Konsistent mit `feedback_bridge.py::_TERMINAL_STATES`-Mapping ghosting → rejected_after_apply. Prod-DB: 9 ghosting-Apps werden ab jetzt für Auto-Reject genutzt.
+- **AGENTS.md §3.6:** Neue Regel — `/loop` bei Polling/wiederkehrenden Tasks (Claude Code) statt Sleep-Schleifen. opencode-Pendant aktuell unbekannt.
+- **Tests:** 17 neue Tests (`tests/services/test_email_import_utils.py`) — Normalisierung + DB-Integration (Status-Set, Window, soft-deleted). 17/17 passed. Breiter Sweep `tests/services/ tests/api/` → 490 passed (7 Fehler durch lokal fehlendes jsonschema, unabhängig).
+- NICHT deployed to IONOS. Backwards-kompatibel — alte Daten bleiben in DB, neuer Prefilter greift ab Deploy.
+- **Backlog (offen für separate Sessions):** Body-Phrasen-Scan für „werden keine Bewerbungen mehr angenommen", User-Keyword-Blacklist („kein Freelancer/Werkstudent"), Cross-Portal-Duplicate via Fuzzy-Title-Match, stille Dismisses (812 mit leerem feedback_text) → Quick-Reasons-UI.
 
 ### 2026-06-01 — README-Links gefixt, .serena/ ignoriert, AGENTS-Hash korrigiert
 - README English: fehlende Job-Discovery/DEPLOYMENT.md/Technology Bullets ergänzt

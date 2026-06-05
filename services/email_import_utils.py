@@ -75,16 +75,68 @@ def fetch_apps_script_emails(url: str, user_id: str | None = None,
     return emails, False
 
 
+# Trailing legal-form / corporate-suffix tokens, normalisiert beim Vergleichen
+# entfernt. Nur am ENDE matchen (anchored $), damit "International Business
+# Machines" o.Ä. nicht am Anfang verstümmelt werden. Liste bewusst konservativ:
+# deutsche Rechtsformen + die häufigsten internationalen Pendants.
+_COMPANY_SUFFIX_RE = re.compile(
+    r'(?:\s*[,&\-]?\s*)(?:'
+    r'gmbh\s*&?\s*co\.?\s*kg|'
+    r'gmbh\s*&?\s*co\.?\s*ohg|'
+    r'gmbh|ag|kg|mbh|ohg|se|gbr|ggmbh|kgaa|ug|'
+    r'e\.?\s*v\.?|e\.?\s*g\.?|'
+    r'ltd\.?|llc|inc\.?|corp\.?|plc|'
+    r'group|holding|international'
+    r')\.?\s*$',
+    re.IGNORECASE,
+)
+
+
+def normalize_company(name: str | None) -> str:
+    """Lowercase + trailing legal-suffix-Strip für Company-Match.
+
+    Beispiele:
+      "Signal Iduna Group AG" → "signal iduna"
+      "Acme GmbH & Co. KG"    → "acme"
+      "BWI GmbH"              → "bwi"
+      "Hire Feed"             → "hire feed"
+      "Continental (Germany)" → "continental"
+
+    Idempotent: f(f(x)) == f(x).
+    """
+    if not name:
+        return ''
+    s = re.sub(r'\s+', ' ', name).strip()
+    s = re.sub(r'\s*\([^)]*\)\s*$', '', s)
+    prev = None
+    while s != prev:
+        prev = s
+        s = _COMPANY_SUFFIX_RE.sub('', s).rstrip(' ,.&-')
+    return s.lower()
+
+
+# Status-Werte, die für die Auto-Reject-Logik als "Firma effektiv abgelehnt"
+# zählen. 'absage'/'rejected' = explizite Absage; 'ghosting' = keine Antwort
+# (terminal aus User-Sicht, siehe feedback_bridge.py::_TERMINAL_STATES + Mapping
+# ghosting → rejected_after_apply). Prod-DB (5.6.2026): 56× absage, 9× ghosting.
+_REJECTING_STATUSES = ('absage', 'rejected', 'ghosting')
+
+
 def get_rejected_companies_lower(user_id: str, window_days: int) -> set[str]:
-    """Liefert lowercase company-Namen mit Status 'absage' im Reject-Fenster."""
+    """Liefert normalisierte company-Namen, deren Bewerbung im Reject-Fenster
+    in einem "ablehnenden" Status liegt (siehe `_REJECTING_STATUSES`).
+
+    Normalisierung via `normalize_company()` (Rechtsformen-Strip + lowercase).
+    Callers MÜSSEN ihren Vergleichswert mit derselben Funktion normalisieren.
+    """
     cutoff_dt = datetime.utcnow() - timedelta(days=window_days)
     cutoff_date = cutoff_dt.date()
     q = (
-        db.session.query(db.func.lower(Application.company))
+        db.session.query(Application.company)
         .filter(
             Application.user_id == user_id,
             Application.deleted == False,  # noqa: E712
-            Application.status.in_(['absage', 'rejected']),
+            Application.status.in_(_REJECTING_STATUSES),
             Application.company.isnot(None),
             db.or_(
                 Application.applied_date >= cutoff_date,
@@ -94,7 +146,12 @@ def get_rejected_companies_lower(user_id: str, window_days: int) -> set[str]:
         )
         .distinct()
     )
-    return {row[0] for row in q.all() if row[0]}
+    out: set[str] = set()
+    for (raw_name,) in q.all():
+        norm = normalize_company(raw_name)
+        if norm:
+            out.add(norm)
+    return out
 
 
 def create_raw_job_and_match(

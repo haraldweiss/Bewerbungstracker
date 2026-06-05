@@ -82,6 +82,7 @@ from services.email_import_utils import (
     fetch_apps_script_emails,
     get_rejected_companies_lower,
     create_raw_job_and_match,
+    normalize_company,
 )
 
 
@@ -505,36 +506,32 @@ def list_matches(user):
             query = query.filter(not_(or_(*pair_conds)))
 
     # Firmen, die in den letzten N Tagen abgelehnt haben, ausblenden.
-    # Verwendet status='absage' (deutsche UI) und 'rejected' (englische Aliase).
-    # Cutoff bevorzugt applied_date; bei NULL fällt es auf created_at zurück.
+    # Reject-Set ist via normalize_company() normalisiert (Rechtsformen-Strip),
+    # damit "Signal Iduna" auch "Signal Iduna Group AG" matcht.
+    # SQL-Filter fängt die exact-lower-Matches ab (z.B. wenn beide ohne Suffix),
+    # damit `total` und Pagination stimmen. Python-Post-Filter fängt die
+    # Suffix-Varianten ab — SQLite kann den Strip nicht im Filter.
+    rejected_companies_normalized: set[str] = set()
     if not include_rejected:
-        cutoff_dt = datetime.utcnow() - timedelta(days=rejection_window_days)
-        cutoff_date = cutoff_dt.date()
-        rejected_companies_q = (
-            db.session.query(db.func.lower(Application.company))
-            .filter(
-                Application.user_id == user.id,
-                Application.deleted == False,  # noqa: E712
-                Application.status.in_(['absage', 'rejected']),
-                Application.company.isnot(None),
-                db.or_(
-                    Application.applied_date >= cutoff_date,
-                    db.and_(Application.applied_date.is_(None),
-                            Application.created_at >= cutoff_dt),
-                ),
-            )
-            .distinct()
+        rejected_companies_normalized = get_rejected_companies_lower(
+            user.id, rejection_window_days,
         )
-        rejected_companies = {row[0] for row in rejected_companies_q.all() if row[0]}
-        if rejected_companies:
+        if rejected_companies_normalized:
             query = query.filter(
-                ~db.func.lower(db.func.coalesce(RawJob.company, '')).in_(rejected_companies)
+                ~db.func.lower(db.func.coalesce(RawJob.company, '')).in_(
+                    rejected_companies_normalized
+                )
             )
 
     total = query.count()
     rows = (query.order_by(JobMatch.match_score.desc().nullslast(),
                            JobMatch.created_at.desc())
                  .offset(offset).limit(limit).all())
+    if rejected_companies_normalized:
+        rows = [
+            row for row in rows
+            if normalize_company(row[1].company) not in rejected_companies_normalized
+        ]
 
     return jsonify({
         "matches": [_serialize_match(m, r, s) for (m, r, s) in rows],
