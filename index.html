@@ -10473,43 +10473,49 @@ function capabilityScore(provider, model) {
         return 0;
     }
 
-    // Cloud-Modelle (hardcoded Capability)
-    const CLOUD = [
-        ['claude-opus', 98],
-        ['claude-sonnet-4', 92],
-        ['claude-sonnet-3.5', 88],
-        ['claude-haiku-4-5', 82],
-        ['claude-haiku-3', 65],
-        ['gpt-4o', 92],
-        ['gpt-4-turbo', 90],
-        ['gpt-4', 88],
-        ['gpt-3.5', 60],
-        ['o1', 95],
-        ['o3', 96],
-        ['gemini-1.5-pro', 90],
-        ['gemini-1.5-flash', 70],
-    ];
-    for (const [pattern, score] of CLOUD) {
-        if (m.includes(pattern)) return score;
-    }
-
-    // Bekannte starke Ollama-Modelle ohne Param-Count im Namen
-    // (User taggen lokale Modelle oft als ':latest' — kein 'Nb' im String)
-    const OLLAMA_NAMED = [
-        ['qwen3-coder', 88],   // 30B+ Coder, exzellent für JSON
-        ['qwen3.6', 88],       // Qwen3-Variante, ~32B
-        ['qwen2.5-coder', 72], // 14B Coder
-        ['deepseek-r1', 88],   // Reasoning, sehr stark
-        ['mixtral', 82],       // 8x7B/8x22B MoE
-        ['gemma4', 68],        // Gemma4 mittel-stark (für unbekannte Größe)
-    ];
-    for (const [pattern, baseScore] of OLLAMA_NAMED) {
-        if (m.includes(pattern) && !/(\d+)b\b/.test(m)) {
-            // Familie-Modifier addieren wird unten skipped — direkt zurückgeben
-            return baseScore;
+    // Base score by provider (cloud-hosted > local)
+    if (provider === 'opencode') {
+        // All opencode models are cloud-hosted → generally capable
+        // Start high, let modifiers adjust down or up
+        let score = 70;
+        if (m.includes('ultra') || m.includes('max') || m.includes('pro')) score += 10;
+        if (m.includes('flash') || m.includes('mini') || m.includes('nano')) score -= 5;
+        if (m.includes('reason') || m.includes('think')) score += 8;
+        // Version recency: extract version numbers like 4-8, 5.4, 3.6
+        const verMatch = m.match(/(\d+)[-.]?(\d+)?/);
+        if (verMatch) {
+            const major = parseInt(verMatch[1]);
+            const minor = parseInt(verMatch[2] || '0');
+            // Newer major version → better capability
+            if (major >= 5) score += 10;
+            else if (major >= 4) score += 5;
+            else if (major >= 3) score += 0;
+            else score -= 5;
+            // Minor version recency (within same major)
+            if (minor >= 6) score += 3;
+            else if (minor >= 3) score += 1;
         }
+        return Math.min(100, Math.max(0, score));
     }
 
+    if (provider === 'claude') {
+        let score = 78;
+        const verMatch = m.match(/(\d+)[-.]?(\d+)?/);
+        if (verMatch) {
+            const major = parseInt(verMatch[1]);
+            const minor = parseInt(verMatch[2] || '0');
+            if (major >= 4) score += 10;
+            else if (major >= 3) score += 5;
+            if (minor >= 5) score += 3;
+            else if (minor >= 0) score += 0;
+        }
+        if (m.includes('haiku')) score -= 10;
+        if (m.includes('sonnet')) score += 2;
+        if (m.includes('opus')) score += 12;
+        return Math.min(100, Math.max(0, score));
+    }
+
+    // Parameter-based scoring for local models (ollama, etc.)
     const paramMatch = m.match(/(\d+)b\b/);
     const params = paramMatch ? parseInt(paramMatch[1], 10) : null;
 
@@ -10518,18 +10524,19 @@ function capabilityScore(provider, model) {
         if (params >= 400)     score = 95;
         else if (params >= 70) score = 88;
         else if (params >= 30) score = 78;
-        else if (params >= 12) score = 62;   // Mistral-Nemo 12B in dieser Klasse
+        else if (params >= 12) score = 62;
         else if (params >= 7)  score = 50;
         else                   score = 30;
     }
 
-    // Familie-Modifier (Qwen3 > Qwen2.5)
-    if (m.includes('qwen3'))      score += 8;
+    // Family knowledge without hardcoded model names
+    if (m.includes('qwen3'))        score += 8;
     else if (m.includes('qwen2.5')) score += 5;
     if (m.includes('llama3.1') || m.includes('llama3.2') || m.includes('llama3.3')) score += 3;
-    if (m.includes('deepseek')) score += 5;
+    if (m.includes('deepseek') && params) score += 5;  // only with known size
     if (m.includes('gemma3') || m.includes('gemma4') || m.includes('gemma-3') || m.includes('gemma-4')) score += 3;
     if (m.includes('phi-3') || m.includes('phi3')) score -= 5;
+    if (m.includes('mixtral') && !params && !m.match(/\d+b/)) score += 8;  // MoE, treat as large
 
     // Coder/Code-Modelle: stark für strukturiertes JSON
     if (m.includes('coder') || m.includes('-code') || m.endsWith('-code')) score += 4;
