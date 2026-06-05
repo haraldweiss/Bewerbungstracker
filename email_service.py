@@ -420,6 +420,227 @@ def send_email(recipient, subject, html_body, text_body=''):
         log_email(recipient, subject, 'failed', error)
         return False
 
+# ── Main DB Access ────────────────────────────────────────────────────
+
+_MAIN_DB_PATH = None
+
+def _get_main_db_path():
+    """Get the main Bewerbungstracker SQLite DB path from DATABASE_URL or default."""
+    global _MAIN_DB_PATH
+    if _MAIN_DB_PATH is not None:
+        return _MAIN_DB_PATH
+
+    db_url = os.getenv('DATABASE_URL', '')
+    if db_url and db_url.startswith('sqlite:///'):
+        _MAIN_DB_PATH = db_url[len('sqlite:///'):]
+    elif db_url and db_url.startswith('sqlite:////'):
+        _MAIN_DB_PATH = db_url[len('sqlite:////'):]
+    else:
+        _MAIN_DB_PATH = 'instance/bewerbungstracker.db'
+    return _MAIN_DB_PATH
+
+
+def _get_app_url():
+    """Get the public app URL from env or config."""
+    url = os.getenv('APP_URL', '') or get_config('app_url', '')
+    if not url:
+        url = 'http://localhost:8080'
+    return url.rstrip('/')
+
+
+def _query_weekly_stats():
+    """Query the main application DB for weekly summary statistics."""
+    db_path = _get_main_db_path()
+    if not os.path.exists(db_path):
+        print(f"⚠️  Main DB not found at {db_path}")
+        return None
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        now = datetime.now()
+        week_ago = (now - timedelta(days=7)).isoformat()
+
+        stats = {}
+
+        cur.execute("SELECT COUNT(*) FROM applications WHERE deleted=0")
+        stats['total_applications'] = cur.fetchone()[0]
+
+        cur.execute(
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND created_at >= ?",
+            (week_ago,),
+        )
+        stats['new_applications'] = cur.fetchone()[0]
+
+        cur.execute(
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='absage' AND created_at >= ?",
+            (week_ago,),
+        )
+        stats['rejections_week'] = cur.fetchone()[0]
+
+        cur.execute(
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='interview' AND created_at >= ?",
+            (week_ago,),
+        )
+        stats['interviews_week'] = cur.fetchone()[0]
+
+        cur.execute(
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='zusage' AND created_at >= ?",
+            (week_ago,),
+        )
+        stats['offers_week'] = cur.fetchone()[0]
+
+        cur.execute(
+            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='beworben'"
+        )
+        stats['pending_applications'] = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM job_matches WHERE status='new'")
+        stats['new_matches'] = cur.fetchone()[0]
+
+        cur.execute(
+            "SELECT COUNT(*) FROM job_matches WHERE status='dismissed' AND created_at >= ?",
+            (week_ago,),
+        )
+        stats['dismissed_week'] = cur.fetchone()[0]
+
+        # Recent status changes (last 7 days)
+        cur.execute(
+            """SELECT company, position, status, created_at FROM applications
+               WHERE deleted=0 AND created_at >= ?
+               ORDER BY created_at DESC LIMIT 10""",
+            (week_ago,),
+        )
+        stats['recent_changes'] = [dict(r) for r in cur.fetchall()]
+
+        cur.execute("SELECT COUNT(*) FROM users WHERE is_active=1")
+        stats['active_users'] = cur.fetchone()[0]
+
+        conn.close()
+        return stats
+    except Exception as e:
+        print(f"⚠️  Error querying main DB: {e}")
+        return None
+
+
+def _build_summary_html(stats, app_url):
+    """Build rich HTML summary email from stats dict."""
+    now = datetime.now()
+    week_start = (now - timedelta(days=7)).strftime('%d.%m.%Y')
+    week_end = now.strftime('%d.%m.%Y')
+
+    if stats is None:
+        html = f"""
+        <html style="font-family:Arial,sans-serif;">
+        <body style="background:#f5f5f5;padding:20px;">
+        <div style="background:white;padding:30px;border-radius:10px;max-width:600px;margin:0 auto;">
+            <h1 style="color:#4F46E5;margin-top:0;">📋 Wochenrückblick</h1>
+            <p>Deine Bewerbungs-Zusammenfassung für {week_start}–{week_end}.</p>
+            <p>Die Statistik konnte nicht geladen werden. Öffne die App um deine Daten zu sehen:
+               <a href="{app_url}" style="color:#4F46E5;">{app_url}</a></p>
+        </div>
+        </body>
+        </html>
+        """
+        return html
+
+    total = stats.get('total_applications', 0)
+    new_apps = stats.get('new_applications', 0)
+    rejections = stats.get('rejections_week', 0)
+    interviews = stats.get('interviews_week', 0)
+    offers = stats.get('offers_week', 0)
+    pending = stats.get('pending_applications', 0)
+    matches = stats.get('new_matches', 0)
+    dismissed = stats.get('dismissed_week', 0)
+
+    recent_rows = ''
+    for item in stats.get('recent_changes', []):
+        c = item.get('company', '???')
+        p = item.get('position', '???')
+        s = item.get('status', '???')
+        status_icon = {'absage': '❌', 'interview': '📅', 'zusage': '✅', 'beworben': '📨', 'ghosting': '👻'}.get(s, '📌')
+        recent_rows += f'<tr><td style="padding:4px 8px;">{status_icon}</td><td style="padding:4px 8px;">{c}</td><td style="padding:4px 8px;">{p}</td><td style="padding:4px 8px;">{s}</td></tr>'
+
+    html = f"""
+    <html style="font-family:Arial,sans-serif;">
+    <body style="background:#f5f5f5;padding:20px;">
+    <div style="background:white;padding:30px;border-radius:10px;max-width:600px;margin:0 auto;">
+        <h1 style="color:#4F46E5;margin-top:0;">📋 Wochenrückblick</h1>
+        <p style="color:#666;font-size:0.9em;">{week_start} – {week_end}</p>
+
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+            <tr>
+                <td style="text-align:center;padding:10px;background:#EEF2FF;border-radius:8px 0 0 8px;">
+                    <div style="font-size:1.8em;font-weight:bold;color:#4F46E5;">{total}</div>
+                    <div style="font-size:0.8em;color:#666;">Bewerbungen gesamt</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#F0FDF4;border-radius:0 8px 8px 0;">
+                    <div style="font-size:1.8em;font-weight:bold;color:#16A34A;">{pending}</div>
+                    <div style="font-size:0.8em;color:#666;">davon offen</div>
+                </td>
+            </tr>
+        </table>
+
+        <h2 style="font-size:1.1em;color:#333;margin:20px 0 10px;">📊 Diese Woche</h2>
+        <table style="width:100%;border-collapse:collapse;margin:8px 0;">
+            <tr>
+                <td style="text-align:center;padding:10px;background:#F0FDF4;border-radius:8px 0 0 0;width:25%;">
+                    <div style="font-size:1.5em;font-weight:bold;color:#16A34A;">{new_apps}</div>
+                    <div style="font-size:0.75em;color:#666;">Neu beworben</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#FFF7ED;width:25%;">
+                    <div style="font-size:1.5em;font-weight:bold;color:#EA580C;">{rejections}</div>
+                    <div style="font-size:0.75em;color:#666;">Absagen</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#EFF6FF;width:25%;">
+                    <div style="font-size:1.5em;font-weight:bold;color:#2563EB;">{interviews}</div>
+                    <div style="font-size:0.75em;color:#666;">Gespräche</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#F0FDF4;border-radius:0 8px 0 0;width:25%;">
+                    <div style="font-size:1.5em;font-weight:bold;color:#16A34A;">{offers}</div>
+                    <div style="font-size:0.75em;color:#666;">Zusagen</div>
+                </td>
+            </tr>
+        </table>
+
+        <table style="width:100%;border-collapse:collapse;margin:0 0 16px;">
+            <tr>
+                <td style="text-align:center;padding:10px;background:#F5F3FF;border-radius:0 0 0 8px;width:25%;">
+                    <div style="font-size:1.3em;font-weight:bold;color:#7C3AED;">{matches}</div>
+                    <div style="font-size:0.75em;color:#666;">Job-Vorschläge</div>
+                </td>
+                <td style="text-align:center;padding:10px;background:#FEF2F2;border-radius:0 0 8px 0;width:25%;">
+                    <div style="font-size:1.3em;font-weight:bold;color:#DC2626;">{dismissed}</div>
+                    <div style="font-size:0.75em;color:#666;">Verworfen</div>
+                </td>
+            </tr>
+        </table>
+"""
+
+    if recent_rows:
+        html += f"""
+        <h2 style="font-size:1.1em;color:#333;margin:20px 0 10px;">🕐 Letzte Aktivitäten</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:0.85em;">
+            <tr style="background:#f9f9f9;"><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;"></th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Firma</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Position</th><th style="padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;">Status</th></tr>
+            {recent_rows}
+        </table>
+"""
+
+    html += f"""
+        <p style="margin-top:24px;">
+            <a href="{app_url}" style="display:inline-block;background:#4F46E5;color:white;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:bold;">Zur App →</a>
+        </p>
+        <p style="font-size:0.8em;color:#999;margin-top:16px;">
+            Wochenbericht des Bewerbungs-Trackers · {week_end}
+        </p>
+    </div>
+    </body>
+    </html>
+    """
+    return html
+
+
 # ── Schedule Check ────────────────────────────────────────────────────
 
 def should_send_summary():
@@ -462,21 +683,13 @@ def check_and_send_summary(html_content='', text_content=''):
         print("⚠️  No recipient configured for email summary")
         return False
 
-    subject = f"📋 Bewerbungs-Tracker Zusammenfassung - {datetime.now().strftime('%d.%m.%Y')}"
+    app_url = _get_app_url()
+    subject = f"📋 Bewerbungs-Tracker Wochenrückblick - {datetime.now().strftime('%d.%m.%Y')}"
 
-    # Use provided content or default message
     if not html_content:
-        html_content = """
-        <html style="font-family:Arial,sans-serif;">
-        <body style="background:#f5f5f5;padding:20px;">
-        <div style="background:white;padding:30px;border-radius:10px;max-width:600px;margin:0 auto;">
-            <h1 style="color:#4F46E5;">📋 Bewerbungs-Tracker Zusammenfassung</h1>
-            <p>Deine Bewerbungs-Zusammenfassung ist bereit.</p>
-            <p>Öffne die App um die Details zu sehen: <a href="http://localhost:8080" style="color:#4F46E5;">Zur App</a></p>
-        </div>
-        </body>
-        </html>
-        """
+        stats = _query_weekly_stats()
+        html_content = _build_summary_html(stats, app_url)
+        text_content = f"Wochenrückblick {app_url}"
 
     if send_email(recipient, subject, html_content, text_content):
         set_config('last_sent', datetime.now().isoformat())
