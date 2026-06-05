@@ -908,7 +908,7 @@ def check_and_send_summary(html_content='', text_content=''):
 
     # 2. Global admin summary (summary_recipient, if configured and not already sent)
     recipient = get_config('summary_recipient')
-    if recipient and recipient not in {u['email'] for u in users}:
+    if recipient:
         admin_stats = _query_admin_stats()
         if admin_stats:
             html = _build_admin_summary_html(admin_stats, app_url)
