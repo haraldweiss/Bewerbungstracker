@@ -182,6 +182,15 @@ PROFILES: dict[str, PlatformProfile] = {
             re.IGNORECASE | re.MULTILINE,
         ),
         digest_threshold=3,
+        # LinkedIn versendet auch Nicht-Job-Mails (Profilaufrufe, Geburtstage,
+        # Verbindungsanfragen) von derselben Domain. Der Subject-Filter
+        # reduziert False-Positives drastisch.
+        subject_must_contain=(
+            "bei ", " at ",
+            "job", "stelle", "stellenvorschlag", "stellenangebot",
+            "jobempfehlung", "jobs you may", "new job",
+            "positionen als",  # "11 neue Positionen als Entwickler"
+        ),
         ai_hint=(
             "LinkedIn-Jobempfehlungs-Digest. Jede Job-Card hat einen "
             "linkedin.com/jobs/view/<ID>-Link. "
@@ -777,21 +786,28 @@ class EmailJobsAdapter(JobSourceAdapter):
                     # LinkedIn-Marketing-Header-Zeilen ausfiltern — die rutschen
                     # sonst als Title rein wenn der Card-Header direkt vor
                     # "Jobangebot ansehen" steht (statt einer echten Job-Card).
+                    # Muss mit hard_title_blacklist_re (PROFILES linkedin) synchron bleiben.
                     if re.search(
                         r"(?i)^(?:"
+                        r"\d+\s+neue?r?\s+(?:Position|Stelle|Job|Mitarbeiter|Firma)|"
+                        r"\d+\s+weiter(?:e|en)\s+(?:Position|Stelle|Job|Mitarbeiter)|"
                         r"Ihre Jobbenachrichtigung|"
-                        r"\d+\s*neue?r?\s*(?:Jobs?|Stellen?)|"
-                        r"\d+\s*weitere\s*(?:Jobs?|Stellen?)|"
-                        r"Ergebnisse|"
                         r"Top-Jobs?|"
-                        r"Lust auf|"
+                        r"\d+\s+neue?r?\s+Jobs?|"
+                        r"\d+\s+weitere\s+Jobs?|"
+                        r"Ergebnisse|"
+                        r"Vorschläge\s+für|"
                         r"Empfohlene|"
                         r"Recommended|"
-                        r"Vorschläge\s+für|"
+                        r"Lust auf|"
                         r"Beliebt bei|"
                         r"Aufbauend auf|"
                         r"Passende\s+(?:Stellen|Jobs)\s+für|"
-                        r"Das könnte"
+                        r"Das könnte|"
+                        r"Möglicherweise interessant|"
+                        r"Stellen, die (?:dir|Ihnen) gefallen|"
+                        r"\u00c4hnliche|"
+                        r"Bewerben Sie sich als"
                         r")",
                         t,
                     ):
