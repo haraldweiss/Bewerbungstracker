@@ -44,6 +44,7 @@ def handle_cron_indeed_email_import_source(
         get_rejected_companies_lower,
         create_raw_job_and_match,
         fetch_apps_script_emails,
+        normalize_company,
     )
 
     src = JobSource.query.get(payload['source_id'])
@@ -113,8 +114,8 @@ def handle_cron_indeed_email_import_source(
     imported_count = 0
     blocked_auto_count = 0
     for fjob in fresh:
-        company_lower = (fjob.company or '').strip().lower()
-        is_blocked = bool(company_lower) and company_lower in rejected_companies
+        company_norm = normalize_company(fjob.company)
+        is_blocked = bool(company_norm) and company_norm in rejected_companies
         payload_job = {
             'title': fjob.title, 'company': fjob.company,
             'location': fjob.location, 'url': fjob.url,

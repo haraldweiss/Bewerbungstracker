@@ -79,7 +79,9 @@ def handle_email_import(payload: dict, *, progress_cb: Optional[Callable] = None
 
     window_days = int(user.job_reject_window_days or 180)
     reject_enabled = bool(user.job_reject_filter_enabled)
-    from services.email_import_utils import get_rejected_companies_lower
+    from services.email_import_utils import (
+        get_rejected_companies_lower, normalize_company,
+    )
     rejected_companies = (
         get_rejected_companies_lower(user.id, window_days) if reject_enabled else set()
     )
@@ -87,8 +89,8 @@ def handle_email_import(payload: dict, *, progress_cb: Optional[Callable] = None
     new_for_dialog: list[dict] = []
     blocked_for_dialog: list[dict] = []
     for fjob in fresh:
-        company_lower = (fjob.company or '').strip().lower()
-        is_blocked = bool(company_lower) and company_lower in rejected_companies
+        company_norm = normalize_company(fjob.company)
+        is_blocked = bool(company_norm) and company_norm in rejected_companies
         job_data = {
             'title': fjob.title,
             'company': fjob.company,

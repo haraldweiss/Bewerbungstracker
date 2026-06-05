@@ -5,11 +5,10 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timedelta
 from typing import Callable, Optional
 
 from database import db
-from models import User, RawJob, JobMatch, Application
+from models import User, RawJob, JobMatch
 from services.job_matching.embedder import embed_raw_job  # module-level for patchability
 from services.tasks.registry import register
 
@@ -31,6 +30,9 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
     )
     from services.job_matching.cv_tokenizer import tokenize_cv
     from services.job_matching.prefilter import score_job, PrefilterContext
+    from services.email_import_utils import (
+        get_rejected_companies_lower, normalize_company,
+    )
 
     started = time.time()
     pending = (JobMatch.query
@@ -50,24 +52,9 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
 
     def _rejected_companies_for(user_id: str, window_days: int) -> set:
         if user_id not in rejected_companies_cache:
-            cutoff_dt = datetime.utcnow() - timedelta(days=window_days)
-            rows = (
-                db.session.query(db.func.lower(Application.company))
-                .filter(
-                    Application.user_id == user_id,
-                    Application.deleted == False,  # noqa: E712
-                    Application.status.in_(['absage', 'rejected']),
-                    Application.company.isnot(None),
-                    db.or_(
-                        Application.applied_date >= cutoff_dt.date(),
-                        db.and_(Application.applied_date.is_(None),
-                                Application.created_at >= cutoff_dt),
-                    ),
-                )
-                .distinct()
-                .all()
+            rejected_companies_cache[user_id] = (
+                get_rejected_companies_lower(user_id, window_days)
             )
-            rejected_companies_cache[user_id] = {r[0] for r in rows if r[0]}
         return rejected_companies_cache[user_id]
 
     if progress_cb:
@@ -123,7 +110,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
             if user_obj:
                 window = user_obj.job_reject_window_days or 180
                 rejected_set = _rejected_companies_for(match.user_id, window)
-                if raw.company.lower().strip() in rejected_set:
+                if normalize_company(raw.company) in rejected_set:
                     is_rejected_company = True
 
         user_has_judgment = _has_user_judgment(match)
