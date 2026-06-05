@@ -261,6 +261,13 @@ def init_db():
     conn.commit()
     conn.close()
 
+    # Wiederherstellen des Encryption-Keys nach Neustart
+    global ENCRYPTION_KEY
+    stored_key = get_config('encryption_key')
+    if stored_key and not ENCRYPTION_KEY:
+        ENCRYPTION_KEY = stored_key
+
+
 def get_config(key, default=''):
     """Get configuration value from database"""
     try:
@@ -1178,6 +1185,9 @@ class EmailServiceHandler(JSONHandler):
                 global ENCRYPTION_KEY
                 if not ENCRYPTION_KEY:
                     ENCRYPTION_KEY = encryption_key
+
+                # Persist the encryption key so it survives restarts
+                set_config('encryption_key', encryption_key.decode() if isinstance(encryption_key, bytes) else encryption_key)
 
                 # Cache komplett leeren – sonst können alte Klartext-Passwörter
                 # in den Werten anderer Services hängen bleiben.
