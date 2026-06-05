@@ -79,11 +79,7 @@ def handle_pattern_learner_train(payload: dict, *, progress_cb: Optional[Callabl
         progress_cb(30, 'ai-training pattern')
 
     try:
-        pattern = pl.ai_learn_pattern(
-            user, train_samples=train, platform=platform,
-            provider_override='opencode',
-            model_override='deepseek-v4-flash-free',
-        )
+        pattern = pl.ai_learn_pattern(user, train_samples=train, platform=platform)
     except RuntimeError as exc:
         raise RuntimeError(f"AI-Train fehlgeschlagen: {exc}") from exc
 
