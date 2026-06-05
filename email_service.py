@@ -459,8 +459,28 @@ def _get_app_url():
     return url.rstrip('/')
 
 
-def _query_weekly_stats():
-    """Query the main application DB for weekly summary statistics."""
+def _get_active_users():
+    """Fetch all active users (id, email) from the main DB."""
+    db_path = _get_main_db_path()
+    if not os.path.exists(db_path):
+        return []
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT id, email, is_active, email_confirmed FROM users WHERE is_active=1")
+        rows = [dict(zip(['id', 'email', 'is_active', 'email_confirmed'], r)) for r in cur.fetchall()]
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"⚠️  Error fetching users: {e}")
+        return []
+
+
+def _query_weekly_stats(user_id=None):
+    """Query the main application DB for weekly summary statistics.
+    
+    If user_id is given, only data for that user is counted.
+    """
     db_path = _get_main_db_path()
     if not os.path.exists(db_path):
         print(f"⚠️  Main DB not found at {db_path}")
@@ -472,80 +492,83 @@ def _query_weekly_stats():
         now = datetime.now()
         week_ago = (now - timedelta(days=7)).isoformat()
 
+        uid_filter = "AND user_id=?" if user_id else ""
+        uid_params = [user_id] if user_id else []
+        uid_params2 = [user_id, week_ago] if user_id else [week_ago]
+        uid_params3 = [user_id, week_ago] if user_id else [week_ago]
+
         stats = {}
 
-        cur.execute("SELECT COUNT(*) FROM applications WHERE deleted=0")
+        cur.execute(f"SELECT COUNT(*) FROM applications WHERE deleted=0 {uid_filter}", uid_params if user_id else [])
         stats['total_applications'] = cur.fetchone()[0]
 
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND created_at >= ?",
-            (week_ago,),
+            f"SELECT COUNT(*) FROM applications WHERE deleted=0 AND created_at >= ? {uid_filter}",
+            uid_params2 if user_id else [week_ago],
         )
         stats['new_applications'] = cur.fetchone()[0]
 
-        # Status counts (current state, not just this week)
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='absage'"
+            f"SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='absage' {uid_filter}",
+            uid_params if user_id else [],
         )
         stats['rejected_total'] = cur.fetchone()[0]
 
-        # New status creations this week (created_at = when entered in system)
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='beworben' AND created_at >= ?",
-            (week_ago,),
+            f"SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='beworben' AND created_at >= ? {uid_filter}",
+            uid_params2 if user_id else [week_ago],
         )
         stats['new_applications_week'] = cur.fetchone()[0]
 
-        # Status changes this week (updated_at = when record last changed)
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='absage' AND updated_at >= ?",
-            (week_ago,),
+            f"SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='absage' AND updated_at >= ? {uid_filter}",
+            uid_params2 if user_id else [week_ago],
         )
         stats['rejections_week'] = cur.fetchone()[0]
 
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='interview' AND updated_at >= ?",
-            (week_ago,),
+            f"SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='interview' AND updated_at >= ? {uid_filter}",
+            uid_params2 if user_id else [week_ago],
         )
         stats['interviews_week'] = cur.fetchone()[0]
 
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='zusage' AND updated_at >= ?",
-            (week_ago,),
+            f"SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='zusage' AND updated_at >= ? {uid_filter}",
+            uid_params2 if user_id else [week_ago],
         )
         stats['offers_week'] = cur.fetchone()[0]
 
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='beworben' AND updated_at >= ?",
-            (week_ago,),
+            f"SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='beworben' AND updated_at >= ? {uid_filter}",
+            uid_params2 if user_id else [week_ago],
         )
         stats['new_applications_updated_week'] = cur.fetchone()[0]
 
         cur.execute(
-            "SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='beworben'"
+            f"SELECT COUNT(*) FROM applications WHERE deleted=0 AND status='beworben' {uid_filter}",
+            uid_params if user_id else [],
         )
         stats['pending_applications'] = cur.fetchone()[0]
 
-        cur.execute("SELECT COUNT(*) FROM job_matches WHERE status='new'")
+        cur.execute(
+            f"SELECT COUNT(*) FROM job_matches WHERE status='new' {uid_filter}",
+            uid_params if user_id else [],
+        )
         stats['new_matches'] = cur.fetchone()[0]
 
         cur.execute(
-            "SELECT COUNT(*) FROM job_matches WHERE status='dismissed' AND created_at >= ?",
-            (week_ago,),
+            f"SELECT COUNT(*) FROM job_matches WHERE status='dismissed' AND created_at >= ? {uid_filter}",
+            uid_params2 if user_id else [week_ago],
         )
         stats['dismissed_week'] = cur.fetchone()[0]
 
-        # Recent status changes (last 7 days, by updated_at)
         cur.execute(
-            """SELECT company, position, status, updated_at FROM applications
-               WHERE deleted=0 AND updated_at >= ?
+            f"""SELECT company, position, status, updated_at FROM applications
+               WHERE deleted=0 AND updated_at >= ? {uid_filter}
                ORDER BY updated_at DESC LIMIT 10""",
-            (week_ago,),
+            uid_params2 if user_id else [week_ago],
         )
         stats['recent_changes'] = [dict(r) for r in cur.fetchall()]
-
-        cur.execute("SELECT COUNT(*) FROM users WHERE is_active=1")
-        stats['active_users'] = cur.fetchone()[0]
 
         conn.close()
         return stats
@@ -704,28 +727,55 @@ def should_send_summary():
         return False
 
 def check_and_send_summary(html_content='', text_content=''):
-    """Check schedule and send summary if needed"""
-    if not should_send_summary():
-        return False
+    """Check schedule and send summary if needed.
 
-    recipient = get_config('summary_recipient')
-    if not recipient:
-        print("⚠️  No recipient configured for email summary")
+    If summary_recipient is configured, sends one global summary there.
+    Otherwise sends per-user summaries to each active user.
+    """
+    if not should_send_summary():
         return False
 
     app_url = _get_app_url()
     subject = f"📋 Bewerbungs-Tracker Wochenrückblick - {datetime.now().strftime('%d.%m.%Y')}"
 
-    if not html_content:
-        stats = _query_weekly_stats()
-        html_content = _build_summary_html(stats, app_url)
-        text_content = f"Wochenrückblick {app_url}"
+    recipient = get_config('summary_recipient')
+    if recipient:
+        # Legacy single-recipient mode: global stats
+        if not html_content:
+            stats = _query_weekly_stats()
+            html_content = _build_summary_html(stats, app_url)
+            text_content = f"Wochenrückblick {app_url}"
+        ok = send_email(recipient, subject, html_content, text_content)
+        if ok:
+            set_config('last_sent', datetime.now().isoformat())
+        return ok
 
-    if send_email(recipient, subject, html_content, text_content):
+    # Per-user mode: send personalized summary to each active user
+    users = _get_active_users()
+    if not users:
+        print("⚠️  No active users found for per-user summary")
         set_config('last_sent', datetime.now().isoformat())
-        return True
+        return False
 
-    return False
+    sent_count = 0
+    for u in users:
+        uid = u['id']
+        email = u['email']
+        stats = _query_weekly_stats(user_id=uid)
+        # Skip users with no data at all
+        if not stats or stats['total_applications'] == 0:
+            continue
+        html = _build_summary_html(stats, app_url)
+        txt = f"Wochenrückblick {app_url}"
+        if send_email(email, subject, html, txt):
+            sent_count += 1
+            print(f"📧 Per-user summary sent to {email}")
+        else:
+            print(f"⚠️  Failed to send per-user summary to {email}")
+
+    set_config('last_sent', datetime.now().isoformat())
+    print(f"📧 Per-user summary: {sent_count} emails sent")
+    return sent_count > 0
 
 # ── Email Monitoring ──────────────────────────────────────────────────
 
