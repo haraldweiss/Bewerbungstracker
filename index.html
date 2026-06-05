@@ -10909,13 +10909,33 @@ async function onOverrideProviderChange(feature) {
             return;
         }
         const data = await r.json();
-        for (const m of (data.models || [])) {
-            const opt = document.createElement('option');
-            opt.value = m;
-            opt.textContent = m;
-            modelSel.appendChild(opt);
+        const models = data.models || [];
+        const freeOverrideModels = models.filter(m => m.endsWith('-free')).sort();
+        const paidOverrideModels = models.filter(m => !m.endsWith('-free')).sort();
+
+        if (freeOverrideModels.length > 0) {
+            const grp = document.createElement('optgroup');
+            grp.label = '⭐ Free-Modelle';
+            freeOverrideModels.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m;
+                opt.textContent = m;
+                grp.appendChild(opt);
+            });
+            modelSel.appendChild(grp);
         }
-        const current = _featureOverridesState[feature];
+        if (paidOverrideModels.length > 0) {
+            const grp = document.createElement('optgroup');
+            grp.label = '💳 Paid-Modelle';
+            paidOverrideModels.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m;
+                opt.textContent = m;
+                grp.appendChild(opt);
+            });
+            modelSel.appendChild(grp);
+        }
+        const currentOv = _featureOverridesState[feature];
         if (current && current.model) modelSel.value = current.model;
         else modelSel.value = data.default || (data.models[0] || '');
         onOverrideModelChange(feature);
@@ -11005,6 +11025,10 @@ async function openModelComparisonModal() {
             } catch (e) { /* skip */ }
         }
 
+        // Sort rows: free models first (groupted by -free suffix), then paid
+        const freeRows = rows.filter(r => r.model.endsWith('-free')).sort((a, b) => a.model.localeCompare(b.model));
+        const paidRows = rows.filter(r => !r.model.endsWith('-free')).sort((a, b) => a.model.localeCompare(b.model));
+
         content.replaceChildren();
         if (rows.length === 0) {
             const em = document.createElement('em');
@@ -11074,44 +11098,38 @@ async function openModelComparisonModal() {
         }
         tbody.appendChild(stdTr);
 
-        // Modell-Zeilen mit Radio-Buttons pro Task-Spalte
-        for (const r of rows) {
-            const tr = document.createElement('tr');
-            tr.style.borderTop = '1px solid var(--border)';
-            const tdModel = document.createElement('td');
-            tdModel.style.cssText = 'padding:0.4rem;font-size:0.85rem;';
-            const muted = document.createElement('span');
-            muted.style.color = 'var(--text-muted)';
-            muted.textContent = r.providerName + ': ';
-            tdModel.appendChild(muted);
-            tdModel.appendChild(document.createTextNode(r.model));
-            tr.appendChild(tdModel);
+        // Free models section header
+        if (freeRows.length > 0) {
+            const sepTr = document.createElement('tr');
+            sepTr.style.cssText = 'background:var(--bg-card);';
+            const sepTd = document.createElement('td');
+            sepTd.style.cssText = 'padding:0.5rem 0.4rem;font-size:0.9rem;font-weight:600;color:#b8860b;';
+            sepTd.textContent = '⭐ Free-Modelle (kein Guthaben nötig)';
+            sepTd.colSpan = 1 + features.length;
+            sepTr.appendChild(sepTd);
+            tbody.appendChild(sepTr);
 
-            const rowValue = r.provider + '|' + r.model;
-            for (const f of features) {
-                const rec = modelRecommendation(r.provider, r.model, f);
-                const td = document.createElement('td');
-                td.style.cssText = 'padding:0.4rem;text-align:center;';
-                td.title = rec.text;
-
-                const wrap = document.createElement('label');
-                wrap.style.cssText = 'display:inline-flex;align-items:center;gap:0.3rem;cursor:pointer;';
-                const radio = document.createElement('input');
-                radio.type = 'radio';
-                radio.name = 'model-pick-' + f;
-                radio.value = rowValue;
-                radio.checked = (initialSelection[f] === rowValue);
-                radio.style.cssText = 'cursor:pointer;';
-                wrap.appendChild(radio);
-                const iconSpan = document.createElement('span');
-                iconSpan.textContent = rec.icon;
-                wrap.appendChild(iconSpan);
-
-                td.appendChild(wrap);
-                tr.appendChild(td);
+            for (const r of freeRows) {
+                renderModelRow(tbody, r, features, initialSelection);
             }
-            tbody.appendChild(tr);
         }
+
+        // Paid models section header
+        if (paidRows.length > 0) {
+            const sepTr = document.createElement('tr');
+            sepTr.style.cssText = 'background:var(--bg-card);';
+            const sepTd = document.createElement('td');
+            sepTd.style.cssText = 'padding:0.5rem 0.4rem;font-size:0.9rem;font-weight:600;color:var(--text-muted);';
+            sepTd.textContent = '💳 Paid-Modelle';
+            sepTd.colSpan = 1 + features.length;
+            sepTr.appendChild(sepTd);
+            tbody.appendChild(sepTr);
+
+            for (const r of paidRows) {
+                renderModelRow(tbody, r, features, initialSelection);
+            }
+        }
+
         table.appendChild(tbody);
         content.appendChild(table);
 
@@ -11143,6 +11161,44 @@ async function openModelComparisonModal() {
 
 function closeModelComparisonModal() {
     document.getElementById('modelComparisonModal').style.display = 'none';
+}
+
+function renderModelRow(tbody, r, features, initialSelection) {
+    const tr = document.createElement('tr');
+    tr.style.borderTop = '1px solid var(--border)';
+    const tdModel = document.createElement('td');
+    tdModel.style.cssText = 'padding:0.4rem;font-size:0.85rem;';
+    const muted = document.createElement('span');
+    muted.style.color = 'var(--text-muted)';
+    muted.textContent = r.providerName + ': ';
+    tdModel.appendChild(muted);
+    tdModel.appendChild(document.createTextNode(r.model));
+    tr.appendChild(tdModel);
+
+    const rowValue = r.provider + '|' + r.model;
+    for (const f of features) {
+        const rec = modelRecommendation(r.provider, r.model, f);
+        const td = document.createElement('td');
+        td.style.cssText = 'padding:0.4rem;text-align:center;';
+        td.title = rec.text;
+
+        const wrap = document.createElement('label');
+        wrap.style.cssText = 'display:inline-flex;align-items:center;gap:0.3rem;cursor:pointer;';
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'model-pick-' + f;
+        radio.value = rowValue;
+        radio.checked = (initialSelection[f] === rowValue);
+        radio.style.cssText = 'cursor:pointer;';
+        wrap.appendChild(radio);
+        const iconSpan = document.createElement('span');
+        iconSpan.textContent = rec.icon;
+        wrap.appendChild(iconSpan);
+
+        td.appendChild(wrap);
+        tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
 }
 
 async function quickSetOverride(provider, model, feature) {
@@ -11292,12 +11348,32 @@ async function onProviderChange() {
             return;
         }
 
-        data.models.forEach(model => {
-            const option = document.createElement('option');
-            option.value = model;
-            option.textContent = model + (model === data.default ? ' (Standard)' : '');
-            modelSelect.appendChild(option);
-        });
+        const models = data.models || [];
+        const freeModels = models.filter(m => m.endsWith('-free')).sort();
+        const paidModels = models.filter(m => !m.endsWith('-free')).sort();
+
+        if (freeModels.length > 0) {
+            const grp = document.createElement('optgroup');
+            grp.label = '⭐ Free-Modelle';
+            freeModels.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                grp.appendChild(option);
+            });
+            modelSelect.appendChild(grp);
+        }
+        if (paidModels.length > 0) {
+            const grp = document.createElement('optgroup');
+            grp.label = '💳 Paid-Modelle';
+            paidModels.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                grp.appendChild(option);
+            });
+            modelSelect.appendChild(grp);
+        }
 
         modelSelect.value = data.default || (data.models[0] || '');
     } catch (e) {
