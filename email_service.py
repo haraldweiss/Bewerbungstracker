@@ -465,6 +465,8 @@ def _query_weekly_stats():
     if not os.path.exists(db_path):
         print(f"⚠️  Main DB not found at {db_path}")
         return None
+    _db_size = os.path.getsize(db_path)
+    print(f"📂 _query_weekly_stats: opening db_path={db_path}, size={_db_size}")
 
     try:
         conn = sqlite3.connect(db_path)
@@ -549,6 +551,7 @@ def _query_weekly_stats():
         stats['active_users'] = cur.fetchone()[0]
 
         conn.close()
+        print(f"📊 _query_weekly_stats: total={stats.get('total_applications')}, path={db_path}")
         return stats
     except Exception as e:
         print(f"⚠️  Error querying main DB: {e}")
