@@ -171,6 +171,11 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 - **email_config.db** liegt jetzt auf dem schreibbaren Volume (`/app/data/`)
 - **SMTP-Konfiguration** aktualisiert (IONOS-Passwort neu gesetzt)
 - Deployed to IONOS VPS (Container-Image neugebaut + Email-Service restarted)
+### 2026-06-05 — Weekly Summary Fix: baked-in .env override root cause
+- **Root Cause:** `docker-entrypoint.sh` sourced `/app/.env` nach Quadlet-Env-Init → baked-in `DATABASE_URL=sqlite:///bewerbungstracker.db` überschrieb Quadlets `sqlite:////app/data/instance/...`
+- **Fix:** `.env` zu `.dockerignore` hinzugefügt + `/var/www/bewerbungen/.env` auf VPS gelöscht + Image neugebaut + alle Container restarted
+- Alle Container haben jetzt korrekte `DATABASE_URL` im Prozess-Env (via `/proc/<pid>/environ` verifiziert)
+- **Lehre:** Baked-in `.env` im Image ist gefährlich wenn es env-Vars setzt die Quadlet vorgibt. `docker-entrypoint.sh` sollte entweder kein `.env` sourcen oder nur für lokale Dev-Umgebung.
 ### 2026-06-05 — Auto-Reject-Analyse + Quick-Win-Fixes
 - **Analyse Prod-DB:** 1.786/1.891 JobMatches dismissed (94 %), aber `company_already_rejected` traf nur 7×. Den 138 manuellen User-Texten standen 12+ Fälle „X hat schon abgesagt" gegenüber → zwei Lücken identifiziert: (a) Suffix-Mismatch („Signal Iduna" vs. „Signal Iduna Group AG"), (b) Status `ghosting` nicht in Reject-Set.
 - **Fix 1 — Company-Normalisierung:** Neuer Helper `services/email_import_utils.py::normalize_company()` (Rechtsformen-Strip GmbH/AG/KG/SE/Ltd/Inc + „Group/Holding/International" + Trailing-Klammern). `get_rejected_companies_lower()` liefert normalisiertes Set. Alle 4 Vergleichsstellen umgestellt (cron_prefilter, email_import, cron_indeed_email_import, api/jobs_user). Inline-Duplikat in cron_prefilter entfernt.
