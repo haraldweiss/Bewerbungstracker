@@ -115,8 +115,16 @@ def normalize_company(name: str | None) -> str:
     return s.lower()
 
 
+# Status-Werte, die für die Auto-Reject-Logik als "Firma effektiv abgelehnt"
+# zählen. 'absage'/'rejected' = explizite Absage; 'ghosting' = keine Antwort
+# (terminal aus User-Sicht, siehe feedback_bridge.py::_TERMINAL_STATES + Mapping
+# ghosting → rejected_after_apply). Prod-DB (5.6.2026): 56× absage, 9× ghosting.
+_REJECTING_STATUSES = ('absage', 'rejected', 'ghosting')
+
+
 def get_rejected_companies_lower(user_id: str, window_days: int) -> set[str]:
-    """Liefert normalisierte company-Namen mit Status 'absage' im Reject-Fenster.
+    """Liefert normalisierte company-Namen, deren Bewerbung im Reject-Fenster
+    in einem "ablehnenden" Status liegt (siehe `_REJECTING_STATUSES`).
 
     Normalisierung via `normalize_company()` (Rechtsformen-Strip + lowercase).
     Callers MÜSSEN ihren Vergleichswert mit derselben Funktion normalisieren.
@@ -128,7 +136,7 @@ def get_rejected_companies_lower(user_id: str, window_days: int) -> set[str]:
         .filter(
             Application.user_id == user_id,
             Application.deleted == False,  # noqa: E712
-            Application.status.in_(['absage', 'rejected']),
+            Application.status.in_(_REJECTING_STATUSES),
             Application.company.isnot(None),
             db.or_(
                 Application.applied_date >= cutoff_date,
