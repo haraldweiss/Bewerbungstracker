@@ -440,7 +440,6 @@ def _get_main_db_path():
         return _MAIN_DB_PATH
 
     db_url = os.getenv('DATABASE_URL', '')
-    print(f"🔍 _get_main_db_path: DATABASE_URL={db_url!r}")
     if db_url and db_url.startswith('sqlite:////'):
         # sqlite:////abs/path → /abs/path (4 slashes = protocol + absolute path)
         _MAIN_DB_PATH = '/' + db_url[len('sqlite:////'):]
@@ -449,7 +448,6 @@ def _get_main_db_path():
         _MAIN_DB_PATH = db_url[len('sqlite:///'):]
     else:
         _MAIN_DB_PATH = 'instance/bewerbungstracker.db'
-    print(f"🔍 _get_main_db_path: result={_MAIN_DB_PATH!r}")
     return _MAIN_DB_PATH
 
 
@@ -467,9 +465,6 @@ def _query_weekly_stats():
     if not os.path.exists(db_path):
         print(f"⚠️  Main DB not found at {db_path}")
         return None
-    _db_size = os.path.getsize(db_path)
-    print(f"📂 _query_weekly_stats: opening db_path={db_path}, size={_db_size}")
-
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
@@ -553,7 +548,6 @@ def _query_weekly_stats():
         stats['active_users'] = cur.fetchone()[0]
 
         conn.close()
-        print(f"📊 _query_weekly_stats: total={stats.get('total_applications')}, path={db_path}")
         return stats
     except Exception as e:
         print(f"⚠️  Error querying main DB: {e}")
@@ -724,8 +718,6 @@ def check_and_send_summary(html_content='', text_content=''):
 
     if not html_content:
         stats = _query_weekly_stats()
-        total = stats.get('total_applications', 'error') if stats else 'no-db'
-        print(f"📊 Sending summary: total={total}, stats present={stats is not None}")
         html_content = _build_summary_html(stats, app_url)
         text_content = f"Wochenrückblick {app_url}"
 
