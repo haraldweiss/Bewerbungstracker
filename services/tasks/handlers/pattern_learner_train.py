@@ -81,7 +81,8 @@ def handle_pattern_learner_train(payload: dict, *, progress_cb: Optional[Callabl
     try:
         pattern = pl.ai_learn_pattern(
             user, train_samples=train, platform=platform,
-            provider_override='opencode',
+            provider_override='ollama',
+            model_override='qwen3-coder:latest',
         )
     except RuntimeError as exc:
         raise RuntimeError(f"AI-Train fehlgeschlagen: {exc}") from exc

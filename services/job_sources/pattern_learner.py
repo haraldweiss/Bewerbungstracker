@@ -623,41 +623,7 @@ def _build_user_prompt(
     return "\n".join(lines)
 
 
-_OPENCODE_API_KEY = os.getenv('OPENCODE_API_KEY', 'sk-2bITlBUQARtQyEMz3d25duW9kpqWzElVM3O73qvQ6VUUhjUchYl721AU7fAKob5Q')
-_OPENCODE_BASE = os.getenv('OPENCODE_BASE_URL', 'https://opencode.ai/zen/v1')
-_OPENCODE_FREE_MODEL = os.getenv('OPENCODE_FREE_MODEL', 'mimo-v2.5-free')
 
-
-def _ai_chat_opencode(messages: list[dict], model: str = '') -> str:
-    model = model or _OPENCODE_FREE_MODEL
-    """Direct call to opencode.ai API (bypasses ai-provider-service).
-
-    Uses higher max_tokens for DeepSeek models which consume tokens on
-    chain-of-thought reasoning before generating the actual response.
-    """
-    import requests as _req
-    resp = _req.post(
-        f'{_OPENCODE_BASE}/chat/completions',
-        json={
-            "model": model,
-            "messages": messages,
-            "max_tokens": 4096,
-            "temperature": 0.3,
-            "max_reasoning_tokens": 1024,
-        },
-        headers={"Authorization": f"Bearer {_OPENCODE_API_KEY}"},
-        timeout=300,
-    )
-    if resp.status_code != 200:
-        logger.error("opencode API returned %s: %s", resp.status_code, resp.text[:200])
-    resp.raise_for_status()
-    data = resp.json()
-    content = data["choices"][0]["message"]["content"] or ""
-    if not content:
-        logger.warning("opencode returned empty content. Finish: %s, Model: %s",
-                       data["choices"][0].get("finish_reason"),
-                       data.get("model"))
-    return content
 
 
 def _ai_learn_via_provider(
@@ -725,14 +691,6 @@ def ai_learn_pattern(user, train_samples: list[dict], platform: str,
     # Use get_client() in prod (returns None if not configured); in tests the
     # `.chat` method is monkey-patched on the class, so a dummy instance is
     # sufficient.
-    # Direct opencode.ai call for free model training (bypasses ai-provider-service)
-    if provider_override == 'opencode':
-        use_model = model_override or _OPENCODE_FREE_MODEL
-        return _ai_learn_via_provider(
-            provider_call=lambda msgs: _ai_chat_opencode(msgs, use_model),
-            train_samples=train_samples, platform=platform,
-        )
-
     client = _aip.get_client()
     if client is None:
         # Tests patch chat() on the class — instantiate with placeholder creds
