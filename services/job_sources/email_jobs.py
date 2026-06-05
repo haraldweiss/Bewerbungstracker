@@ -169,13 +169,15 @@ PROFILES: dict[str, PlatformProfile] = {
             re.IGNORECASE,
         ),
         # LinkedIn-Card: 3 Zeilen Title / Company / Location, gefolgt von
-        # 0–3 Trenner-Zeilen, dann "Jobangebot ansehen: <URL>".
+        # 0–5 Trenner-Zeilen, dann optionaler Label-Text, dann Job-URL.
+        # Der Label ist typisch "Jobangebot ansehen", "View job" etc. —
+        # flexibel gehalten da LinkedIn das Format aendert.
         body_card_re=re.compile(
             r"^[ \t]*(?P<title>\S[^\r\n]{2,200}\S)\s*\r?\n"
             r"[ \t]*(?P<company>\S[^\r\n]{1,150}\S)\s*\r?\n"
             r"[ \t]*(?P<location>\S[^\r\n]{1,80}\S)\s*\r?\n"
             r"(?:[^\r\n]*\r?\n){0,5}?"
-            r"\s*(?:Jobangebot ansehen|View job|Show job)\s*:?\s*"
+            r"[^\S\r\n]*(?:[A-Za-z\u00e4\u00f6\u00fc\u00df].{0,60})?\s*:?\s*"
             r"(?P<url>https?://(?:www\.)?linkedin\.com/[^\s\r\n)<>\"']+)",
             re.IGNORECASE | re.MULTILINE,
         ),
@@ -190,16 +192,31 @@ PROFILES: dict[str, PlatformProfile] = {
         # auch wenn das AI-gelernte title_blacklist sie nicht enthält.
         hard_title_blacklist_re=re.compile(
             r"^(?:"
-            r"\d+\s+neue?r?\s+(?:Position|Stelle|Job)|"     # "11 neue Positionen als ..."
-            r"Ihre Jobbenachrichtigung|"                     # Newsletter-Header
-            r"Top-Jobs?|"                                    # "Top-Jobs für Sie"
-            r"\d+\s+neue?r?\s+Jobs?|"                        # "5 neue Jobs"
-            r"Ergebnisse der|"                               # "Ergebnisse der KI-Suche"
+            r"\d+\s+neue?r?\s+(?:Position|Stelle|Job|Mitarbeiter|Firma)|"
+            r"\d+\s+weiter(?:e|en)\s+(?:Position|Stelle|Job|Mitarbeiter)|"
+            r"Ihre Jobbenachrichtigung|"
+            r"Top-Jobs?|"
+            r"\d+\s+neue?r?\s+Jobs?|"
+            r"\d+\s+weitere\s+Jobs?|"
+            r"Ergebnisse der|"
+            r"Vorschläge für|"
             r"Empfohlene Jobs|"
             r"Recommended (?:for you|jobs)|"
-            r"Lust auf|"                                     # "Lust auf einen Nebenjob..."
+            r"Lust auf|"
             r"Jobs you may be interested in|"
-            r"Bewerben Sie sich als Erste"                   # CTA-Heading
+            r"Bewerben Sie sich als Erste|"
+            r"Stellen, die dir gefallen könnten|"
+            r"Stellen, die (?:dir|Ihnen) gefallen|"
+            r"Aufbauend auf deinen Fähigkeiten|"
+            r"Beliebt bei Bewerbern|"
+            r"\u00c4hnliche Jobs?|"                          # "Ähnliche Jobs"
+            r"Neue Stellenangebote|"
+            r"Passende (?:Stellen|Jobs) für|"
+            r"Jobs in deinem (?:Netzwerk|Bereich)|"
+            r"Stellen in deinem (?:Netzwerk|Bereich)|"
+            r"Das könnte dich interessieren|"
+            r"Das könnte Ihnen gefallen|"
+            r"Möglicherweise interessant"
             r")",
             re.IGNORECASE,
         ),
@@ -761,8 +778,21 @@ class EmailJobsAdapter(JobSourceAdapter):
                     # sonst als Title rein wenn der Card-Header direkt vor
                     # "Jobangebot ansehen" steht (statt einer echten Job-Card).
                     if re.search(
-                        r"(?i)^(?:Ihre Jobbenachrichtigung|\d+\s*neue?r?\s*Jobs?|"
-                        r"Ergebnisse|Top-Jobs|Lust auf)",
+                        r"(?i)^(?:"
+                        r"Ihre Jobbenachrichtigung|"
+                        r"\d+\s*neue?r?\s*(?:Jobs?|Stellen?)|"
+                        r"\d+\s*weitere\s*(?:Jobs?|Stellen?)|"
+                        r"Ergebnisse|"
+                        r"Top-Jobs?|"
+                        r"Lust auf|"
+                        r"Empfohlene|"
+                        r"Recommended|"
+                        r"Vorschläge\s+für|"
+                        r"Beliebt bei|"
+                        r"Aufbauend auf|"
+                        r"Passende\s+(?:Stellen|Jobs)\s+für|"
+                        r"Das könnte"
+                        r")",
                         t,
                     ):
                         continue

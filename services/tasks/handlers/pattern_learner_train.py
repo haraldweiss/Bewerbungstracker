@@ -39,8 +39,8 @@ def handle_pattern_learner_train(payload: dict, *, progress_cb: Optional[Callabl
         raise ValueError(f"source_id {payload['source_id']!r} nicht zugänglich")
 
     platform = src.type.removesuffix("_email")
-    sample_size = int(payload.get('sample_size') or 30)
-    train_size = int(payload.get('train_size') or 5)
+    sample_size = int(payload.get('sample_size') or 20)
+    train_size = int(payload.get('train_size') or 3)
     min_hit_rate = float(payload.get('min_hit_rate') or 0.40)
 
     if progress_cb:
