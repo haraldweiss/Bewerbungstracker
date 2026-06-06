@@ -1,5 +1,6 @@
 """AI Provider Management Endpoints.
 
+from __future__ import annotations
 Wenn `AI_PROVIDER_SERVICE_URL` gesetzt ist (Production), delegieren die Endpoints
 an den zentralen ai-provider-service. Sonst Fallback auf die lokale
 ProviderFactory (Local-Dev ohne Service).
@@ -33,7 +34,6 @@ USER_PROVIDERS = {'claude', 'openai', 'mammouth', 'custom', 'opencode'}
 
 def _validate_model_for_provider(user_id: str, provider: str, model: str) -> str | None:
     """
-from __future__ import annotations
 Prüft, ob `model` für `provider` verfügbar ist (via ai-provider-service).
 
     Returns None bei Erfolg oder einen Fehlerstring bei ungültigem Modell.

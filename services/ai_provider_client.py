@@ -1,5 +1,6 @@
 """HTTP-Client für ai-provider-service.
 
+from __future__ import annotations
 Dünner Wrapper um die REST-API des zentralen Provider-Service. Wird vom
 Bewerbungstracker statt der alten lokalen ProviderFactory genutzt, sobald
 AI_PROVIDER_SERVICE_URL in den Env-Vars gesetzt ist.
@@ -8,7 +9,6 @@ Antwort-Format ist Claude-kompatibel (Drop-in für match_job_with_claude):
   ChatResponse mit .content[0].text und .usage.input_tokens / .output_tokens
 """
 
-from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Optional, List, Dict
