@@ -2,6 +2,7 @@
 # © 2026 Harald Weiss
 """Lokales Keyword-Scoring (Pre-Filter vor Claude-Match).
 
+from __future__ import annotations
 Score-Logik:
 - Skill-Overlap: × 3 Gewichtung
 - Titel-Overlap: × 2

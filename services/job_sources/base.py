@@ -3,6 +3,7 @@
 """Base-Class für Job-Source-Adapter."""
 
 from __future__ import annotations
+from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from abc import ABC, abstractmethod

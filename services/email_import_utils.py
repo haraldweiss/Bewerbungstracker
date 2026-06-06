@@ -2,6 +2,7 @@
 # © 2026 Harald Weiss
 """Shared email-import utilities extracted from api/jobs_user.py.
 
+from __future__ import annotations
 Erlaubt Import aus services/tasks/handlers/ ohne zirkuläre Imports.
 """
 from __future__ import annotations

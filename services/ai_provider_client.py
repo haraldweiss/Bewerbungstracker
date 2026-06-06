@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 class AIProviderServiceError(Exception):
-    """Base-Exception für Service-Fehler."""
+    """
+from __future__ import annotations
+Base-Exception für Service-Fehler."""
 
 
 class AIProviderQueuedError(AIProviderServiceError):

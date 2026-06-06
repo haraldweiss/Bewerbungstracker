@@ -3,6 +3,7 @@
 """User-facing Job-Discovery Endpoints (JWT-geschützt)."""
 
 from __future__ import annotations
+from __future__ import annotations
 import re
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, current_app

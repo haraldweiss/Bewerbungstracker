@@ -2,6 +2,7 @@
 # (c) 2026 Harald Weiss
 """AI-gesteuerter Pattern-Lerner für Email-Job-Adapter.
 
+from __future__ import annotations
 Pipeline: fetch_sample_mails -> ai_learn_pattern -> compile_pattern ->
 validate_pattern. Bei Hit-Rate >= Schwelle wird das Pattern als neue Row
 in `learned_email_patterns` gespeichert (alte deaktiviert).

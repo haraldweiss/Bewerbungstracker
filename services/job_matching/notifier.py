@@ -2,6 +2,7 @@
 # © 2026 Harald Weiss
 """Push-Notifications für Match-Treffer.
 
+from __future__ import annotations
 Phase A: Stub mit logging — wird durch echten Push-Service ersetzt.
 """
 

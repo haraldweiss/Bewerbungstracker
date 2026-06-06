@@ -2,6 +2,7 @@
 # (c) 2026 Harald Weiss
 """URL-Health-Check fuer Job-URLs.
 
+from __future__ import annotations
 Wird vom Cron-Endpoint /api/jobs/url-health-check taeglich aufgerufen.
 Markiert RawJobs als 'marked_for_deletion' bei:
   - 404/410 (permanent weg) - sofort

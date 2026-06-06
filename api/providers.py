@@ -32,7 +32,9 @@ USER_PROVIDERS = {'claude', 'openai', 'mammouth', 'custom', 'opencode'}
 
 
 def _validate_model_for_provider(user_id: str, provider: str, model: str) -> str | None:
-    """Prüft, ob `model` für `provider` verfügbar ist (via ai-provider-service).
+    """
+from __future__ import annotations
+Prüft, ob `model` für `provider` verfügbar ist (via ai-provider-service).
 
     Returns None bei Erfolg oder einen Fehlerstring bei ungültigem Modell.
     Lenient: Wenn der Service nicht antwortet oder keine Modell-Liste zurückgibt,

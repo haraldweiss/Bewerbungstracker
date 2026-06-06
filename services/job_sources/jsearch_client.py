@@ -2,6 +2,7 @@
 # © 2026 Harald Weiss
 """JSearch (RapidAPI) Client für Multi-Source Job Aggregation.
 
+from __future__ import annotations
 Free-Tier: 2500 Requests/Monat.
 Doc: https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch
 """

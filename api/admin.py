@@ -2,6 +2,7 @@
 # © 2026 Harald Weiss
 import json
 import re
+from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta
 

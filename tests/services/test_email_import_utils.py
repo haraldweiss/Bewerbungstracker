@@ -2,6 +2,7 @@
 # © 2026 Harald Weiss
 """Unit-Tests für normalize_company() + get_rejected_companies_lower().
 
+from __future__ import annotations
 Hintergrund: Auto-Reject-Analyse (2026-06-05) zeigte 12+ User-Texte vom Typ
 "X hat schon abgesagt", denen das System nur 7 Treffer entgegen­setzte —
 Hauptursachen: (a) Company-String mit/ohne Rechtsform-Suffix, (b) Status
