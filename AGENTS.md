@@ -263,6 +263,24 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 - Getestet: `pytest tests/api/test_pattern_learner_api.py` (12/12 passed)
 - NICHT deployed to IONOS
 
+### 2026-06-06 — ai-provider-service Memory-Layer verfügbar (kein Code-Change hier)
+
+**Was sich ändert:** Der Gateway (`ai-provider-service`) stellt seit gestern (PR [#14](https://github.com/haraldweiss/ai-provider-service/pull/14) + Phase 1.5/2, deployed auf VPS) eine Markdown-Memory-Schicht bereit. **Bewerbungstracker schreibt aktuell NICHT** dorthin — der Eintrag ist nur informativ, damit künftige Erweiterungen wissen dass das da ist.
+
+**Was Bewerbungstracker tun könnte** (wenn Bedarf entsteht):
+- `POST https://bewerbungen.wolfinisoftware.de/ai-provider/memory/events` mit `{"user_id":"<...>", "app":"bewerbungstracker", "event_type":"application_created", "payload":{"company":"...", "position":"...", "platform":"..."}}` bei jedem neu erkannten Job
+- `POST .../memory/notes` mit freien Markdown-Notizen wenn semi-strukturiert reicht
+- `GET .../memory/search?q=<keyword>&user_id=<...>` zur FTS5-Suche über vergangene Jobs/Notizen (porter+unicode61)
+- Vault per WebDAV unter `/ai-provider/memory/dav/?user_id=<...>` direkt in Obsidian öffnen
+
+**Auth:** Bearer-Token (gleicher `SERVICE_TOKEN` den die App schon fürs Gateway nutzt). User-Scoping ist hart — Apps können nur auf den eigenen `user_id` schreiben außer der Token ist Admin.
+
+**Rate-Limits seit Phase 1.5:** 60 POST/min, 120 GET/min, 5 vault-exports/min pro User — bei Bulk-Import einfach drosseln.
+
+**Caveat:** Audit läuft automatisch beim Gateway (jeder `/chat`-Call landet in `memory_notes` mit `kind=audit`, `app=<X-Origin-App>`). Bewerbungstracker schickt schon `X-Origin-App: bewerbungstracker` — das taucht also als App-Label im audit-Vault auf. Kein Action erforderlich, nur wissen dass es so ist.
+
+**Sibling-Repo:** [`ai-provider-service` AGENTS.md §7](https://github.com/haraldweiss/ai-provider-service/blob/main/AGENTS.md) hat den vollständigen Status. Spec/Plan: `docs/superpowers/{specs,plans}/2026-06-05-markdown-memory-*.md` im Gateway-Repo.
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/
