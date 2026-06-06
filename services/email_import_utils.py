@@ -92,6 +92,50 @@ _COMPANY_SUFFIX_RE = re.compile(
 )
 
 
+BODY_REJECT_PHRASES: list[str] = [
+    # German phrases indicating a position is no longer accepting applications
+    "werden keine Bewerbungen mehr angenommen",
+    "es werden keine bewerbungen mehr angenommen",
+    "haben bereits genügend bewerbungen",
+    "bereits genügend bewerbungen erhalten",
+    "bewerbungsfrist abgelaufen",
+    "bewerbungsfrist bereits abgelaufen",
+    "bewerbungsfrist ist abgelaufen",
+    "die stelle ist nicht mehr verfügbar",
+    "position ist nicht mehr verfügbar",
+    "diese position ist bereits besetzt",
+    "die position ist bereits vergeben",
+    "keine weiteren bewerbungen",
+    "nimmt derzeit keine bewerbungen an",
+    "stellenanzeige ist nicht mehr aktiv",
+]
+
+BODY_REJECT_PHRASES_COMPILED: re.Pattern | None = None
+
+
+def _compile_body_reject_pattern() -> re.Pattern:
+    global BODY_REJECT_PHRASES_COMPILED
+    if BODY_REJECT_PHRASES_COMPILED is None:
+        BODY_REJECT_PHRASES_COMPILED = re.compile(
+            "|".join(re.escape(p) for p in BODY_REJECT_PHRASES),
+            re.IGNORECASE,
+        )
+    return BODY_REJECT_PHRASES_COMPILED
+
+
+def scan_body_reject(text: str | None) -> bool:
+    """Prüft, ob der Job-Text einen Grund zur automatischen Ablehnung enthält.
+
+    Durchsucht Titel + Beschreibung nach Phrasen wie "werden keine Bewerbungen
+    mehr angenommen". Falls True, sollte der Job mit feedback_text='body_phrase_rejected'
+    abgewiesen werden.
+    """
+    if not text:
+        return False
+    pattern = _compile_body_reject_pattern()
+    return bool(pattern.search(text))
+
+
 def normalize_company(name: str | None) -> str:
     """Lowercase + trailing legal-suffix-Strip für Company-Match.
 

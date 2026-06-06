@@ -14,6 +14,8 @@ from models import Application
 from services.email_import_utils import (
     get_rejected_companies_lower,
     normalize_company,
+    scan_body_reject,
+    BODY_REJECT_PHRASES,
 )
 
 
@@ -162,3 +164,18 @@ def test_rejected_set_ignores_deleted(app, user_factory):
         db.session.commit()
         result = get_rejected_companies_lower(user.id, window_days=180)
         assert result == set()
+
+
+def test_scan_body_reject_matches_known_phrases():
+    assert scan_body_reject("Wir haben bereits genügend Bewerbungen erhalten")
+    assert scan_body_reject("Es werden keine Bewerbungen mehr angenommen")
+    assert scan_body_reject("Die Stelle ist nicht mehr verfügbar")
+    assert scan_body_reject("Bewerbungsfrist abgelaufen")
+    assert scan_body_reject("Diese Position ist bereits besetzt")
+
+
+def test_scan_body_reject_ignores_clean_text():
+    assert not scan_body_reject("Wir suchen Verstärkung für unser Team")
+    assert not scan_body_reject("")
+    assert not scan_body_reject(None)
+    assert not scan_body_reject("Bewerbungen willkommen bis zum 31.12.")

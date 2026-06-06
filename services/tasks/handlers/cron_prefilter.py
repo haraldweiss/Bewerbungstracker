@@ -31,7 +31,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
     from services.job_matching.cv_tokenizer import tokenize_cv
     from services.job_matching.prefilter import score_job, PrefilterContext, detect_job_type
     from services.email_import_utils import (
-        get_rejected_companies_lower, normalize_company,
+        get_rejected_companies_lower, normalize_company, scan_body_reject,
     )
 
     started = time.time()
@@ -51,6 +51,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
     ai_confirm_overruled = 0
     rejected_company_dismissed = 0
     wrong_job_type_dismissed = 0
+    body_phrase_dismissed = 0
 
     def _rejected_companies_for(user_id: str, window_days: int) -> set:
         if user_id not in rejected_companies_cache:
@@ -129,6 +130,12 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
             if detected and detected in blacklist:
                 is_blacklisted_job_type = True
 
+        is_body_rejected = False
+        if not is_rejected_company and not is_blacklisted_job_type:
+            body_text = f"{raw.title or ''} {raw.description or ''}"
+            if scan_body_reject(body_text):
+                is_body_rejected = True
+
         user_has_judgment = _has_user_judgment(match)
 
         if is_rejected_company:
@@ -143,6 +150,12 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
                 match.feedback_text = 'wrong_job_type_blocked'
             dismissed += 1
             wrong_job_type_dismissed += 1
+        elif is_body_rejected:
+            match.status = 'dismissed'
+            if not user_has_judgment:
+                match.feedback_text = 'body_phrase_rejected'
+            dismissed += 1
+            body_phrase_dismissed += 1
         elif is_duplicate:
             match.status = 'dismissed'
             if not user_has_judgment:
@@ -186,6 +199,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
         "dismissed": dismissed,
         "rejected_company_dismissed": rejected_company_dismissed,
         "wrong_job_type_dismissed": wrong_job_type_dismissed,
+        "body_phrase_dismissed": body_phrase_dismissed,
         "ai_confirm_used": ai_confirm_used,
         "ai_confirm_overruled": ai_confirm_overruled,
         "duration_sec": round(time.time() - started, 2),
