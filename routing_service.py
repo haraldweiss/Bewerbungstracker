@@ -19,6 +19,17 @@ from datetime import datetime
 import json
 
 
+TASK_TIER = {
+    'cover_letter':      {'model': 'claude-sonnet-4-6',        'tokens_out': 2000, 'cost': 0.015,  'label': 'Sonnet'},
+    'key_decision':      {'model': 'claude-opus-4-7',          'tokens_out': 1000, 'cost': 0.030,  'label': 'Opus'},
+    'email_analysis':    {'model': 'claude-haiku-4-5-20251001','tokens_out': 500,  'cost': 0.003,  'label': 'Haiku'},
+    'matching':          {'model': 'claude-haiku-4-5-20251001','tokens_out': 800,  'cost': 0.004,  'label': 'Haiku'},
+    'prefilter':         {'model': 'claude-haiku-4-5-20251001','tokens_out': 300,  'cost': 0.002,  'label': 'Haiku'},
+    'summary':           {'model': 'claude-sonnet-4-6',        'tokens_out': 1500, 'cost': 0.012,  'label': 'Sonnet'},
+    'default':           {'model': 'claude-haiku-4-5-20251001','tokens_out': 500,  'cost': 0.003,  'label': 'Haiku'},
+}
+
+
 class RoutingService:
     """Service for Claude model routing and cost tracking"""
 
@@ -27,28 +38,31 @@ class RoutingService:
         """
         Select optimal Claude model for task.
 
-        This is a PLACEHOLDER that always returns Haiku.
-        Will be replaced with Phase 2 routing system after deployment.
+        Chooses model tier based on task_type:
+          - cover_letter   → Sonnet (good writing quality)
+          - key_decision   → Opus (maximum reasoning)
+          - summary        → Sonnet (good synthesis)
+          - email_analysis, matching, prefilter → Haiku (fast & cheap)
+          - default        → Haiku
 
         Args:
             task_description: Natural language description of the task
-            task_type: Type of task ('email_analysis', 'matching', 'default', etc.)
+            task_type: Type of task ('email_analysis', 'matching', 'cover_letter', etc.)
 
         Returns:
             {
-                'model': 'claude-haiku-3-5',
+                'model': 'claude-haiku-4-5-20251001',
                 'estimated_tokens_out': 500,
                 'estimated_cost': 0.0005,
                 'use_batch': False
             }
         """
-        # TODO: Import actual router from Phase 2
-        # For now, always return Haiku with mocked token/cost estimates
+        tier = TASK_TIER.get(task_type, TASK_TIER['default'])
         return {
-            'model': 'claude-haiku-3-5',
-            'estimated_tokens_out': 500,
-            'estimated_cost': 0.0005,
-            'use_batch': False
+            'model': tier['model'],
+            'estimated_tokens_out': tier['tokens_out'],
+            'estimated_cost': tier['cost'],
+            'use_batch': task_type in ('prefilter',)
         }
 
     @staticmethod
