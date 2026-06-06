@@ -183,7 +183,13 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 - **AGENTS.md §3.6:** Neue Regel — `/loop` bei Polling/wiederkehrenden Tasks (Claude Code) statt Sleep-Schleifen. opencode-Pendant aktuell unbekannt.
 - **Tests:** 17 neue Tests (`tests/services/test_email_import_utils.py`) — Normalisierung + DB-Integration (Status-Set, Window, soft-deleted). 17/17 passed. Breiter Sweep `tests/services/ tests/api/` → 490 passed (7 Fehler durch lokal fehlendes jsonschema, unabhängig).
 - NICHT deployed to IONOS. Backwards-kompatibel — alte Daten bleiben in DB, neuer Prefilter greift ab Deploy.
-- **Backlog (offen für separate Sessions):** Body-Phrasen-Scan für „werden keine Bewerbungen mehr angenommen", User-Keyword-Blacklist („kein Freelancer/Werkstudent"), Cross-Portal-Duplicate via Fuzzy-Title-Match, stille Dismisses (812 mit leerem feedback_text) → Quick-Reasons-UI.
+
+### 2026-06-06 — opencode: Body-Phrasen-Scan + Keyword-Blacklist + Fuzzy-Dup + Postfix-Mails
+Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implementiert und deployed:
+- **Body-Phrasen-Scan:** `scan_body_reject()` in `email_import_utils.py` erkennt 13 Phrasen ("werden keine Bewerbungen mehr angenommen", "Bewerbungsfrist abgelaufen" etc.) → auto-dismiss mit `feedback_text='body_phrase_rejected'`
+- **User-Keyword-Blacklist:** Neue DB-Spalte `job_keyword_blacklist` + API (GET/PATCH `/profile/job-discovery/filters`) + Frontend-Textarea + Cron-Check
+- **Cross-Portal-Fuzzy-Duplicate:** `SequenceMatcher` (threshold 0.85) für Titel-Ähnlichkeit + normalisierte Company über verschiedene Portale hinweg
+- Image neugebaut + alle 5 Container restarted ✓
 
 ### 2026-06-01 — README-Links gefixt, .serena/ ignoriert, AGENTS-Hash korrigiert
 - README English: fehlende Job-Discovery/DEPLOYMENT.md/Technology Bullets ergänzt
