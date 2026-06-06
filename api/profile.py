@@ -172,6 +172,7 @@ def get_job_discovery_status(user):
             'job_reject_filter_enabled': user.job_reject_filter_enabled,
             'job_reject_window_days': user.job_reject_window_days,
             'job_type_blacklist': _parse_job_type_blacklist(user.job_type_blacklist),
+            'job_keyword_blacklist': json.loads(user.job_keyword_blacklist or '[]'),
         },
     }, 200
 
@@ -227,6 +228,13 @@ def update_job_discovery_filters(user):
         if invalid:
             return {'error': f'unbekannte job_types: {invalid}'}, 400
         user.job_type_blacklist = json.dumps(sorted(set(v)))
+
+    if 'job_keyword_blacklist' in data:
+        v = data['job_keyword_blacklist']
+        if not isinstance(v, list) or any(not isinstance(x, str) for x in v):
+            return {'error': 'job_keyword_blacklist muss list of strings sein'}, 400
+        cleaned = [kw.strip() for kw in v if kw.strip()]
+        user.job_keyword_blacklist = json.dumps(cleaned)
 
     if 'job_reject_window_days' in data:
         try:

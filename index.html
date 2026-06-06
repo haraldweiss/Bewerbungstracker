@@ -1219,6 +1219,14 @@
                 Stellen mit diesen Typ-Schlüsselwörtern im Titel werden automatisch verworfen.
             </div>
         </div>
+        <div class="form-group" style="margin-bottom:0.75rem;padding-top:0.5rem;border-top:1px solid var(--border);">
+            <label style="display:block;margin-bottom:0.3rem;font-size:0.9rem">Stichwort-Sperrliste</label>
+            <textarea id="jdKeywordBlacklist" rows="2" style="width:100%;max-width:400px;padding:0.4rem;font-size:0.85rem"
+                placeholder="Schlagworte, die eine Stelle ausschließen, z.B. Senior, Führungskraft, Promotion"></textarea>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem">
+                Ein Stichwort pro Zeile. Trifft eines auf Titel oder Beschreibung zu, wird die Stelle automatisch verworfen.&lt;br&gt;
+            </div>
+        </div>
         <button class="btn btn-primary" onclick="saveJobDiscoveryFilters()">💾 Filter speichern</button>
         <div id="jdFiltersStatus" style="margin-top:0.5rem;font-size:0.85em;color:var(--text-muted)"></div>
     </div>
@@ -3377,6 +3385,9 @@ async function loadJobDiscoveryFilters() {
         document.getElementById('jtBlacklistWerkstudent').checked = blacklist.includes('werkstudent');
         document.getElementById('jtBlacklistFreelance').checked = blacklist.includes('freelance');
         document.getElementById('jtBlacklistTempAgency').checked = blacklist.includes('temp_agency');
+        // Keyword-Blacklist aus Backend laden
+        const kwBlacklist = (f.job_keyword_blacklist) || [];
+        document.getElementById('jdKeywordBlacklist').value = kwBlacklist.join('\n');
     } catch (e) {
         // silent — Endpoint braucht ggf. Re-Login
     }
@@ -3441,6 +3452,8 @@ async function saveJobDiscoveryFilters() {
                     ...(document.getElementById('jtBlacklistFreelance').checked ? ['freelance'] : []),
                     ...(document.getElementById('jtBlacklistTempAgency').checked ? ['temp_agency'] : []),
                 ],
+                job_keyword_blacklist: document.getElementById('jdKeywordBlacklist').value
+                    .split('\n').map(s => s.trim()).filter(Boolean),
             }),
         });
         // Frontend-Cache für nächsten Load

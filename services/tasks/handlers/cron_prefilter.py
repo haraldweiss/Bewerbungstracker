@@ -52,6 +52,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
     rejected_company_dismissed = 0
     wrong_job_type_dismissed = 0
     body_phrase_dismissed = 0
+    keyword_dismissed = 0
 
     def _rejected_companies_for(user_id: str, window_days: int) -> set:
         if user_id not in rejected_companies_cache:
@@ -84,6 +85,13 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
                 )
             except (ValueError, TypeError):
                 job_type_blacklist_cache[match.user_id] = set()
+
+            try:
+                job_type_blacklist_cache[f'kw_{match.user_id}'] = list(
+                    _json.loads(user.job_keyword_blacklist or '[]')
+                )
+            except (ValueError, TypeError):
+                job_type_blacklist_cache[f'kw_{match.user_id}'] = []
 
         raw = RawJob.query.get(match.raw_job_id)
 
@@ -131,10 +139,19 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
                 is_blacklisted_job_type = True
 
         is_body_rejected = False
+        is_keyword_rejected = False
         if not is_rejected_company and not is_blacklisted_job_type:
             body_text = f"{raw.title or ''} {raw.description or ''}"
             if scan_body_reject(body_text):
                 is_body_rejected = True
+            else:
+                kw_list = job_type_blacklist_cache.get(f'kw_{match.user_id}', [])
+                if kw_list:
+                    body_lower = body_text.lower()
+                    for kw in kw_list:
+                        if kw.strip() and kw.lower() in body_lower:
+                            is_keyword_rejected = True
+                            break
 
         user_has_judgment = _has_user_judgment(match)
 
@@ -156,6 +173,12 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
                 match.feedback_text = 'body_phrase_rejected'
             dismissed += 1
             body_phrase_dismissed += 1
+        elif is_keyword_rejected:
+            match.status = 'dismissed'
+            if not user_has_judgment:
+                match.feedback_text = 'keyword_blacklisted'
+            dismissed += 1
+            keyword_dismissed += 1
         elif is_duplicate:
             match.status = 'dismissed'
             if not user_has_judgment:
@@ -200,6 +223,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
         "rejected_company_dismissed": rejected_company_dismissed,
         "wrong_job_type_dismissed": wrong_job_type_dismissed,
         "body_phrase_dismissed": body_phrase_dismissed,
+        "keyword_dismissed": keyword_dismissed,
         "ai_confirm_used": ai_confirm_used,
         "ai_confirm_overruled": ai_confirm_overruled,
         "duration_sec": round(time.time() - started, 2),
