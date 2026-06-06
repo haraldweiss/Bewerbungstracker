@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import time
+from difflib import SequenceMatcher
 from typing import Callable, Optional
 
 from database import db
@@ -45,6 +46,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
     ctx_cache: dict = {}
     rejected_companies_cache: dict = {}
     job_type_blacklist_cache: dict = {}
+    fuzzy_dup_cache: dict = {}  # user_id -> [(normalized_title, normalized_company), ...]
     scored = 0
     dismissed = 0
     ai_confirm_used = 0
@@ -53,6 +55,9 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
     wrong_job_type_dismissed = 0
     body_phrase_dismissed = 0
     keyword_dismissed = 0
+    fuzzy_dup_dismissed = 0
+    
+    SIMILARITY_THRESHOLD = 0.85
 
     def _rejected_companies_for(user_id: str, window_days: int) -> set:
         if user_id not in rejected_companies_cache:
@@ -93,9 +98,26 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
             except (ValueError, TypeError):
                 job_type_blacklist_cache[f'kw_{match.user_id}'] = []
 
+            # Preload existing titles for fuzzy duplicate detection
+            existing = (
+                db.session.query(RawJob.title, RawJob.company, RawJob.description)
+                .join(JobMatch, JobMatch.raw_job_id == RawJob.id)
+                .filter(
+                    JobMatch.user_id == match.user_id,
+                    JobMatch.status.in_(['imported', 'dismissed']),
+                )
+                .distinct()
+                .all()
+            )
+            fuzzy_dup_cache[match.user_id] = [
+                ((r.title or '').strip().lower(), (r.company or '').strip().lower())
+                for r in existing if r.title
+            ]
+
         raw = RawJob.query.get(match.raw_job_id)
 
         is_duplicate = False
+        is_fuzzy_duplicate = False
         if raw.title and raw.company:
             dup_exists = (
                 JobMatch.query
@@ -110,6 +132,22 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
                 .first()
             )
             is_duplicate = dup_exists is not None
+
+            if not is_duplicate:
+                # Cross-portal fuzzy duplicate: same title, different portals
+                title_norm = (raw.title or '').strip().lower()
+                company_norm = normalize_company(raw.company or '').strip().lower()
+                existing_titles = fuzzy_dup_cache.get(match.user_id, [])
+                for ext_title, ext_company in existing_titles:
+                    if SequenceMatcher(None, title_norm, ext_title).ratio() >= SIMILARITY_THRESHOLD:
+                        # Same company (normalized) or similar title across different companies
+                        if ext_company and (
+                            company_norm == ext_company
+                            or company_norm in ext_company
+                            or ext_company in company_norm
+                        ):
+                            is_fuzzy_duplicate = True
+                            break
 
         score = score_job(
             cv_cache[match.user_id],
@@ -184,6 +222,12 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
             if not user_has_judgment:
                 match.feedback_text = 'duplicate_of_other'
             dismissed += 1
+        elif is_fuzzy_duplicate:
+            match.status = 'dismissed'
+            if not user_has_judgment:
+                match.feedback_text = 'fuzzy_duplicate'
+            dismissed += 1
+            fuzzy_dup_dismissed += 1
         elif score < PREFILTER_DISMISS_THRESHOLD:
             ai_result = None
             if ai_confirm_used < AI_CONFIRM_BUDGET:
@@ -224,6 +268,7 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
         "wrong_job_type_dismissed": wrong_job_type_dismissed,
         "body_phrase_dismissed": body_phrase_dismissed,
         "keyword_dismissed": keyword_dismissed,
+        "fuzzy_dup_dismissed": fuzzy_dup_dismissed,
         "ai_confirm_used": ai_confirm_used,
         "ai_confirm_overruled": ai_confirm_overruled,
         "duration_sec": round(time.time() - started, 2),
