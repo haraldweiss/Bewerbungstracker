@@ -340,8 +340,9 @@ def test_provider_connection(user, provider_id):
 
 # Sinnvolle Default-Models, falls User keinen gesetzt hat.
 _DEFAULT_MODELS = {
+    'opencode': 'opencode-deepseek-v4-flash-free',
     'claude': 'claude-haiku-4-5-20251001',
-    'ollama': 'mistral-nemo:12b-instruct-2407-q5_K_M',
+    'ollama': 'gemma4:12b',
 }
 
 
