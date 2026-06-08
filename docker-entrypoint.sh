@@ -26,7 +26,7 @@ case "$ROLE" in
         exec gunicorn \
             --workers "${GUNICORN_WORKERS:-4}" \
             --worker-class sync \
-            --bind "0.0.0.0:${PORT:-5000}" \
+            --bind "127.0.0.1:${PORT:-5000}" \
             --timeout "${GUNICORN_TIMEOUT:-60}" \
             --access-logfile - \
             --error-logfile - \
