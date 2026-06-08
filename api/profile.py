@@ -86,6 +86,37 @@ def patch_settings(user):
 
 # ─── CV (Lebenslauf) ──────────────────────────────────────────────────────
 
+
+@profile_bp.route('/profile/wizard', methods=['GET'])
+@token_required
+def get_wizard_status(user):
+    return jsonify({
+        'onboarding_complete': bool(user.onboarding_complete),
+        'onboarding_data': json.loads(user.onboarding_data) if user.onboarding_data else {},
+    })
+
+
+@profile_bp.route('/profile/wizard', methods=['PATCH'])
+@token_required
+def save_wizard_data(user):
+    data = request.get_json() or {}
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Body muss ein JSON-Objekt sein'}), 400
+    user.onboarding_data = json.dumps(data)
+    db.session.commit()
+    return jsonify({'status': 'saved', 'onboarding_data': data})
+
+
+@profile_bp.route('/profile/wizard/complete', methods=['POST'])
+@token_required
+def complete_wizard(user):
+    user.onboarding_complete = True
+    if not user.onboarding_data:
+        user.onboarding_data = '{}'
+    db.session.commit()
+    return jsonify({'onboarding_complete': True})
+
+
 @profile_bp.route('/profile/cv', methods=['GET'])
 @token_required
 def get_cv(user):
