@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # supercronic for cron container (single-binary)
 ARG SUPERCRONIC_VERSION=0.2.33
-ADD https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-amd64 \
+ADD https://github.com/aptible/supercronic/releases/download/v${SUPERCRONIC_VERSION}/supercronic-linux-arm64 \
     /usr/local/bin/supercronic
 RUN chmod +x /usr/local/bin/supercronic
 
@@ -30,11 +30,6 @@ RUN mkdir -p /app/data /app/instance /app/logs
 RUN chmod +x docker-entrypoint.sh
 
 EXPOSE 5000 8765 8766
-
-# Healthcheck via curl on root (nginx/gunicorn must be up).
-# Quadlet files override this with per-service HealthCmd when needed.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:5000/ || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["app"]
