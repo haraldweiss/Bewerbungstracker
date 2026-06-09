@@ -61,6 +61,8 @@ class User(db.Model):
                                     server_default='[]')
     job_keyword_blacklist = db.Column(db.Text, nullable=False, default='[]',
                                       server_default='[]')
+    job_body_reject_phrases = db.Column(db.Text, nullable=False, default='[]',
+                                        server_default='[]')
 
     # AI Provider Settings (Phase B)
     ai_provider = db.Column(db.String(50), default='claude', nullable=False)  # 'claude', 'ollama', 'openai', etc.

@@ -204,6 +204,7 @@ def get_job_discovery_status(user):
             'job_reject_window_days': user.job_reject_window_days,
             'job_type_blacklist': _parse_job_type_blacklist(user.job_type_blacklist),
             'job_keyword_blacklist': json.loads(user.job_keyword_blacklist or '[]'),
+            'job_body_reject_phrases': json.loads(user.job_body_reject_phrases or '[]'),
         },
     }, 200
 
@@ -266,6 +267,15 @@ def update_job_discovery_filters(user):
             return {'error': 'job_keyword_blacklist muss list of strings sein'}, 400
         cleaned = [kw.strip() for kw in v if kw.strip()]
         user.job_keyword_blacklist = json.dumps(cleaned)
+
+    if 'job_body_reject_phrases' in data:
+        v = data['job_body_reject_phrases']
+        if not isinstance(v, list) or any(not isinstance(x, str) for x in v):
+            return {'error': 'job_body_reject_phrases muss list of strings sein'}, 400
+        cleaned = [p.strip() for p in v if p.strip()]
+        if any(len(p) > 200 for p in cleaned):
+            return {'error': 'Einzelne Phrasen maximal 200 Zeichen'}, 400
+        user.job_body_reject_phrases = json.dumps(cleaned)
 
     if 'job_reject_window_days' in data:
         try:

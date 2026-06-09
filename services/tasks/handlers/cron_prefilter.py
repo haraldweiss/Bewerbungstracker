@@ -98,6 +98,13 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
             except (ValueError, TypeError):
                 job_type_blacklist_cache[f'kw_{match.user_id}'] = []
 
+            try:
+                job_type_blacklist_cache[f'body_{match.user_id}'] = list(
+                    _json.loads(user.job_body_reject_phrases or '[]')
+                )
+            except (ValueError, TypeError):
+                job_type_blacklist_cache[f'body_{match.user_id}'] = []
+
             # Preload existing titles for fuzzy duplicate detection
             existing = (
                 db.session.query(RawJob.title, RawJob.company, RawJob.description)
@@ -180,7 +187,8 @@ def handle_cron_prefilter(payload: dict, *, progress_cb: Optional[Callable] = No
         is_keyword_rejected = False
         if not is_rejected_company and not is_blacklisted_job_type:
             body_text = f"{raw.title or ''} {raw.description or ''}"
-            if scan_body_reject(body_text):
+            user_phrases = job_type_blacklist_cache.get(f'body_{match.user_id}', [])
+            if scan_body_reject(body_text, user_phrases):
                 is_body_rejected = True
             else:
                 kw_list = job_type_blacklist_cache.get(f'kw_{match.user_id}', [])

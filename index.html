@@ -1227,6 +1227,13 @@
             <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.3rem">
                 Ein Stichwort pro Zeile. Trifft eines auf Titel oder Beschreibung zu, wird die Stelle automatisch verworfen.&lt;br&gt;
             </div>
+
+            <label style="display:block;margin-bottom:0.3rem;margin-top:0.75rem;font-size:0.9rem">Ablehnungs-Phrasen (Stellenanzeigen)</label>
+            <textarea id="jdBodyRejectPhrases" rows="2" style="width:100%;max-width:400px;padding:0.4rem;font-size:0.85rem"
+                placeholder="Eine Phrase pro Zeile, z.B.&#10;Stelle bereits besetzt&#10;Keine Bewerbungen mehr"></textarea>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.3rem">
+                Enthält die Anzeige eine dieser Phrasen, wird sie automatisch verworfen. Zusätzlich zu den globalen Phrasen.
+            </div>
         </div>
         <button class="btn btn-primary" onclick="saveJobDiscoveryFilters()">💾 Filter speichern</button>
         <div id="jdFiltersStatus" style="margin-top:0.5rem;font-size:0.85em;color:var(--text-muted)"></div>
@@ -3393,6 +3400,8 @@ async function loadJobDiscoveryFilters() {
         // Keyword-Blacklist aus Backend laden
         const kwBlacklist = (f.job_keyword_blacklist) || [];
         document.getElementById('jdKeywordBlacklist').value = kwBlacklist.join('\n');
+        const bodyReject = (f.job_body_reject_phrases) || [];
+        document.getElementById('jdBodyRejectPhrases').value = bodyReject.join('\n');
         // Region-Filter aus Backend laden (autoritativ)
         if (f.job_region_filter && typeof f.job_region_filter === 'object') {
             const rf = f.job_region_filter;
@@ -3451,6 +3460,8 @@ async function saveJobDiscoveryFilters() {
                     ...(document.getElementById('jtBlacklistTempAgency').checked ? ['temp_agency'] : []),
                 ],
                 job_keyword_blacklist: document.getElementById('jdKeywordBlacklist').value
+                    .split('\n').map(s => s.trim()).filter(Boolean),
+                job_body_reject_phrases: document.getElementById('jdBodyRejectPhrases').value
                     .split('\n').map(s => s.trim()).filter(Boolean),
             }),
         });

@@ -124,16 +124,22 @@ def _compile_body_reject_pattern() -> re.Pattern:
     return BODY_REJECT_PHRASES_COMPILED
 
 
-def scan_body_reject(text: str | None) -> bool:
+def scan_body_reject(text: str | None, extra_phrases: list[str] | None = None) -> bool:
     """Prüft, ob der Job-Text einen Grund zur automatischen Ablehnung enthält.
 
     Durchsucht Titel + Beschreibung nach Phrasen wie "werden keine Bewerbungen
     mehr angenommen". Falls True, sollte der Job mit feedback_text='body_phrase_rejected'
     abgewiesen werden.
+
+    extra_phrases: optionale User-spezifische Phrasen (aus job_body_reject_phrases).
     """
     if not text:
         return False
-    pattern = _compile_body_reject_pattern()
+    if extra_phrases:
+        combined = BODY_REJECT_PHRASES + extra_phrases
+        pattern = re.compile("|".join(re.escape(p) for p in combined), re.IGNORECASE)
+    else:
+        pattern = _compile_body_reject_pattern()
     return bool(pattern.search(text))
 
 
