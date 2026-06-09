@@ -372,6 +372,26 @@ docker stop bewerbungen-app && docker rm bewerbungen-app && docker run -d ...
 
 **Verified:** email_service.py deployed ✓, index.html deployed ✓, Docker neugebaut ✓, alle Container restarted ✓
 
+### 2026-06-09 — Apps Script Trennen-Button + Quota-Optimierung + DB-Migration
+
+**Disconnect-Button für Google Apps Script:**
+- Neuer "✕ Trennen" Button neben der Apps Script URL im Setup
+- Löscht URL + deaktiviert Monitoring + stoppt Hintergrund-Interval
+- Bestätigungsdialog vor dem Löschen
+
+**Apps Script optimiert (Quota-Sparmodus):**
+- `GmailApp.getMessagesForThreads()` Batch-Read statt `thread.getMessages()` einzeln — spart ~10× API-Quota
+- `newer_than:Nd` statt `maxEmails` — begrenzt Suchraum auf konfigurierbare Tage (default 3)
+- Deduplizierung via `seen = {}` — verhindert doppelte Mails
+- `?days=N&limit=N` Query-Parameter für Feintuning
+- Sent-Ordner-Scan entfernt — spart 50% Quota (die Antworten kommen im Posteingang)
+
+**DB-Migration (hotfix):**
+- `users.job_body_reject_phrases` Spalte fehlte in der Produktions-DB → Login gab 500
+- Hotfix: `ALTER TABLE users ADD COLUMN` via SQLite direkt auf dem Container
+
+**Verified:** index.html deployed ✓, DB fix ✓, Login funktioniert ✓
+
 ### 2026-06-09 — Email-Service Proxy + Absage-Status-Schutz + Script-Escape-Fix
 
 **Email-Service über Apache Proxy:** Die `/email-service/` und `/imap-proxy/` Pfade wurden nicht an die entsprechenden Container weitergeleitet → Email-Monitoring zeigte "undefined". Fix: ProxyPass-Regeln in der Apache-Vhost-Konfiguration ergänzt (MÜSSEN vor dem allgemeinen `ProxyPass /` stehen, da Apache first-match-wins verwendet). `ai-admin`-Vhost deaktiviert (fehlendes SSL-Zertifikat).
