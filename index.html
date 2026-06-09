@@ -3389,28 +3389,21 @@ async function loadJobDiscoveryFilters() {
         // Keyword-Blacklist aus Backend laden
         const kwBlacklist = (f.job_keyword_blacklist) || [];
         document.getElementById('jdKeywordBlacklist').value = kwBlacklist.join('\n');
+        // Region-Filter aus Backend laden (autoritativ)
+        if (f.job_region_filter && typeof f.job_region_filter === 'object') {
+            const rf = f.job_region_filter;
+            if (Array.isArray(rf.plz_prefixes)) document.getElementById('jdPlzPrefixes').value = rf.plz_prefixes.join(', ');
+            if (typeof rf.remote_ok === 'boolean') document.getElementById('jdRemoteOnly').checked = rf.remote_ok;
+            if (Array.isArray(rf.employment_types)) {
+                document.getElementById('jdEmpVollzeit').checked = rf.employment_types.includes('vollzeit');
+                document.getElementById('jdEmpTeilzeit').checked = rf.employment_types.includes('teilzeit');
+                document.getElementById('jdEmpUnbefristet').checked = rf.employment_types.includes('unbefristet');
+                document.getElementById('jdEmpBefristet').checked = rf.employment_types.includes('befristet');
+            }
+        }
     } catch (e) {
         // silent — Endpoint braucht ggf. Re-Login
     }
-
-    // Filter-Werte aus localStorage als Cache (UI-State, nicht autoritativ)
-    try {
-        const cached = JSON.parse(localStorage.getItem('jdFiltersCache') || 'null');
-        if (cached) {
-            if (typeof cached.remote_ok === 'boolean') document.getElementById('jdRemoteOnly').checked = cached.remote_ok;
-            if (Array.isArray(cached.plz_prefixes)) document.getElementById('jdPlzPrefixes').value = cached.plz_prefixes.join(', ');
-            if (Array.isArray(cached.employment_types)) {
-                document.getElementById('jdEmpVollzeit').checked = cached.employment_types.includes('vollzeit');
-                document.getElementById('jdEmpTeilzeit').checked = cached.employment_types.includes('teilzeit');
-                document.getElementById('jdEmpUnbefristet').checked = cached.employment_types.includes('unbefristet');
-                document.getElementById('jdEmpBefristet').checked = cached.employment_types.includes('befristet');
-            }
-            if (typeof cached.notification_threshold === 'number') {
-                document.getElementById('jdNotifyThreshold').value = cached.notification_threshold;
-                document.getElementById('jdNotifyThresholdDisplay').textContent = cached.notification_threshold;
-            }
-        }
-    } catch (e) { /* silent */ }
 
     // Slider-Display live-update
     const slider = document.getElementById('jdNotifyThreshold');
@@ -3457,8 +3450,9 @@ async function saveJobDiscoveryFilters() {
                     .split('\n').map(s => s.trim()).filter(Boolean),
             }),
         });
-        // Frontend-Cache für nächsten Load
-        localStorage.setItem('jdFiltersCache', JSON.stringify({
+        // Frontend-Cache für nächsten Load (pro User getrennt)
+        const cacheKey = 'jdFilters_' + (Auth.getCurrentUser()?.email || 'default');
+        localStorage.setItem(cacheKey, JSON.stringify({
             remote_ok, plz_prefixes, employment_types, notification_threshold,
         }));
         // Reject-Settings im state aktualisieren — Dashboard re-rendert dann

@@ -309,6 +309,40 @@ docker stop bewerbungen-app && docker rm bewerbungen-app && docker run -d ...
 
 **Warum das immer wieder auftritt:** In lokalen Dev-Umgebungen und alten IONOS-Podman-Setups war `127.0.0.1` korrekt. Bei jedem Docker-Rebuild/Neuaufsetzen muss `AI_PROVIDER_SERVICE_URL` geprüft werden. Siehe auch `deploy/container/setup-vps.sh` für die korrekten Werte.
 
+### 2026-06-09 — Forgot-Password + toggle-job-discovery + Rene Account
+
+**Add: `/api/auth/forgot-password` + `/api/auth/reset-password`**
+- `api/auth.py`: New routes — generates EmailConfirmationToken (1h TTL), sends reset email, validates token, updates password + DEK
+- `services/email_service.py`: New `send_password_reset_email()` with styled HTML template
+- `frontend/pages/login.html`: "Passwort vergessen?" link + `showForgotPassword()` JS (prompt → fetch → toast)
+
+**Add: `POST /api/auth/change-password`** — authenticated user changes own password (old_pw + new_pw, re-encrypts DEK)
+
+**Add: `POST /api/admin/users/<id>/toggle-job-discovery`** — direct toggle with optional `{enabled: bool}` body
+
+**Fix: `GET /api/admin/users` — now returns `job_discovery_enabled`**
+
+**Fix: `models.py` — `job_discovery_enabled` default changed to `True`** (was `False`)
+
+**New user: ri-lampe@t-online.de (Rene Lampe)** — Bürokaufmann IHK + Lager/Logistik CV uploaded, job_discovery enabled, pipeline triggered
+
+**Container fix:** DATABASE_URL pointed to `/app/data/instance/` instead of `/app/data/` — real DB was in parent dir. Fixed during container recreate.
+
+**Verified:** forgot-password sends email ✓, users 3 in DB ✓, login works ✓, toggle-job-discovery endpoint 401 (needs auth) ✓
+
+### 2026-06-09 — Fix: Region-Filter localStorage war pro Domain, nicht pro User
+
+**Bug:** `loadJobDiscoveryFilters()` lud den Region-Filter (PLZ) aus `localStorage` mit Key `jdFiltersCache`. Da localStorage pro Browser-Domain (nicht pro User) geteilt wird, sah User A nach Login die PLZ von User B.
+
+**Fix:**
+1. Region-Filter wird jetzt aus dem Backend geladen (`GET /profile/job-discovery/status` → `filters.job_region_filter`) — autoritativ
+2. localStorage-Key ist jetzt pro User: `jdFilters_<email>` — nur noch Cache für UI-State zwischen Seitenaufrufen
+3. Backend-Status-Endpoint (`profile.py:200`) lieferte `job_region_filter` bereits — wurde nur vom Frontend ignoriert
+
+**Lehre:** localStorage nie als Source of Truth für User-Daten — nur als Cache. DB (via API) ist immer autoritativ.
+
+**Verified:** index.html deployed ✓, Image neugebaut ✓, Container restarted ✓
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/
