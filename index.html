@@ -1587,6 +1587,10 @@
                     <button class="btn btn-info btn-sm" onclick="checkEmailNow()">🔍 Jetzt prüfen</button>
                 </div>
                 <div id="monitoringStatus" style="margin-top:1rem;font-size:0.85rem;color:var(--text-muted);"></div>
+                <details style="margin-top:1rem;" ontoggle="if(this.open)loadMonitoringLog()">
+                    <summary style="font-size:0.85rem;cursor:pointer;color:var(--primary-light, #3B82F6);">📋 Monitoring-Verlauf anzeigen</summary>
+                    <div id="monitoringLog" style="margin-top:0.5rem;max-height:300px;overflow-y:auto;"></div>
+                </details>
             </div>
         </div>
     </div>
@@ -7965,6 +7969,35 @@ function updateMonitoringStatus(message) {
     const statusDiv = document.getElementById('monitoringStatus');
     if (statusDiv) {
         statusDiv.textContent = message;
+    }
+}
+
+async function loadMonitoringLog() {
+    const logDiv = document.getElementById('monitoringLog');
+    if (!logDiv) return;
+    try {
+        const r = await callEmailService('/api/monitoring/log', {});
+        if (r.status !== 'ok' || !r.log || r.log.length === 0) {
+            logDiv.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Noch keine erkannten Antworten.</p>';
+            return;
+        }
+        let html = '<table class="wp-list-table widefat fixed" style="font-size:0.8rem;"><thead><tr>'
+            + '<th>Datum</th><th>Unternehmen</th><th>Status</th><th>KI</th></tr></thead><tbody>';
+        for (const row of r.log) {
+            const aiBadge = row.ai_status
+                ? (row.ai_status === 'absage' ? '❌' : row.ai_status === 'interview' ? '📅' : row.ai_status === 'zusage' ? '✅' : '📨')
+                : '—';
+            html += '<tr>'
+                + '<td style="white-space:nowrap;">' + (row.detected_at || '').slice(0, 16).replace('T', ' ') + '</td>'
+                + '<td>' + escapeHtml(row.company_name || '') + '</td>'
+                + '<td>' + escapeHtml(row.status || '') + '</td>'
+                + '<td title="' + escapeHtml(row.ai_reasoning || '') + '">' + aiBadge + '</td>'
+                + '</tr>';
+        }
+        html += '</tbody></table>';
+        logDiv.innerHTML = html;
+    } catch (e) {
+        logDiv.innerHTML = '<p style="color:var(--error);font-size:0.85rem;">Fehler beim Laden: ' + escapeHtml(e.message) + '</p>';
     }
 }
 

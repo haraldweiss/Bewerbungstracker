@@ -252,11 +252,27 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         from_sender TEXT,
         subject TEXT,
+        snippet TEXT,
         company_name TEXT,
         detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        status TEXT,
+        status TEXT DEFAULT 'detected',
+        ai_status TEXT,
+        ai_reasoning TEXT,
         email_uid TEXT UNIQUE
     )''')
+
+    try:
+        cursor.execute("ALTER TABLE email_monitoring ADD COLUMN snippet TEXT")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE email_monitoring ADD COLUMN ai_status TEXT")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE email_monitoring ADD COLUMN ai_reasoning TEXT")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()
@@ -1120,25 +1136,81 @@ def check_email_for_application(email_data, applications):
 
     return matched_app
 
-def log_monitoring_email(email_data, company_name, status):
+def log_monitoring_email(email_data, company_name, status, snippet='', ai_status=None, ai_reasoning=None):
     """Log detected application response email"""
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
 
         cursor.execute('''INSERT OR IGNORE INTO email_monitoring
-                        (from_sender, subject, company_name, status, email_uid)
-                        VALUES (?, ?, ?, ?, ?)''',
+                        (from_sender, subject, snippet, company_name, status, ai_status, ai_reasoning, email_uid)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
                       (email_data.get('from'),
                        email_data.get('subject'),
+                       snippet[:500] if snippet else None,
                        company_name,
                        status,
+                       ai_status,
+                       ai_reasoning,
                        email_data.get('uid')))
 
         conn.commit()
         conn.close()
     except Exception as e:
         print(f"Error logging monitoring email: {e}")
+
+def classify_email_with_ai(subject, from_sender, snippet=''):
+    """Send email content to AI provider to classify the response type.
+
+    Returns: (status, reasoning) where status is one of:
+      'absage', 'interview', 'zusage', or None (neutral/unclear)
+    """
+    try:
+        import urllib.request, json as jsonlib
+
+        ai_url = os.getenv('AI_PROVIDER_SERVICE_URL', 'http://172.17.0.1:8767')
+        prompt = f"""Classify this German job application response email.
+
+From: {from_sender}
+Subject: {subject}
+Snippet: {snippet[:500]}
+
+Respond with ONLY a JSON object: {{"status": "...", "reasoning": "..."}}
+Status must be one of:
+- "absage" = rejection (Ablehnung, Absage, leider nicht)
+- "interview" = interview invitation (Vorstellungsgespräch, Einladung, kennenlernen)
+- "zusage" = acceptance (Zusage, erhalten Sie, freuen uns)
+- null = other/neutral response (Rückfrage, Bestätigung, info)
+
+Return ONLY the JSON, nothing else."""
+        body = jsonlib.dumps({
+            "model": "opencode::opencode-deepseek-v4-flash-free",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 200,
+        }).encode()
+
+        req = urllib.request.Request(
+            ai_url + '/v1/chat/completions',
+            data=body,
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = jsonlib.loads(resp.read())
+            text = (data.get('choices') or [{}])[0].get('message', {}).get('content', '{}')
+            text = text.strip()
+            if text.startswith('```'):
+                text = text.split('\n', 1)[-1].rsplit('```', 1)[0]
+            result = jsonlib.loads(text)
+            status = result.get('status')
+            reason = result.get('reasoning', '')
+            if status in ('absage', 'interview', 'zusage'):
+                return status, reason
+            return None, reason
+    except Exception as e:
+        print(f"AI classification error: {e}")
+        return None, ''
+
 
 def check_and_monitor_emails():
     """Check for application responses and notify.
@@ -1165,13 +1237,26 @@ def check_and_monitor_emails():
             matched_app = check_email_for_application(email_data, applications)
 
             if matched_app:
-                log_monitoring_email(email_data, matched_app.get('firma'), 'detected')
+                snippet = email_data.get('snippet', '') or email_data.get('body', '')[:200] or ''
+                ai_status, ai_reason = classify_email_with_ai(
+                    email_data.get('subject', ''),
+                    email_data.get('from', ''),
+                    snippet,
+                )
+                display_status = ai_status or 'detected'
+
+                log_monitoring_email(email_data, matched_app.get('firma'), display_status, snippet, ai_status, ai_reason)
                 detected_responses.append({
                     'company': matched_app.get('firma'),
                     'from': email_data.get('from'),
-                    'subject': email_data.get('subject')
+                    'subject': email_data.get('subject'),
+                    'ai_status': ai_status,
+                    'ai_reasoning': ai_reason,
                 })
-                print(f"✅ Application response detected from: {matched_app.get('firma')}")
+                if ai_status:
+                    print(f"✅ {matched_app.get('firma')}: KI erkannt → {ai_status} ({ai_reason})")
+                else:
+                    print(f"✅ Application response detected from: {matched_app.get('firma')}")
 
         if detected_responses and get_config('monitoring_notify') == 'true':
             notify_monitoring_results(detected_responses)
@@ -1309,7 +1394,8 @@ class EmailServiceHandler(JSONHandler):
             get_routes = {
                 '/api/status': lambda: self.handle_status(),
                 '/api/config/get': lambda: self.handle_get_config({'key': params.get('key', '')}),
-                '/api/monitoring/check': lambda: self.handle_check_monitoring({})
+                '/api/monitoring/check': lambda: self.handle_check_monitoring({}),
+                '/api/monitoring/log': lambda: self.handle_monitoring_log()
             }
 
             handler = get_routes.get(path)
@@ -1353,6 +1439,7 @@ class EmailServiceHandler(JSONHandler):
             '/api/status': self.handle_status,
             '/api/monitoring/enable': self.handle_enable_monitoring,
             '/api/monitoring/check': self.handle_check_monitoring,
+            '/api/monitoring/log': self.handle_monitoring_log,
             '/api/applications/cache': self.handle_save_applications,
         }
 
@@ -1461,6 +1548,23 @@ class EmailServiceHandler(JSONHandler):
         set_config('monitoring_notify', 'true' if data.get('notify', False) else 'false')
 
         self.send_json_ok({'message': 'Monitoring ' + ('enabled' if enabled else 'disabled')})
+
+    def handle_monitoring_log(self):
+        """Return monitoring history"""
+        import sqlite3
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('''SELECT id, from_sender, subject, company_name,
+                              detected_at, status, ai_status, ai_reasoning
+                           FROM email_monitoring
+                           ORDER BY detected_at DESC LIMIT 100''')
+            rows = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+            self.send_json_ok({'log': rows})
+        except Exception as e:
+            self.send_json_error(str(e), 500)
 
     def handle_check_monitoring(self, data):
         """Check for application responses now"""
