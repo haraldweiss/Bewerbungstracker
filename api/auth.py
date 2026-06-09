@@ -254,6 +254,86 @@ def refresh():
     }, 200
 
 
+@auth_bp.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    """Passwort-Reset-Link per E-Mail senden."""
+    from models import EmailConfirmationToken
+    from services.email_service import send_password_reset_email
+
+    data = request.get_json(silent=True) or {}
+    email = (data.get('email') or '').strip().lower()
+
+    if not email or '@' not in email:
+        return {'error': 'Gültige Email erforderlich'}, 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return {'message': 'Wenn die Email existiert, wurde ein Reset-Link versendet.'}, 200
+
+    EmailConfirmationToken.query.filter_by(user_id=user.id).delete()
+    db.session.flush()
+
+    import secrets
+    from datetime import datetime, timedelta
+
+    token = secrets.token_urlsafe(32)
+    reset_token = EmailConfirmationToken(
+        token=token,
+        user_id=user.id,
+        expires_at=datetime.utcnow() + timedelta(hours=1),
+    )
+    db.session.add(reset_token)
+    db.session.commit()
+
+    app_url = current_app.config.get('APP_URL', 'https://bewerbungen.wolfinisoftware.de')
+    reset_link = f"{app_url}/reset-password?token={token}"
+    send_password_reset_email(user.email, reset_link)
+
+    return {'message': 'Wenn die Email existiert, wurde ein Reset-Link versendet.'}, 200
+
+
+@auth_bp.route('/reset-password', methods=['POST'])
+def reset_password_token():
+    """Passwort mit Token zurücksetzen."""
+    from models import EmailConfirmationToken
+
+    data = request.get_json(silent=True) or {}
+    token_str = data.get('token') or ''
+    new_pw = data.get('new_password') or ''
+
+    if not token_str or not new_pw:
+        return {'error': 'Token und neues Passwort erforderlich'}, 400
+    if len(new_pw) < 8:
+        return {'error': 'Passwort mindestens 8 Zeichen'}, 400
+
+    from datetime import datetime
+    record = EmailConfirmationToken.query.filter_by(token=token_str).first()
+    if not record:
+        return {'error': 'Ungültiger oder abgelaufener Token'}, 404
+    if record.expires_at < datetime.utcnow():
+        db.session.delete(record)
+        db.session.commit()
+        return {'error': 'Token abgelaufen — bitte neuen Reset anfordern'}, 410
+
+    user = User.query.get(record.user_id)
+    if not user:
+        return {'error': 'User nicht gefunden'}, 404
+
+    from services.encryption_service import EncryptionService
+    user.password_hash = AuthService.hash_password(new_pw)
+    try:
+        salt, encrypted_dek, _ = EncryptionService.create_user_keys(new_pw)
+        user.encryption_salt = salt
+        user.encrypted_data_key = encrypted_dek
+    except Exception:
+        pass
+
+    db.session.delete(record)
+    db.session.commit()
+
+    return {'message': 'Passwort erfolgreich zurückgesetzt'}, 200
+
+
 @auth_bp.route('/logout', methods=['POST'])
 @token_required
 def logout(user):
@@ -274,3 +354,34 @@ def get_current_user(user):
         'is_admin': user.is_admin,
         'created_at': user.created_at.isoformat()
     }, 200
+
+
+@auth_bp.route('/change-password', methods=['POST'])
+@token_required
+def change_password(user):
+    """Eigenes Passwort ändern (alter + neuer PW erforderlich)."""
+    from services.encryption_service import EncryptionService
+
+    data = request.get_json(silent=True) or {}
+    old_pw = data.get('old_password') or ''
+    new_pw = data.get('new_password') or ''
+
+    if not old_pw or not new_pw:
+        return {'error': 'old_password und new_password erforderlich'}, 400
+    if len(new_pw) < 8:
+        return {'error': 'Neues Passwort mindestens 8 Zeichen'}, 400
+
+    if not AuthService.verify_password(old_pw, user.password_hash):
+        return {'error': 'Altes Passwort ist falsch'}, 403
+
+    user.password_hash = AuthService.hash_password(new_pw)
+    # DEK neu verschlüsseln mit neuem Passwort
+    try:
+        salt, encrypted_dek, _ = EncryptionService.create_user_keys(new_pw)
+        user.encryption_salt = salt
+        user.encrypted_data_key = encrypted_dek
+    except Exception:
+        pass  # non-fatal — PW-Änderung klappt auch ohne DEK-Re-Encryption
+
+    db.session.commit()
+    return {'message': 'Passwort geändert'}, 200

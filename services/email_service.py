@@ -133,3 +133,26 @@ def send_approval_notification(user_email: str) -> bool:
     </html>
     """
     return _send_via_smtp(user_email, subject, html_body)
+
+
+def send_password_reset_email(user_email: str, reset_link: str) -> bool:
+    """Passwort-Reset-Link per E-Mail."""
+    subject = "Passwort zurücksetzen – Bewerbungs-Tracker"
+    html_body = f"""
+    <html>
+        <body style="font-family: Arial, sans-serif; color: #333;">
+            <h2>Passwort zurücksetzen</h2>
+            <p>Hallo,</p>
+            <p>Klicke auf den folgenden Link, um ein neues Passwort zu setzen (gültig 1 Stunde):</p>
+            <p>
+                <a href="{reset_link}" style="background-color: #3B82F6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                    Passwort zurücksetzen
+                </a>
+            </p>
+            <p style="margin-top: 20px;"><small>Falls du keinen Reset angefordert hast, ignoriere diese Email.</small></p>
+            <hr>
+            <p style="color: #666; font-size: 12px;">Bewerbungs-Tracker</p>
+        </body>
+    </html>
+    """
+    return _send_via_smtp(user_email, subject, html_body)

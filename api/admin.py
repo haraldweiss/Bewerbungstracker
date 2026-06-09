@@ -35,7 +35,8 @@ def list_users(user):
                 'is_admin': u.is_admin,
                 'email_confirmed': u.email_confirmed,
                 'is_active': u.is_active,
-                'applications_count': len(u.applications)
+                'applications_count': len(u.applications),
+                'job_discovery_enabled': u.job_discovery_enabled
             }
             for u in users
         ]
@@ -201,6 +202,37 @@ def approve_job_discovery(user, user_id):
 
     return {
         'message': f'Job-Discovery für {target_user.email} aktiviert',
+        'email': target_user.email,
+        'job_discovery_enabled': target_user.job_discovery_enabled,
+    }, 200
+
+
+@admin_bp.route('/users/<user_id>/toggle-job-discovery', methods=['POST'])
+@token_required
+@admin_required
+def toggle_job_discovery(user, user_id):
+    """Direktes Aktivieren/Deaktivieren der Job-Suche (ohne Request-Flow).
+
+    Body: {enabled: bool}
+    """
+    target_user = User.query.get(user_id)
+    if not target_user:
+        return {'error': 'User not found'}, 404
+
+    data = request.get_json(silent=True) or {}
+    if 'enabled' in data:
+        target_user.job_discovery_enabled = bool(data['enabled'])
+        if target_user.job_discovery_enabled and not target_user.job_discovery_requested_at:
+            target_user.job_discovery_requested_at = datetime.utcnow()
+    else:
+        target_user.job_discovery_enabled = not target_user.job_discovery_enabled
+        if target_user.job_discovery_enabled and not target_user.job_discovery_requested_at:
+            target_user.job_discovery_requested_at = datetime.utcnow()
+
+    db.session.commit()
+
+    return {
+        'message': f'Job-Discovery für {target_user.email} {"aktiviert" if target_user.job_discovery_enabled else "deaktiviert"}',
         'email': target_user.email,
         'job_discovery_enabled': target_user.job_discovery_enabled,
     }, 200

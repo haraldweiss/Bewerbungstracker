@@ -36,7 +36,7 @@ class User(db.Model):
     cv_data_json = db.Column(db.Text)    # JSON-Objekt {cv: {...}, comparisons: [...]}
 
     # Job-Discovery Settings (Phase A)
-    job_discovery_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    job_discovery_enabled = db.Column(db.Boolean, default=True, nullable=False)
     # Wenn gesetzt: User hat Aktivierung angefragt, wartet auf Admin-Approval.
     # Bei job_discovery_enabled=true ist das Field idR auch gesetzt (Audit-Trail).
     job_discovery_requested_at = db.Column(db.DateTime, nullable=True)

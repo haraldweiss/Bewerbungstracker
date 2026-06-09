@@ -11,14 +11,26 @@ from zoneinfo import ZoneInfo
 
 BERLIN = ZoneInfo("Europe/Berlin")
 
+_MONTH_MAP = {
+    "januar": 1, "februar": 2, "märz": 3, "april": 4, "mai": 5,
+    "juni": 6, "juli": 7, "august": 8, "september": 9,
+    "oktober": 10, "november": 11, "dezember": 12,
+}
+
 _RE_DATE_NUM = re.compile(
-    r"(\d{1,2})\.(\d{1,2})\.(\d{4})[,\s]+(?:um\s+)?(\d{1,2}):(\d{2})",
+    r"(\d{1,2})\.(\d{1,2})\.(\d{4})[,\s]+(?:um[:\s]+\s*)?(\d{1,2}):(\d{2})",
     re.IGNORECASE,
 )
 # Jahreslose deutsche Variante: "26.5. um 16:30" - kein Jahr direkt nach dem Tagespunkt.
 # Negativer Lookahead (?!\d) verhindert Match auf "26.5.2026".
 _RE_DATE_NUM_NOYEAR = re.compile(
-    r"(\d{1,2})\.(\d{1,2})\.(?!\d)\s*(?:um\s+)?(\d{1,2}):(\d{2})",
+    r"(\d{1,2})\.(\d{1,2})\.(?!\d)\s*(?:um[:\s]+\s*)?(\d{1,2}):(\d{2})",
+    re.IGNORECASE,
+)
+# Deutsche Text-Monate: "16. Juni 2026 um 13:00" oder "16. Juni 2026, 13:00"
+_RE_DATE_DE_TEXT = re.compile(
+    r"(\d{1,2})\.\s*(Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)"
+    r"\s*(\d{4})[,\s]+(?:um[:\s]+\s*)?(\d{1,2}):(\d{2})",
     re.IGNORECASE,
 )
 _RE_DATE_ISO = re.compile(
@@ -38,6 +50,14 @@ _RE_PASSCODE = re.compile(
 )
 _RE_DURATION = re.compile(
     r"(\d{2,3})\s*(?:min|Minuten)",
+    re.IGNORECASE,
+)
+# Deutsche Adresse: "Straße Nr., PLZ Ort" — für Vor-Ort-Gespräche
+# Deutsche Adresse: "Straßenname Nr., PLZ Ort" — für Vor-Ort-Gespräche
+# Deutsche Adresse: "Straßenname Nr., PLZ Ort" — für Vor-Ort-Gespräche
+_RE_ADDRESS = re.compile(
+    r"([A-Za-zäöüßÄÖÜ][A-Za-zäöüßÄÖÜ.\-]*(?:str\.|straße|Str\.|Straße|weg|Weg|allee|Allee|platz|Platz|ring|Ring|damm|Damm|hof|Hof|gasse|Gasse)"
+    r"\s+\d+[a-z]?(?:\s*(?:[,]|\sin)\s*)\d{5}\s+[A-Za-zäöüßÄÖÜ][A-Za-zäöüßÄÖÜ]+)",
     re.IGNORECASE,
 )
 
@@ -72,6 +92,10 @@ def parse_interview_event(text: str, now: Optional[datetime] = None) -> ParsedIn
     elif m_zoom:
         meeting_url = m_zoom.group(0)
         location = "Zoom"
+    else:
+        m_addr = _RE_ADDRESS.search(text)
+        if m_addr:
+            location = m_addr.group(0)
 
     duration_min = 60
     m_dur = _RE_DURATION.search(text)
@@ -103,6 +127,13 @@ def _extract_datetime(text: str, now: Optional[datetime] = None) -> Optional[dat
     if m:
         y, mo, d, h, mi = (int(x) for x in m.groups())
         return _safe_dt(y, mo, d, h, mi)
+
+    m = _RE_DATE_DE_TEXT.search(text)
+    if m:
+        d, month_name, y, h, mi = m.groups()
+        mo = _MONTH_MAP.get(month_name.lower())
+        if mo:
+            return _safe_dt(int(y), mo, int(d), int(h), int(mi))
 
     m = _RE_DATE_NUM.search(text)
     if m:

@@ -287,6 +287,28 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 
 **Sibling-Repo:** [`ai-provider-service` AGENTS.md §7](https://github.com/haraldweiss/ai-provider-service/blob/main/AGENTS.md) hat den vollständigen Status. Spec/Plan: `docs/superpowers/{specs,plans}/2026-06-05-markdown-memory-*.md` im Gateway-Repo.
 
+---
+
+## 9. Docker-Container: Host-Erreichbarkeit (127.0.0.1-Falle)
+
+**Problem:** `AI_PROVIDER_SERVICE_URL=http://127.0.0.1:8767` funktioniert **nicht** innerhalb eines Docker-Containers, weil `127.0.0.1` auf den Container-Loopback zeigt, nicht auf den Host.
+
+**Lösung:** Auf dem Oracle-VPS (Docker-Bridge-Netz) den Host über die Gateway-IP `172.17.0.1` erreichen:
+
+```bash
+AI_PROVIDER_SERVICE_URL=http://172.17.0.1:8767
+APP_INTERNAL_URL=http://172.17.0.1:5000
+```
+
+Diese Werte stehen in `/etc/bewerbungen/bewerbungen.env` auf dem VPS und werden per `-v` ins Container-Mount eingebunden (`/app/.env:ro`).
+
+**Nicht vergessen:** Nach Änderung der `.env` den Container neustarten:
+```bash
+docker stop bewerbungen-app && docker rm bewerbungen-app && docker run -d ...
+```
+
+**Warum das immer wieder auftritt:** In lokalen Dev-Umgebungen und alten IONOS-Podman-Setups war `127.0.0.1` korrekt. Bei jedem Docker-Rebuild/Neuaufsetzen muss `AI_PROVIDER_SERVICE_URL` geprüft werden. Siehe auch `deploy/container/setup-vps.sh` für die korrekten Werte.
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/
