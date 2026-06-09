@@ -343,6 +343,18 @@ docker stop bewerbungen-app && docker rm bewerbungen-app && docker run -d ...
 
 **Verified:** index.html deployed ✓, Image neugebaut ✓, Container restarted ✓
 
+### 2026-06-09 — Email-Service Proxy + Absage-Status-Schutz + Script-Escape-Fix
+
+**Email-Service über Apache Proxy:** Die `/email-service/` und `/imap-proxy/` Pfade wurden nicht an die entsprechenden Container weitergeleitet → Email-Monitoring zeigte "undefined". Fix: ProxyPass-Regeln in der Apache-Vhost-Konfiguration ergänzt (MÜSSEN vor dem allgemeinen `ProxyPass /` stehen, da Apache first-match-wins verwendet). `ai-admin`-Vhost deaktiviert (fehlendes SSL-Zertifikat).
+
+**Status-Schutz für "Absage":** `handleAppsScriptAnswers()` in `index.html` übersprang abgesagte Bewerbungen nicht — eine erneute automatische Antwort-Erkennung konnte `absage` überschreiben. Fix: vor dem Auto-Update `if (existingApp.status === 'absage') continue;` — nur manuelle Änderungen können den Status noch ändern.
+
+**Script-Escape-Fix:** In einem Template-Literal (`const html = \`...\``) stand `</script>` → der HTML-Parser schloss den Script-Tag vorzeitig → `SyntaxError: Unexpected end of input`. Fix: `<\/script>` statt `</script>` — JS wertet `\` vor `/` als No-Op aus, der HTML-Parser sieht aber kein gültiges `</script>` und lässt den Script-Block intakt. Gleiches für `</body>` und `</html>`.
+
+**Apache Config:** `ai-admin`-Vhost deaktiviert (`mv .conf .conf.disabled`) wegen fehlendem SSL-Zertifikat (muss erneuert werden bevor ai-admin wieder geht).
+
+**Verified:** index.html escaped ✓, Email-Service via Proxy erreichbar (HTTP 200) ✓, Container neugebaut ✓, Apache neugeladen ✓
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/
