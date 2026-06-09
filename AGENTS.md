@@ -343,6 +343,35 @@ docker stop bewerbungen-app && docker rm bewerbungen-app && docker run -d ...
 
 **Verified:** index.html deployed ✓, Image neugebaut ✓, Container restarted ✓
 
+### 2026-06-09 — SSL-Monitoring + AI-Email-Klassifizierung + Pro-User-Phrasen
+
+**SSL-Zertifikat-Überwachung (scripts/oracle/cert-monitor/):**
+- `/usr/local/bin/wolfini-cert-monitor.sh` prüft täglich 06:00 UTC alle 7 LE-Zertifikate
+- E-Mail an harald.weiss@... bei <30 Tagen (Warnung) oder <14 Tagen (Kritisch)
+- Certbot Deploy-Hook kopiert erneuerte Zerts nach `/etc/pki/tls/certs/` (SELinux-kompatibel) + reload Apache
+- Alle LE-live-Pfade in Apache-Konfig auf `/etc/pki/tls/certs/` umgestellt (cert_t-SELinux-Problem auf OL9)
+
+**AI-Email-Klassifizierung (`email_service.py`):**
+- `classify_email_with_ai()` sendet Email-Betreff + Absender + Snippet an `opencode-deepseek-v4-flash-free`
+- Erkennt: `absage`, `interview`, `zusage` oder `null` (neutral)
+- Ergebnis wird in `email_monitoring`-Tabelle gespeichert (`ai_status`, `ai_reasoning`)
+- `GET /api/monitoring/log` gibt die letzten 100 Einträge zurück
+- Background-Scheduler nutzt KI automatisch bei jedem Durchlauf
+
+**Monitoring-Dashboard (Frontend):**
+- Aufklappbarer "📋 Monitoring-Verlauf" unter den Monitoring-Einstellungen
+- Tabelle: Datum, Unternehmen, Status, KI-Badge (❌=Absage, 📅=Interview, ✅=Zusage)
+- Lädt per `loadMonitoringLog()` via `callEmailService('/api/monitoring/log')`
+
+**Pro-User-Ablehnungs-Phrasen:**
+- `models.py`: neue Spalte `job_body_reject_phrases` (JSON-Array, default `[]`)
+- `scan_body_reject()` akzeptiert optionale `extra_phrases` — merged mit globalen `BODY_REJECT_PHRASES`
+- `cron_prefilter.py`: lädt User-Phrasen in Cache, übergibt sie an `scan_body_reject()`
+- `api/profile.py`: `GET /profile/job-discovery/status` + `PATCH` unterstützen `job_body_reject_phrases`
+- Frontend: neues Textarea "Ablehnungs-Phrasen" im Job-Filter-Bereich, pro Zeile eine Phrase
+
+**Verified:** email_service.py deployed ✓, index.html deployed ✓, Docker neugebaut ✓, alle Container restarted ✓
+
 ### 2026-06-09 — Email-Service Proxy + Absage-Status-Schutz + Script-Escape-Fix
 
 **Email-Service über Apache Proxy:** Die `/email-service/` und `/imap-proxy/` Pfade wurden nicht an die entsprechenden Container weitergeleitet → Email-Monitoring zeigte "undefined". Fix: ProxyPass-Regeln in der Apache-Vhost-Konfiguration ergänzt (MÜSSEN vor dem allgemeinen `ProxyPass /` stehen, da Apache first-match-wins verwendet). `ai-admin`-Vhost deaktiviert (fehlendes SSL-Zertifikat).
