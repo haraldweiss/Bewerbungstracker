@@ -11,7 +11,7 @@ Ein datenschutzfreundliches Tool zur Verwaltung von Bewerbungen mit automatische
 ### ✨ Kernfeatures
 
 - 📊 **Dashboard** - Status-Verteilung, Erfolgsquoten, Aktivitätszeitleiste
-- 📧 **Email-Integration** - Gmail, Outlook, IMAP/POP3 mit Automatischer Überwachung
+- 📧 **Email-Integration** - Gmail (Apps Script), Outlook, IMAP/POP3 mit automatischer Überwachung + KI-gestützter Status-Erkennung (Absage/Interview/Zusage)
 - 💾 **Datenverwaltung** - JSON Backup, PDF-Export, Soft-Delete
 - 🔔 **Benachrichtigungen** - Desktop & Browser Push-Benachrichtigungen
 - 🎯 **Bewerbungsverfolgung** - Status, Datum, Gehalt, Notizen, Ghosting-Erkennung
@@ -22,8 +22,8 @@ Ein datenschutzfreundliches Tool zur Verwaltung von Bewerbungen mit automatische
 - 🤖 **Multi-Provider AI** - Claude (Anthropic), lokales Ollama, ChatGPT/OpenAI, Mammouth, eigener OpenAI-kompatibler Endpoint. Per-User-Konfiguration mit verschlüsselten API-Keys. Optional: Fallback-Provider und Queue-Persistenz bei Nicht-Erreichbarkeit (z.B. lokales Ollama)
 - 🎯 **Pro-Task-Modelle** - Verschiedene Modelle pro KI-Task (Job-Match, Cover-Letter, CV-Summarize, Email-Analyse) frei konfigurierbar. Heuristische Empfehlungs-Engine bewertet jedes Modell pro Task (✅/⚠️/❌). Z.B. kleines lokales Ollama-Modell für Job-Matching, Claude für Anschreiben
 - 🌐 **Multi-User Local-Ollama via Tailscale** - mehrere User können ihr eigenes Ollama anbinden ohne Port-Konflikt. VPS + User-Macs in einem privaten Tailnet, ACL erlaubt nur Port 11434 pro Member. Siehe Handbuch-Sektion *"Eigenes Ollama anbinden"* + [deploy/tailscale-acl.hujson](deploy/tailscale-acl.hujson)
-- 🔍 **Job-Discovery** - Automatische Stellensuche aus RSS-Feeds + Bundesagentur/Adzuna/Arbeitnow APIs mit KI-Match-Score gegen deinen CV (Provider frei wählbar). Inkl. Quellen-Verwaltung, Pagination, Volltextsuche, Filter (Remote/PLZ/Anstellungsart), Browser-Push für Top-Matches und Onboarding-Checkliste
-- 👤 **Multi-User mit Admin-Approval** - User registrieren sich selbst, Admin schaltet Konten + Job-Discovery frei
+- 🔍 **Job-Discovery** - Automatische Stellensuche aus RSS-Feeds + Bundesagentur/Adzuna/Arbeitnow APIs mit KI-Match-Score gegen deinen CV (Provider frei wählbar). Inkl. Quellen-Verwaltung, Pagination, Volltextsuche, Filter (Remote/PLZ/Anstellungsart/Stichwörter/Ablehnungs-Phrasen pro User), Browser-Push für Top-Matches und Onboarding-Checkliste
+- 👤 **Multi-User mit Admin-Approval** - User registrieren sich selbst, Admin schaltet Konten + Job-Discovery frei. Passwort-vergessen-Funktion per E-Mail
 - 🔐 **Envelope-Encryption** - Pro-User-DEK + KEK aus Passwort, Backups bleiben bei Passwort-Reset entschlüsselbar
 - 🌙 **Dark/Light Mode** - Responsive Design für alle Geräte
 
