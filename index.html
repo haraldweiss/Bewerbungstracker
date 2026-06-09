@@ -625,6 +625,7 @@
                         <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap;">
                             <input type="text" id="appsScriptUrl" placeholder="https://script.google.com/macros/s/XXXXX/exec" style="flex:1;">
                             <button id="fetchBtn" class="btn btn-primary" onclick="saveAndFetchScript()">💾 Speichern & Abrufen</button>
+                            <button class="btn btn-danger btn-sm" onclick="disconnectAppsScript()" title="Verbindung trennen und URL löschen">✕ Trennen</button>
                         </div>
                     </div>
                 </div>
@@ -8151,6 +8152,25 @@ function copyScript() {
     navigator.clipboard.writeText(currentCode)
         .then(() => showToast('Code kopiert! ✓ (mit aktuellen Keywords)', 'success'))
         .catch(() => showToast('Kopieren fehlgeschlagen', 'error'));
+}
+
+function disconnectAppsScript() {
+    if (!state.settings.appsScriptUrl) {
+        showToast('Keine Verbindung vorhanden', 'info');
+        return;
+    }
+    if (!confirm('Apps Script Verbindung wirklich trennen? Die URL wird gelöscht.')) return;
+    state.settings.appsScriptUrl = '';
+    state.settings.appsScriptMonitoringEnabled = false;
+    state.appsScriptMonitoringActive = false;
+    document.getElementById('appsScriptUrl').value = '';
+    if (appsScriptMonitoringInterval) {
+        clearInterval(appsScriptMonitoringInterval);
+        appsScriptMonitoringInterval = null;
+    }
+    saveToStorage();
+    updateConnectionStatus();
+    showToast('✅ Apps Script Verbindung getrennt', 'success');
 }
 
 function saveAndFetchScript() {
