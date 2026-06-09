@@ -2144,44 +2144,42 @@ function generateAppsScriptCode(keywords) {
     }
 
     return `function doGet(e) {
-  var maxEmails = 100;
+  var p = (e && e.parameter) || {};
+  var days  = parseInt(p.days  || '3', 10);  // Nur letzte 3 Tage
+  var limit = parseInt(p.limit || '100', 10);
+  limit = Math.min(limit, 200);
+
   var keywords = [${keywordArray.join(',')}];
 
-  var query = keywords.map(function(k){ return 'subject:' + k; }).join(' OR ');
-  var threads = GmailApp.search(query, 0, maxEmails);
+  // Optimierte Suchanfrage: newer_than beschränkt den Quota-Verbrauch
+  var query = '(' + keywords.map(function(k){ return 'subject:' + k; }).join(' OR ') + ') newer_than:' + days + 'd';
+  var threads = GmailApp.search(query, 0, limit);
+  var threadIds = threads.map(function(t){ return t.getId(); });
+
+  // Batch-Read statt Einzelaufrufe (spart ~10x API-Quota)
+  var allMsgs = GmailApp.getMessagesForThreads(threads);
+  var seen = {};
   var results = [];
 
-  threads.forEach(function(thread) {
-    var msgs = thread.getMessages();
-    msgs.forEach(function(msg) {
+  for (var ti = 0; ti < allMsgs.length; ti++) {
+    var msgs = allMsgs[ti];
+    for (var mi = 0; mi < msgs.length; mi++) {
+      var msg = msgs[mi];
+      var id = msg.getId();
+      if (seen[id]) continue;  // Dedup
+      seen[id] = true;
       results.push({
-        id:      msg.getId(),
+        id:      id,
         subject: msg.getSubject(),
         from:    msg.getFrom(),
         to:      msg.getTo(),
         date:    msg.getDate().toISOString(),
         snippet: msg.getPlainBody().substring(0, 300)
       });
-    });
-  });
-
-  // Gesendet auch scannen
-  var sentQuery = 'in:sent ' + keywords.slice(0,3).map(function(k){ return 'subject:' + k; }).join(' OR ');
-  var sentThreads = GmailApp.search(sentQuery, 0, 50);
-  sentThreads.forEach(function(thread) {
-    var msgs = thread.getMessages();
-    msgs.forEach(function(msg) {
-      results.push({
-        id:      msg.getId() + '_sent',
-        subject: msg.getSubject(),
-        from:    msg.getFrom(),
-        to:      msg.getTo(),
-        date:    msg.getDate().toISOString(),
-        snippet: msg.getPlainBody().substring(0, 300),
-        sent:    true
-      });
-    });
-  });
+      if (results.length >= limit) break;
+    }
+    if (results.length >= limit) break;
+  }
 
   var output = ContentService.createTextOutput(JSON.stringify({
     status: 'ok',
