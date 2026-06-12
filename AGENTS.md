@@ -287,6 +287,28 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 
 **Sibling-Repo:** [`ai-provider-service` AGENTS.md §7](https://github.com/haraldweiss/ai-provider-service/blob/main/AGENTS.md) hat den vollständigen Status. Spec/Plan: `docs/superpowers/{specs,plans}/2026-06-05-markdown-memory-*.md` im Gateway-Repo.
 
+### 2026-06-12 — ÜBERGABE an opencode: technische Fehlbewertungen neu bewerten + Ollama-Fallback (Plan fertig, NICHT implementiert)
+
+**Auftrag (User):** Verworfene JobMatches, deren KI-Begründung einen technischen Fehler zeigt ("Tunnel offline" / "ungültiges JSON von Provider"), sollen automatisch neu bewertet werden. Erweiterung: wenn das Free-Modell versagt, auf ein lokales **Ollama-Modell** zurückfallen.
+
+**Was diese Session (Claude Code) fertig hat:**
+- **Prod-Analyse** (Oracle VM, s.u.): 9 dismissed Matches mit `match_reasoning = "Bewertung fehlgeschlagen (ungültiges JSON von Provider)."`, Score 0, alle User `harald`. Ursache: Free-Modell `opencode/deepseek-v4-flash-free` liefert HTTP 200 + Prosa statt JSON; Backup-Provider war **dasselbe** Free-Modell → effektiv kein Fallback.
+- **Spec** committed `765dec9` → `docs/superpowers/specs/2026-06-12-technical-failure-reeval-design.md`
+- **Plan** committed `def16f1` → `docs/superpowers/plans/2026-06-12-technical-failure-reeval.md` (9 Tasks, TDD, vollständiger Code in jedem Step — opencode kann Task-für-Task abarbeiten).
+- **Manuelle Prod-Daten-Änderung bereits gemacht:** 8 der 9 Matches auf `status='new'` zurückgesetzt (Score/Reasoning/notified geleert). IDs: `2451,2453,2473,2502,2554,2721,3057,3060`. Backup-JSON auf der VM: `/tmp/match_reeval_backup_20260612_041847.json`. Der 9. (Match `3053`) hat echtes `feedback_reasons=["wrong_seniority"]` → bewusst NICHT angefasst. **Diese 8 brauchen `eval_attempts=1`** (Plan Task 9 Step 4), sonst greift der neue Retry-Zweig sie nicht (prefilter < 50, Reasoning schon geleert).
+
+**Was lokal NICHT committed / offen ist:** Nichts uncommitted im Tree (nur Spec+Plan, beide committed). **Code ist noch NICHT implementiert** — opencode startet bei Plan-Task 1.
+
+**Wo genau weitermachen:** Plan Task 1 → Task 9 der Reihe nach. Branch `claude/hungry-euclid-56f7fd` (Worktree). NICHT zu `master` gemergt, NICHT deployed.
+
+**⚠ Routing-Hinweis (§2/§3.2):** Der Kern liegt in `services/job_matching/claude_utils.py` = Claude-Code-Care-Gebiet (Anthropic/Cost-Tracking). opencode: `cost_tracker.record_call(...)`-Logik im Erfolgsfall **exakt** erhalten, **keinen** `anthropic.Anthropic(...)` direkt instanziieren (§3.2), AI-Calls nur über `ai_provider_client`. Bei Unsicherheit den Care-Pfad zurück an Claude Code geben.
+
+**⚠ Infrastruktur-Korrektur:** Prod läuft auf der **Oracle VM**, nicht IONOS. Zugang: `ssh oracle-vm` (User `opc`), Container via **docker** (nicht podman). DB im Container `bewerbungen-app`: `/app/data/bewerbungstracker.db` (WAL, `busy_timeout` nutzen). Cron-Container `bewerbungen-cron` hat `JOB_CRON_TOKEN`+`APP_INTERNAL_URL` für manuelle Stage-Trigger. (Memory/AGENTS referenzieren noch IONOS — veraltet für dieses Deployment.)
+
+**⚠ Provider-Status zum Handoff-Zeitpunkt:** Ollama-Tunnel **down** (`404 … http://172.17.0.1:11435/api/chat`), `opencode` + `claude` gesund. Der Smoke-Test (Plan Task 9 Step 5) braucht einen gesunden Provider — Ollama-Fallback erst sinnvoll testbar, wenn der Tunnel wieder steht.
+
+**Verifikation vor Deploy:** `pytest tests/services/ tests/api/` grün; Alembic-Migration `c1d2e3f4a5b6` (down_revision `b0c1d2e3f4a5` = aktueller HEAD). Env-Defaults: `MATCH_FALLBACK_ENABLED=true`, `MATCH_OLLAMA_FALLBACK_MODEL=gemma4:12b`, `MATCH_MAX_EVAL_ATTEMPTS=5`.
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/
