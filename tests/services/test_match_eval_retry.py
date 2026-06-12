@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # © 2026 Harald Weiss
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -131,6 +132,51 @@ def test_local_factory_content_failure_no_fake_score(app, db_session, user_facto
     assert ok is False
     assert m.match_score is None
     assert m.eval_attempts == 1
+
+
+def test_retry_branch_selects_low_prefilter_failed_match(app, db_session, user_factory):
+    from models import RawJob, JobMatch, JobSource
+    from services.tasks.handlers.cron_claude_match import handle_cron_claude_match
+    u = user_factory(ai_provider='opencode', ai_provider_model='deepseek-v4-flash-free')
+    src = JobSource(name='test', type='rss', config='{}', enabled=True, crawl_interval_min=60)
+    db_session.add(src); db_session.flush()
+    raw = RawJob(source_id=src.id, external_id='r9', title='IT Admin', description='Linux', url='http://x')
+    db_session.add(raw); db_session.flush()
+    old = datetime.utcnow() - timedelta(hours=5)
+    m = JobMatch(raw_job_id=raw.id, user_id=u.id, prefilter_score=20.0, match_score=None,
+                 status='new', eval_attempts=1, updated_at=old)
+    db_session.add(m); db_session.commit()
+
+    called = {}
+    def fake_run(client, user, match):
+        called['id'] = match.id
+        match.match_score = 80.0
+        match.eval_attempts = 0
+        return True
+
+    with patch('services.job_matching.claude_utils._run_claude_match_for', side_effect=fake_run), \
+         patch('services.ai_provider_client.is_enabled', return_value=True):
+        handle_cron_claude_match({})
+    assert called.get('id') == m.id
+
+
+def test_retry_branch_ignores_fresh_low_prefilter(app, db_session, user_factory):
+    from models import RawJob, JobMatch, JobSource
+    from services.tasks.handlers.cron_claude_match import handle_cron_claude_match
+    u = user_factory(ai_provider='opencode', ai_provider_model='deepseek-v4-flash-free')
+    src = JobSource(name='test2', type='rss', config='{}', enabled=True, crawl_interval_min=60)
+    db_session.add(src); db_session.flush()
+    raw = RawJob(source_id=src.id, external_id='r10', title='X', description='Y', url='http://x')
+    db_session.add(raw); db_session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=u.id, prefilter_score=20.0, match_score=None,
+                 status='new', eval_attempts=0, updated_at=datetime.utcnow() - timedelta(hours=5))
+    db_session.add(m); db_session.commit()
+    called = {}
+    with patch('services.job_matching.claude_utils._run_claude_match_for',
+               side_effect=lambda c, u, mm: called.setdefault('id', mm.id) or True), \
+         patch('services.ai_provider_client.is_enabled', return_value=True):
+        handle_cron_claude_match({})
+    assert 'id' not in called   # eval_attempts=0 + prefilter<50 -> NICHT gezogen
 
 
 def test_fifth_content_failure_sets_permanent_marker(app, db_session, user_factory):

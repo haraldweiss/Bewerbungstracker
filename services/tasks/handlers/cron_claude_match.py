@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta
 from typing import Callable, Optional
+
+from sqlalchemy import or_
 
 from database import db
 from models import User, JobMatch
@@ -25,6 +28,7 @@ def handle_cron_claude_match(payload: dict, *, progress_cb: Optional[Callable] =
     from services.job_matching.claude_utils import (
         _run_claude_match_for, _get_anthropic_client,
         AUTO_CLAUDE_THRESHOLD, HARD_TIME_LIMIT_SEC,
+        MATCH_MAX_EVAL_ATTEMPTS, _retry_backoff_hours,
     )
     from services import ai_provider_client
 
@@ -46,8 +50,10 @@ def handle_cron_claude_match(payload: dict, *, progress_cb: Optional[Callable] =
     users_with_pending = (db.session.query(User)
                           .join(JobMatch, JobMatch.user_id == User.id)
                           .filter(JobMatch.match_score.is_(None),
-                                  JobMatch.prefilter_score >= AUTO_CLAUDE_THRESHOLD,
-                                  JobMatch.status == 'new')
+                                  JobMatch.status.in_(['new', 'seen']),
+                                  JobMatch.eval_attempts < MATCH_MAX_EVAL_ATTEMPTS,
+                                  or_(JobMatch.prefilter_score >= AUTO_CLAUDE_THRESHOLD,
+                                      JobMatch.eval_attempts >= 1))
                           .distinct().all())
 
     total_users = len(users_with_pending)
@@ -62,13 +68,29 @@ def handle_cron_claude_match(payload: dict, *, progress_cb: Optional[Callable] =
             skipped_budget += 1
             continue
 
+        now = datetime.utcnow()
         candidates = (JobMatch.query
                       .filter(JobMatch.user_id == user.id,
                               JobMatch.match_score.is_(None),
                               JobMatch.prefilter_score >= AUTO_CLAUDE_THRESHOLD,
-                              JobMatch.status == 'new')
+                              JobMatch.status == 'new',
+                              JobMatch.eval_attempts < MATCH_MAX_EVAL_ATTEMPTS)
                       .order_by(JobMatch.prefilter_score.desc())
                       .limit(user.job_claude_budget_per_tick).all())
+
+        retry_raw = (JobMatch.query
+                     .filter(JobMatch.user_id == user.id,
+                             JobMatch.match_score.is_(None),
+                             JobMatch.eval_attempts.between(1, MATCH_MAX_EVAL_ATTEMPTS - 1),
+                             JobMatch.status.in_(['new', 'seen']),
+                             or_(JobMatch.prefilter_score < AUTO_CLAUDE_THRESHOLD,
+                                 JobMatch.prefilter_score.is_(None)),
+                             JobMatch.updated_at < now - timedelta(hours=1))
+                     .order_by(JobMatch.eval_attempts.asc())
+                     .all())
+        retry = [m for m in retry_raw
+                 if (m.updated_at or now) < now - timedelta(hours=_retry_backoff_hours(m.eval_attempts))]
+        candidates = candidates + retry[:user.job_claude_budget_per_tick]
 
         for match in candidates:
             if time.time() - started > HARD_TIME_LIMIT_SEC:
