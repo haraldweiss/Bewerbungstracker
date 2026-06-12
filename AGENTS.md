@@ -351,6 +351,24 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 - `-e BIND_HOST=0.0.0.0` gesetzt (lauscht auf allen Interfaces)
 - `setup-oracle-vm.sh` aktualisiert (Commit `1b96543`)
 
+### 2026-06-12 — Fix: Service Worker Cache (v60→v61) + ai-provider unhealthy (durch opencode)
+
+- **Service Worker:** `service-worker.js` cache auf v61 gebumpt, da die alte v60 die `index.html` mit dem Import-Fix cached hatte → Browser zeigte alte Version ohne API-Call.
+- **ai-provider:** `OLLAMA_URLS` enthielt toten Endpoint `http://172.17.0.1:11434` → health-check hing → Provider als "unhealthy" markiert. Fix: nur noch `http://172.17.0.1:11435` (aktiver Ollama-Port). Container neugebaut mit korrigierten Env-Vars.
+
+### 2026-06-12 — Browser-Use lokal aufgesetzt (MCP-Tool) (durch opencode)
+
+**Problem:** `browser-use-mcp.py` lief via SSH auf Oracle VM, wo Ollama nur CPU hat (75s+ pro LLM-Call) → MCP-Timeout (30s).
+
+**Fix:**
+- Lokales venv (`/tmp/browser-use-env`) mit Playwright + browser-use installiert
+- `browser-use-mcp.py` rewritten: läuft jetzt lokal mit GPU-Playwright (kein Ollama nötig für page-titles/content)
+- Fallback: wenn lokal fehlschlägt → SSH mit opencode free über ai-provider
+- Config in `~/.config/opencode/opencode.jsonc` aktualisiert
+
+**Verifikation:** Seite geladen, Title + Buttons extrahiert in <3s (GPU).
+**Nicht committed** — betrifft nur lokale MCP-Config + venv.
+
 ### 2026-06-12 — ÜBERGABE an opencode: technische Fehlbewertungen neu bewerten + Ollama-Fallback (Plan fertig, NICHT implementiert)
 
 **Auftrag (User):** Verworfene JobMatches, deren KI-Begründung einen technischen Fehler zeigt ("Tunnel offline" / "ungültiges JSON von Provider"), sollen automatisch neu bewertet werden. Erweiterung: wenn das Free-Modell versagt, auf ein lokales **Ollama-Modell** zurückfallen.
