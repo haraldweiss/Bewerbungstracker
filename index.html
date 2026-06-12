@@ -11612,6 +11612,9 @@ async function saveProviderConfig() {
         status.style.color = 'var(--secondary)';
         showToast(`✓ ${result.message}`, 'success');
 
+        // opencode-Config geändert → Free/Paid-Sichtbarkeit neu ermitteln (sonst stale bis Reload)
+        if (provider === 'opencode') _opencodeUserConfigured = null;
+
         // Reload provider list und Models
         await loadProviders();
     } catch (e) {

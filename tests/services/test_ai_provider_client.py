@@ -82,6 +82,28 @@ def test_chat_primary_path_returns_requested_model():
     assert r.via == "ollama"
 
 
+def test_get_models_raw_returns_full_response_with_free_models():
+    """get_models_raw liefert das volle Dict inkl. free_models — Aufrufer
+    brauchen nicht auf den privaten _get-Helper zuzugreifen."""
+    fake_resp = {
+        "models": ["deepseek-v4-flash-free", "deepseek-v4-pro"],
+        "free_models": ["deepseek-v4-flash-free"],
+    }
+    with patch.object(_client().__class__, "_get", return_value=fake_resp):
+        c = _client()
+        raw = c.get_models_raw("opencode", user_id="u1")
+    assert raw["models"] == ["deepseek-v4-flash-free", "deepseek-v4-pro"]
+    assert raw["free_models"] == ["deepseek-v4-flash-free"]
+
+
+def test_get_models_still_returns_only_list():
+    """get_models bleibt rückwärtskompatibel: nur die Modell-Liste."""
+    fake_resp = {"models": ["a", "b"], "free_models": ["a"]}
+    with patch.object(_client().__class__, "_get", return_value=fake_resp):
+        c = _client()
+        assert c.get_models("opencode", user_id="u1") == ["a", "b"]
+
+
 def test_get_client_passes_timeout_override():
     """get_client(timeout=N) erzeugt Client mit angepasstem Timeout — wichtig
     fuer Best-Effort-AI-Calls innerhalb eines Request-Handlers, damit
