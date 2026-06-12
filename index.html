@@ -1663,10 +1663,12 @@
             <!-- opencode.ai Config -->
             <div id="config-opencode" style="display:none;">
                 <div class="form-group" style="margin-bottom:0.5rem;">
-                    <label for="opencodeApiKey" style="font-size:0.85rem;">opencode.ai API Key *</label>
-                    <input type="password" id="opencodeApiKey" placeholder="oc_..." style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
+                    <label for="opencodeApiKey" style="font-size:0.85rem;">opencode.ai API Key (optional)</label>
+                    <input type="password" id="opencodeApiKey" placeholder="oc_... (leer = Free-Modus)" style="width:100%;padding:0.4rem;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);">
                     <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">
-                        Hol dir einen Key auf <a href="https://opencode.ai/account" target="_blank" rel="noopener" style="color:var(--primary);">opencode.ai</a>.
+                        Ohne Key: <strong>Free-Modelle</strong> (deepseek-v4-flash-free u.a.).<br>
+                        Mit eigenem Key: <strong>alle Modelle</strong> (auch Paid).<br>
+                        Key holen auf <a href="https://opencode.ai/account" target="_blank" rel="noopener" style="color:var(--primary);">opencode.ai</a>.
                     </div>
                 </div>
                 <div class="form-group" style="margin-bottom:0.5rem;">
@@ -10630,6 +10632,23 @@ async function loadFeatureOverrides() {
 // ═══════════════════════════════════════════════════════════════════
 
 let _backupState = { provider: null, model: null, auto: false };
+let _opencodeUserConfigured = null;
+
+async function _checkOpencodeUserConfig() {
+    if (_opencodeUserConfigured !== null) return _opencodeUserConfigured;
+    try {
+        const r = await fetchAPI('/api/providers/opencode/config', { method: 'GET' });
+        if (r.ok) {
+            const data = await r.json();
+            _opencodeUserConfigured = data.configured === true;
+        } else {
+            _opencodeUserConfigured = false;
+        }
+    } catch (e) {
+        _opencodeUserConfigured = false;
+    }
+    return _opencodeUserConfigured;
+}
 
 async function loadBackupSettings() {
     const provSel = document.getElementById('backupProviderSelect');
@@ -10642,7 +10661,7 @@ async function loadBackupSettings() {
         const provRes = await fetchAPI('/api/providers');
         if (provRes.ok) {
             const data = await provRes.json();
-            const providers = (data.providers || []).filter(p => p.configured);
+            const providers = (data.providers || []).filter(p => p.configured && p.allowed);
             provSel.replaceChildren();
             const noneOpt = document.createElement('option');
             noneOpt.value = '';
@@ -10938,7 +10957,7 @@ async function populateOverrideProviders(feature) {
         const r = await fetchAPI('/api/providers');
         if (!r.ok) return;
         const data = await r.json();
-        const providers = (data.providers || []).filter(p => p.configured);
+        const providers = (data.providers || []).filter(p => p.configured && p.allowed);
         select.replaceChildren();
         for (const p of providers) {
             const opt = document.createElement('option');
@@ -10971,8 +10990,8 @@ async function onOverrideProviderChange(feature) {
         }
         const data = await r.json();
         const models = data.models || [];
-        const freeOverrideModels = models.filter(m => m.endsWith('-free')).sort();
-        const paidOverrideModels = models.filter(m => !m.endsWith('-free')).sort();
+        const freeOverrideModels = (data.free_models || models.filter(m => m.endsWith('-free'))).sort();
+        const paidOverrideModels = models.filter(m => !freeOverrideModels.includes(m)).sort();
 
         if (freeOverrideModels.length > 0) {
             const grp = document.createElement('optgroup');
@@ -11072,23 +11091,28 @@ async function openModelComparisonModal() {
         const provRes = await fetchAPI('/api/providers');
         if (!provRes.ok) throw new Error('providers load failed');
         const provData = await provRes.json();
-        const providers = (provData.providers || []).filter(p => p.configured);
+        const providers = (provData.providers || []).filter(p => p.configured && p.allowed);
 
         const rows = [];
+        const hasOpencodeKey = await _checkOpencodeUserConfig();
         for (const p of providers) {
             try {
                 const mr = await fetchAPI('/api/providers/' + p.id + '/models');
                 if (!mr.ok) continue;
                 const mdata = await mr.json();
+                const freeForProvider = mdata.free_models || [];
                 for (const m of (mdata.models || [])) {
-                    rows.push({ provider: p.id, providerName: p.name || p.id, model: m });
+                    const isFree = freeForProvider.includes(m) || m.endsWith('-free');
+                    // Opencode Paid-Modelle nur mit eigenem API-Key
+                    if (p.id === 'opencode' && !isFree && !hasOpencodeKey) continue;
+                    rows.push({ provider: p.id, providerName: p.name || p.id, model: m, isFree });
                 }
             } catch (e) { /* skip */ }
         }
 
-        // Sort rows: free models first (groupted by -free suffix), then paid
-        const freeRows = rows.filter(r => r.model.endsWith('-free')).sort((a, b) => a.model.localeCompare(b.model));
-        const paidRows = rows.filter(r => !r.model.endsWith('-free')).sort((a, b) => a.model.localeCompare(b.model));
+        // Sort rows: free models first (grouped by -free suffix), then paid
+        const freeRows = rows.filter(r => r.isFree).sort((a, b) => a.model.localeCompare(b.model));
+        const paidRows = rows.filter(r => !r.isFree).sort((a, b) => a.model.localeCompare(b.model));
 
         content.replaceChildren();
         if (rows.length === 0) {
@@ -11200,7 +11224,12 @@ async function openModelComparisonModal() {
 
         const hint = document.createElement('div');
         hint.style.cssText = 'margin-top:0.75rem;font-size:0.8rem;color:var(--text-muted);';
-        hint.textContent = 'Wähle pro Task ein Modell und klicke "Übernehmen". "Standard" entfernt den Override für diese Task.';
+        if (!hasOpencodeKey) {
+            hint.innerHTML = '💡 <strong>opencode:</strong> Free-Modelle sind ohne API-Key nutzbar. '
+                + 'Eigener Key in den <a href="#" onclick="showSettingsSection(\'ai\');closeModelComparisonModal();return false;" style="color:var(--primary);">Einstellungen</a> schaltet Paid-Modelle frei.';
+        } else {
+            hint.textContent = 'Wähle pro Task ein Modell und klicke "Übernehmen". "Standard" entfernt den Override für diese Task.';
+        }
         content.appendChild(hint);
 
         const footer = document.createElement('div');
@@ -11429,8 +11458,14 @@ async function onProviderChange() {
         }
 
         const models = data.models || [];
-        const freeModels = models.filter(m => m.endsWith('-free')).sort();
-        const paidModels = models.filter(m => !m.endsWith('-free')).sort();
+        const freeModels = (data.free_models || models.filter(m => m.endsWith('-free'))).sort();
+        const paidModels = models.filter(m => !freeModels.includes(m)).sort();
+
+        // Opencode: Paid-Modelle nur mit eigenem API-Key anzeigen
+        let showPaid = true;
+        if (provider === 'opencode') {
+            showPaid = await _checkOpencodeUserConfig();
+        }
 
         if (freeModels.length > 0) {
             const grp = document.createElement('optgroup');
@@ -11443,7 +11478,7 @@ async function onProviderChange() {
             });
             modelSelect.appendChild(grp);
         }
-        if (paidModels.length > 0) {
+        if (paidModels.length > 0 && showPaid) {
             const grp = document.createElement('optgroup');
             grp.label = '💳 Paid-Modelle';
             paidModels.forEach(model => {
@@ -11453,6 +11488,14 @@ async function onProviderChange() {
                 grp.appendChild(option);
             });
             modelSelect.appendChild(grp);
+        }
+        if (paidModels.length > 0 && !showPaid) {
+            const hint = document.createElement('option');
+            hint.value = '';
+            hint.disabled = true;
+            hint.textContent = '💳 Paid-Modelle — eigenes opencode API-Key in den Einstellungen hinterlegen';
+            hint.style.cssText = 'color:var(--text-muted);font-style:italic;';
+            modelSelect.appendChild(hint);
         }
 
         modelSelect.value = data.default || (data.models[0] || '');
@@ -11544,12 +11587,12 @@ async function saveProviderConfig() {
         if (apiKey) config.api_key = apiKey;
     } else if (provider === 'opencode') {
         const apiKey = document.getElementById('opencodeApiKey').value.trim();
-        if (!apiKey) {
-            showToast('⚠️ opencode.ai API Key erforderlich', 'warning');
+        const endpoint = document.getElementById('opencodeEndpoint').value.trim();
+        if (!apiKey && !endpoint) {
+            showToast('ℹ️ opencode läuft im Free-Modus — eigener Key schaltet Paid-Modelle frei', 'info');
             return;
         }
-        config.api_key = apiKey;
-        const endpoint = document.getElementById('opencodeEndpoint').value.trim();
+        if (apiKey) config.api_key = apiKey;
         if (endpoint) config.api_endpoint = endpoint;
     }
 

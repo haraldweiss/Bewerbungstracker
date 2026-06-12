@@ -85,6 +85,7 @@ def list_providers(user):
                 'name': p.get('name'),
                 'scope': 'system' if p.get('system') else 'user',
                 'configured': p.get('configured', False),
+                'allowed': p.get('allowed', True),
                 'healthy': p.get('healthy'),
                 'models': [],  # wird per /<id>/models nachgeladen
             })
@@ -106,10 +107,14 @@ def get_provider_models(user, provider_id):
         return err
 
     try:
-        models = client.get_models(provider_id, user_id=user.id)
+        raw = client._get(f'/providers/{provider_id}/models', params={'user_id': user.id})
+        models = raw.get('models', [])
         if not models:
             return {'error': f'Keine Models von {provider_id}', 'configured': False}, 404
-        return {'models': models, 'default': models[0] if models else None}, 200
+        resp = {'models': models, 'default': models[0] if models else None}
+        if 'free_models' in raw:
+            resp['free_models'] = raw['free_models']
+        return resp, 200
     except Exception as e:
         logger.warning(f'Models-Fetch Error ({provider_id}): {e}')
         return {'error': str(e)}, 502
@@ -154,13 +159,17 @@ def update_user_provider_settings(user):
             return {'error': f'Unbekannter Provider: {provider}'}, 400
         # Bei User-Providern: prüfe ob im Service konfiguriert
         if provider in USER_PROVIDERS and ai_provider_client.is_enabled():
-            try:
-                client = ai_provider_client.get_client()
-                cfg = client.get_config(user.id, provider)
-                if not cfg.get('configured'):
-                    return {'error': f'Provider {provider} ist nicht konfiguriert'}, 400
-            except Exception as e:
-                logger.warning(f'Config-Check für {provider} fehlgeschlagen: {e}')
+            # opencode: system provider mit Free-Tier, kein eigener Key nötig
+            if provider == 'opencode':
+                pass
+            else:
+                try:
+                    client = ai_provider_client.get_client()
+                    cfg = client.get_config(user.id, provider)
+                    if not cfg.get('configured'):
+                        return {'error': f'Provider {provider} ist nicht konfiguriert'}, 400
+                except Exception as e:
+                    logger.warning(f'Config-Check für {provider} fehlgeschlagen: {e}')
         # Modell-Validierung: verhindert dass nicht existente Modelle gespeichert werden
         # (z.B. veraltete oder umbenannte Modelle wie 'qwen3.6:latest')
         err = _validate_model_for_provider(user.id, provider, model)

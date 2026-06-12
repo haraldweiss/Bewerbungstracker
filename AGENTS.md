@@ -429,6 +429,42 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 
 **⚠ MagicMock-Kompatibilität:** `_result_is_content_failure` prüft `isinstance(failed, bool)` — verhindert False Positives bei Tests die `MagicMock` statt `MatchResult` verwenden (Hotfix in diesem Commit).
 
+### 2026-06-12 — opencode als System-Provider + Free-Tier + Browser-Use MCP + ai-provider Fixes (durch opencode)
+
+**Browser-Use MCP rewritten:**
+- Alte Agent-Variante (Ollama + browser-use, zu langsam, 75s Timeout) ersetzt durch **8 deterministische Tools** (navigate/click/fill/select/extract/screenshot/html/close)
+- Stateful Session (ein Event-Loop über gesamte MCP-Lifetime)
+- Kein LLM nötig – schnelle Playwright-Operationen (<3s pro Schritt)
+- `opencode.jsonc` zeigt auf `/Library/WebServer/Documents/wolfinisoftware/scripts/browser-use-mcp.py`
+
+**ai-provider-service (Hotfixes per SSH auf Oracle VM):**
+1. **`Config`-Import fehlte** in `providers_api.py:42` → NameError → `/providers` gab 500 → alle Provider "nicht verfügbar"
+2. **`opencode` war `system: False`** → Model-Endpoint blockierte (400 "nicht konfiguriert") für User ohne eigene opencode-Konfig, obwohl globaler `OPENCODE_API_KEY` existiert
+3. **`opencode` in PROVIDER_REGISTRY** → `system: True`, `requires: []`, `optional: ['api_key','api_endpoint']`
+4. **`_load_config` in dispatcher.py** → opencode-Check VOR system-Branch (sonst totes Code wegen system:True)
+5. **`Config`-Import fehlte** in dispatcher.py → `name 'Config' is not defined` bei Chat-Calls
+6. **`free_models` zum API-Response** hinzugefügt (statt Suffix-Raten im Frontend)
+
+**Bewerbungstracker Backend Fixes (`api/providers.py`):**
+1. **`allowed` fehlte im list_providers-Response** → Frontend filtert seit v62 mit `p.configured && p.allowed`, `allowed` war `undefined` → alle Provider rausgefiltert
+2. **`free_models` fehlte im models-Proxy** → App-Proxy gibt jetzt `free_models` aus ai-provider-Response durch
+3. **opencode-Prüfung** beim Settings-Save: `provider == 'opencode'` überspringt Config-Check (system provider mit Free-Tier)
+
+**Frontend (`index.html`):**
+1. Provider-Filter überall: `p.configured && p.allowed` (Backup, Override, Comparison-Modal)
+2. `free_models` aus API-Response statt `endsWith('-free')`-Suffix
+3. Paid-Modelle ausgeblendet wenn kein eigener opencode API-Key
+4. Konfig-Formular: API-Key optional (Free-Modus ohne Key), Hinweise für Free/Paid
+5. Service Worker v61→v62
+
+**Wichtig bei Container-Neustart der Oracle VM:**
+- ai-provider-service Änderungen sind per `sed`/`docker cp` im laufenden Container gemacht – **überleben keinen Image-Neubau**. Für dauerhaften Fix müssen `providers_api.py`, `dispatcher.py`, `providers/__init__.py`, `providers/opencode.py` und `health_tracker.py` im ai-provider-service Repo committed und Image neugebaut werden.
+- Bewerbungstracker Änderungen sind committed und gepusht (s.u.).
+
+**Nächste Schritte:**
+- ai-provider-service Image neubauen mit den 6 Hotfixes
+- `setup-oracle-vm.sh` ggf. aktualisieren
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/
