@@ -120,6 +120,19 @@ def test_infra_failure_leaves_attempts_untouched(app, db_session, user_factory):
     assert m.eval_attempts == 0           # Infra zählt NICHT zur Kappe
 
 
+def test_local_factory_content_failure_no_fake_score(app, db_session, user_factory):
+    u, raw, m = _make_match_and_user(db_session, user_factory)
+    failed = MatchResult(score=0, reasoning="Bewertung fehlgeschlagen (ungültiges JSON von Provider).",
+                         missing_skills=[], tokens_in=1, tokens_out=1, failed=True)
+    with patch.object(cu, 'match_job_with_claude', return_value=failed), \
+         patch.object(cu.ai_provider_client, 'is_enabled', return_value=False), \
+         patch.object(cu.ProviderFactory, 'get_client', return_value=object()):
+        ok = cu._run_match_via_local_factory(u, m, raw, 'CV', 'ollama', 'gemma4:12b')
+    assert ok is False
+    assert m.match_score is None
+    assert m.eval_attempts == 1
+
+
 def test_fifth_content_failure_sets_permanent_marker(app, db_session, user_factory):
     u, raw, m = _make_match_and_user(db_session, user_factory)
     m.eval_attempts = 4

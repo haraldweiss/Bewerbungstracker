@@ -481,9 +481,20 @@ def _run_match_via_local_factory(user: User, match: JobMatch, raw: RawJob, cv_su
         )
         return False
 
+    if _result_is_content_failure(result):
+        match.eval_attempts = (match.eval_attempts or 0) + 1
+        match.match_score = None
+        match.missing_skills = []
+        match.match_reasoning = (
+            PERMANENT_FAIL_REASONING
+            if match.eval_attempts >= MATCH_MAX_EVAL_ATTEMPTS else None
+        )
+        return False
+
     match.match_score = result.score
     match.match_reasoning = result.reasoning
     match.missing_skills = result.missing_skills
+    match.eval_attempts = 0
     raw.crawl_status = 'matched'
 
     cost_usd = cost_tracker.estimate_cost_usd(model, result.tokens_in, result.tokens_out)
