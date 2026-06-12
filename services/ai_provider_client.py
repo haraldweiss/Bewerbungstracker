@@ -109,6 +109,16 @@ class AIProviderClient:
         params = {'user_id': user_id} if user_id else None
         return self._get(f'/providers/{provider_id}/models', params=params).get('models', [])
 
+    def get_models_raw(self, provider_id: str, user_id: Optional[str] = None) -> dict:
+        """Volle Models-Response inkl. optionalem ``free_models``-Feld.
+
+        ``get_models`` verwirft alles außer der Modell-Liste; Aufrufer die
+        Free-Tier-Infos brauchen nutzen diese Methode statt direkt auf den
+        privaten HTTP-Helper zuzugreifen.
+        """
+        params = {'user_id': user_id} if user_id else None
+        return self._get(f'/providers/{provider_id}/models', params=params)
+
     def get_provider_health(self, provider_id: str) -> dict:
         return self._get(f'/providers/{provider_id}/health')
 

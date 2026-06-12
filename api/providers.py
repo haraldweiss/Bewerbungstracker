@@ -107,7 +107,7 @@ def get_provider_models(user, provider_id):
         return err
 
     try:
-        raw = client._get(f'/providers/{provider_id}/models', params={'user_id': user.id})
+        raw = client.get_models_raw(provider_id, user_id=user.id)
         models = raw.get('models', [])
         if not models:
             return {'error': f'Keine Models von {provider_id}', 'configured': False}, 404
