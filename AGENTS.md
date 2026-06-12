@@ -465,6 +465,21 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 - ai-provider-service Image neubauen mit den 6 Hotfixes
 - `setup-oracle-vm.sh` ggf. aktualisieren
 
+### 2026-06-12 — Review-Fixes der opencode-Session + ai-provider-Hotfixes persistiert (durch Claude Code)
+
+**Review der opencode-Commits (a040252 u.a.) — 2 echte Probleme gefixt, Commit `582b765`:**
+- `services/ai_provider_client.py`: neue öffentliche `get_models_raw()` (volles Dict inkl. `free_models`). `api/providers.py` griff vorher mit `client._get(...)` direkt auf den privaten HTTP-Helper zu (§3.1-Bruch) → jetzt `get_models_raw()`. `get_models()` unverändert.
+- `index.html`: `_opencodeUserConfigured`-Cache nach erfolgreichem Speichern einer opencode-Config invalidiert — sonst blieben Paid-Modelle bis Reload versteckt.
+- `service-worker.js`: v62→v63 (Frontend-Änderung → SW-Cache-Bump).
+- 2 neue Tests in `tests/services/test_ai_provider_client.py`. `pytest tests/api tests/services` → 546 passed (7 pre-existing test_pattern_learner-Failures, lokal fehlendes `jsonschema`).
+- Branch `claude/naughty-turing-5e5603`, NICHT zu master gemergt, NICHT deployed.
+
+**ai-provider-service SSH-Hotfixes persistiert → [PR #21](https://github.com/haraldweiss/ai-provider-service/pull/21):**
+- Vollständiger `.py`-Abgleich Container↔`origin/main`: nur 3 Dateien differierten (`api/providers_api.py`, `dispatcher.py`, `providers/__init__.py`); `config.py`/`opencode.py`/`health_tracker.py` auf main bereits korrekt/identisch. Der Handoff oben listete 5 Dateien — `config.py` war schon committed, daher hier präziser.
+- **Kern-Bug auf main:** `Config.OPENCODE_API_KEY` wurde referenziert **ohne** `from config import Config` → NameError auf jedem opencode-Pfad. Plus opencode noch `system: False`.
+- Fix übernimmt die produktiv laufende Container-Version 1:1 + Test auf neuen System-Provider-Vertrag aktualisiert. `pytest tests/` → 205 passed.
+- **⚠ Image NICHT vor Merge neubauen** — `main` hat den Fix erst nach Merge; ein Rebuild aus aktuellem `main` würde Prod regredieren (Container läuft nur via SSH-Hotfix). Reihenfolge: **PR #21 mergen → dann Image neubauen.**
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/
