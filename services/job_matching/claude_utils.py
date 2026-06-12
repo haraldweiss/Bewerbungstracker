@@ -51,7 +51,8 @@ def _retry_backoff_hours(attempts: int) -> int:
 
 def _result_is_content_failure(result) -> bool:
     """True bei technischem Inhalts-Fehler (ungültiges JSON), nicht bei echtem Score 0."""
-    if getattr(result, 'failed', False):
+    failed = getattr(result, 'failed', False)
+    if isinstance(failed, bool) and failed:
         return True
     # Lokaler Pfad (match_job_with_claude) hat kein failed-Flag — Heuristik:
     return (result.score == 0

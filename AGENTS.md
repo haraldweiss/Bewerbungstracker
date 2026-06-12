@@ -309,6 +309,44 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 
 **Verifikation vor Deploy:** `pytest tests/services/ tests/api/` grün; Alembic-Migration `c1d2e3f4a5b6` (down_revision `b0c1d2e3f4a5` = aktueller HEAD). Env-Defaults: `MATCH_FALLBACK_ENABLED=true`, `MATCH_OLLAMA_FALLBACK_MODEL=gemma4:12b`, `MATCH_MAX_EVAL_ATTEMPTS=5`.
 
+### 2026-06-12 — Implementierung technische Fehlbewertung-Neubewertung + Ollama-Fallback (durch opencode)
+
+**Tasks 1–8 vollständig implementiert (Plan Tasks 1–8), Task 9 (Deploy) noch ausstehend.**
+
+**Commits** (7, auf Branch `claude/hungry-euclid-56f7fd`):
+1. `7f193bb` — feat: JobMatch.eval_attempts Spalte für technische Retry-Logik
+2. `e9bef20` — feat: MatchResult.failed unterscheidet technischen Fehler von echtem Score 0
+3. `0c6de8f` — feat: Backoff-Kurve + Inhalts-Fehler-Erkennung + Match-Fallback-Konstanten
+4. `0ecbb63` — feat: Ollama-Fallback-Kette + technische Fehlerklassifizierung im Match-Pfad
+5. `8f2ea98` — feat: lokaler Match-Pfad schreibt keinen Fake-Score 0 mehr
+6. `415f4eb` — feat: Retry-Zweig zieht technische Fehlschläge unabhängig vom prefilter-Gate
+7. `41dab40` — feat: Einmal-Cleanup-Script für technische Fehlbewertungen im Altbestand
+
+**Was implementiert wurde:**
+- **Alembic-Migration** `c1d2e3f4a5b6` → `job_matches.eval_attempts` (Integer, default 0)
+- **MatchResult.failed** Flag in `claude_matcher.py` — unterscheidet technischen Fehler von echtem Score 0
+- **4 Env-Vars/Konstanten** in `claude_utils.py`: `MATCH_MAX_EVAL_ATTEMPTS=5`, `MATCH_FALLBACK_ENABLED=true`, `MATCH_OLLAMA_FALLBACK_MODEL=gemma4:12b`, `PERMANENT_FAIL_REASONING`
+- **Backoff-Helper** `_retry_backoff_hours` (1,2,4,8,12h gekappt)
+- **Content-Failure-Erkennung** `_result_is_content_failure` (failed-Flag + Reasoning-Heuristik)
+- **Ollama-Fallback-Kette** in `_run_match_via_service`: Service-seitiger Fallback + eigener Ollama-Call bei Prosa
+- **Content-Failure-Handling** in beiden Pfaden (Service + Local): kein Fake-Score 0, eval_attempts++ bei Prosa, PERMANENT_FAIL_REASONING ab 5. Versuch
+- **`_run_claude_match_for` Guard** bei `eval_attempts >= 5`
+- **Retry-Zweig** in `cron_claude_match.py`: zieht technische Fehlschläge (`eval_attempts 1–4`) unabhängig vom prefilter-Gate, mit Backoff per `updated_at`
+- **Einmal-Cleanup-Script** `scripts/reeval_technical_failures.py` (Dry-run Default, `--apply` mit JSON-Backup)
+- **14 neue Tests** (12 in `test_match_eval_retry.py`, 2 in `test_reeval_script.py`)
+
+**Noch zu tun (Task 9 — Deploy + Daten-Reconciliation, siehe Plan für Details):**
+1. Branch zu `master` mergen
+2. Migration auf Oracle VM anwenden: `docker exec bewerbungen-app alembic upgrade head`
+3. Spalte verifizieren
+4. Cleanup-Script Dry-run + Apply: `python3 scripts/reeval_technical_failures.py --apply`
+5. 8 bereits zurückgesetzte Matches `eval_attempts=1` setzen (IDs: 2451,2453,2473,2502,2554,2721,3057,3060)
+6. Smoke via cron-Trigger: `docker exec bewerbungen-cron curl -X POST ...`
+
+**Verifikation:** `pytest tests/services/test_match_eval_retry.py tests/services/test_reeval_script.py` → 14/14 passed. `pytest tests/services/ tests/api/test_jobs_cron.py tests/api/test_jobs_user.py` → 363 passed (7 failures in test_pattern_learner.py sind pre-existing AI-Key-abhängige Tests).
+
+**⚠ MagicMock-Kompatibilität:** `_result_is_content_failure` prüft `isinstance(failed, bool)` — verhindert False Positives bei Tests die `MagicMock` statt `MatchResult` verwenden (Hotfix in diesem Commit).
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/
