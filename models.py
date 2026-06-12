@@ -463,6 +463,9 @@ class JobMatch(db.Model):
     match_score = db.Column(db.Float, nullable=True)
     match_reasoning = db.Column(db.Text, nullable=True)
     _missing_skills = db.Column('missing_skills', db.Text, nullable=True)
+    # Zähler für technische Inhalts-Fehlversuche (kein gültiges JSON vom Provider).
+    # Bei Erfolg -> 0. >= MATCH_MAX_EVAL_ATTEMPTS = permanent technisch fehlgeschlagen.
+    eval_attempts = db.Column(db.Integer, nullable=False, server_default='0', default=0)
     status = db.Column(db.String(16), default='new', nullable=False)
     notified_at = db.Column(db.DateTime, nullable=True)
     imported_application_id = db.Column(db.String(36), db.ForeignKey('applications.id'), nullable=True)
