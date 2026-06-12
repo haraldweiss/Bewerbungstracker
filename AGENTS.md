@@ -287,6 +287,48 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 
 **Sibling-Repo:** [`ai-provider-service` AGENTS.md §7](https://github.com/haraldweiss/ai-provider-service/blob/main/AGENTS.md) hat den vollständigen Status. Spec/Plan: `docs/superpowers/{specs,plans}/2026-06-05-markdown-memory-*.md` im Gateway-Repo.
 
+### 2026-06-12 — Fix: Docker-Volume-Split zwischen APP und WORKER (durch opencode)
+
+**Root Cause:** APP- und WORKER-Container nutzten unterschiedliche Docker-Volumes:
+- APP: `bewerbungen_data` (underscore, neu seit 06:31 UTC)
+- WORKER: `bewerbungen-data` (hyphen, alt)
+- EMAIL-SERVICE + IMAP-PROXY: `/opt/bewerbungen-data` (Host-Bind-Mount, dritte Kopie)
+- CRON: kein Volume-Mount (benign, curl-only)
+
+**Auswirkung:** Seit APP-Neustart ~06:31 UTC waren neu erstellte Tasks (6 Stück) für den WORKER unsichtbar → keine Pipeline-Verarbeitung (crawl/prefilter/claude-match/notify) seit 06:27. Email-Import lief noch bis 06:25-06:27 weil da alle Container dasselbe Volume teilten.
+
+**Fix:**
+1. `docker stop/rm bewerbungen-worker` → neuer Container mit `-v bewerbungen_data:/app/data:z`
+2. `docker stop/rm bewerbungen-email-service` → neuer Container mit `-v bewerbungen_data:/app/data:z`
+3. `docker stop/rm bewerbungen-imap-proxy` → neuer Container mit `-v bewerbungen_data:/app/data:z`
+4. Altes Volume `bewerbungen-data` (hyphen) gelöscht
+5. `deploy/container/crontab`: `Authorization: Bearer` → `X-Cron-Token` (Header matcht `require_cron_token`)
+
+**Verifikation:** 2233 Tasks done, 0 queued, 0 running. Worker verarbeitet wieder.
+
+**⚠ Lehre für künftige Container-Neustarts:** Bei `docker run` und Neu-Erzeugung von Containern aufpassen dass Volume-Namen identisch sind (keine Tippfehler underscore vs hyphen).
+
+**Dokumentation:** `deploy/container/setup-oracle-vm.sh` neu erstellt — Single-Source-of-Truth für alle `docker run`-Befehle auf der Oracle VM. Commands: `setup`, `start`, `stop`, `restart`, `rebuild`, `status`, `volume-info`, `migrate`, `logs`.
+
+### 2026-06-12 — Frontend: Import-Funktionen speicherten nur in localStorage → Refactored (durch opencode)
+
+**Root Cause:** 7 manuelle Import-Funktionen (`importScriptEmail`, `importAllScriptEmails`, `importSingleImapEmail`, `importEmlItem`, `importAllEmlEmails`, `importTextItem`, `importAllTextEmails`) in `index.html` haben Bewerbungen nur in `state.bewerbungen` + `localStorage` geschrieben, **nicht** per API auf dem Server.
+
+**Auswirkung:** `loadFromStorage()` lädt Bewerbungen primär vom Server (`GET /api/applications`). Beim nächsten Seitenaufruf überschreibt der Server-Response den lokalen State — die manuell importierte Bewerbung war weg.
+
+`importImapEmail` (der neuere IMAP-Pfad) machte es bereits korrekt mit `POST /api/applications` + `_mapBackendToDB()`.
+
+**Refactoring:**
+- Neue gemeinsame Funktion `_importSingleApplication(parsed, notes, sourceOverride)` — einmalige API-Logik für alle 7 Konsumenten
+- `apiData` aus `parseEmailToApplication()`-Feldern gebaut (backend-Feldnamen: `company`, `position`, `status`, `applied_date`, …)
+- `POST /api/applications` via `fetchAPI()`
+- Response via `_mapBackendToDB(created)` in lokalen State eingefügt
+- `importAll*`-Schleifen von `forEach` (async ohne await) auf `for…of` + `await` umgestellt
+- Jeder Konsument ruft `_importSingleApplication` + `renderAll()` + source-spezifisches Rendering
+
+**Betroffene Datei:** `index.html` (ca. +70 Zeilen netto).
+**NICHT deployed auf Oracle VM** — Frontend-Änderung, nur nach Git-Commit wirksam.
+
 ### 2026-06-12 — ÜBERGABE an opencode: technische Fehlbewertungen neu bewerten + Ollama-Fallback (Plan fertig, NICHT implementiert)
 
 **Auftrag (User):** Verworfene JobMatches, deren KI-Begründung einen technischen Fehler zeigt ("Tunnel offline" / "ungültiges JSON von Provider"), sollen automatisch neu bewertet werden. Erweiterung: wenn das Free-Modell versagt, auf ein lokales **Ollama-Modell** zurückfallen.

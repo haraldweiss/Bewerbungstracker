@@ -2,6 +2,12 @@
 # © 2026 Harald Weiss
 #
 # Quadlet for the Bewerbungstracker Flask application (gunicorn).
+#
+# ⚠ ALLE Container müssen DENSELBEN Volume-Pfad verwenden — wenn ein
+# Container ein anderes Volume sieht (z.B. named Docker volume statt
+# host bind mount), hat er eine andere DB-Kopie und Tasks bleiben stumm
+# liegen. Für Podman/Quadlet ist das unkritisch (alle nutzen host bind),
+# für Docker (Oracle VM) siehe setup-oracle-vm.sh.
 # Install: cp to /etc/containers/systemd/ then:
 #   systemctl daemon-reload && systemctl start bewerbungentracker-app
 

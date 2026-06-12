@@ -7177,47 +7177,66 @@ function parseEmailToApplication(email) {
     };
 }
 
-function importScriptEmail(index) {
-    const email = state.scriptEmails[index];
-    const parsed = parseEmailToApplication(email);
-    // Duplikat prüfen
+/* ── Geteilter Import-Helfer (API + State + Toast) ────────────────────
+   Alle manuellen Import-Funktionen (Apps-Script, IMAP, EML, Text)
+   rufen diese eine Funktion auf, statt die API-Logik zu duplizieren.
+*/
+async function _importSingleApplication(parsed, notes, sourceOverride) {
     const exists = state.bewerbungen.find(b =>
         b.firma.toLowerCase() === parsed.firma.toLowerCase() &&
         b.datum === parsed.datum
     );
-    if (exists) { showToast('Bereits vorhanden: ' + parsed.firma, 'warning'); return; }
-    const newEntry = {
-        ...parsed,
-        id: 'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        notizen: `Importiert aus Gmail\nBetreff: ${email.subject}`
+    if (exists) { showToast('Bereits vorhanden: ' + parsed.firma, 'warning'); return false; }
+
+    const apiData = {
+        company: parsed.firma,
+        position: parsed.position,
+        status: parsed.status,
+        applied_date: parsed.datum,
+        salary: parsed.gehalt || '',
+        location: parsed.ort || '',
+        contact_email: parsed.email || '',
+        source: sourceOverride || parsed.quelle || '',
+        link: parsed.link || '',
+        notes: notes || ''
     };
-    state.bewerbungen.unshift(newEntry);
-    saveToStorage();
-    renderAll();
-    showToast('Importiert: ' + parsed.firma, 'success');
-    renderScriptEmails();
+
+    try {
+        const response = await fetchAPI('/api/applications', {
+            method: 'POST',
+            body: JSON.stringify(apiData)
+        });
+        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+        const created = await response.json();
+        state.bewerbungen.unshift(_mapBackendToDB(created));
+        saveToStorage();
+        return true;
+    } catch (error) {
+        console.error('Import error:', error);
+        showToast('❌ Fehler beim Importieren: ' + (error.message || 'unbekannt'), 'error');
+        return false;
+    }
 }
 
-function importAllScriptEmails() {
+/* ── Einzel-Importe (rufen _importSingleApplication + renderAll) ──── */
+
+async function importScriptEmail(index) {
+    const email = state.scriptEmails[index];
+    const parsed = parseEmailToApplication(email);
+    const ok = await _importSingleApplication(parsed,
+        `Importiert aus Gmail\nBetreff: ${email.subject}`);
+    if (ok) { renderAll(); showToast('Importiert: ' + parsed.firma, 'success'); renderScriptEmails(); }
+}
+
+async function importAllScriptEmails() {
     let imported = 0, skipped = 0;
-    state.scriptEmails.forEach(email => {
-        if (!isRelevantApplicationEmail(email)) { skipped++; return; }
+    for (const email of state.scriptEmails) {
+        if (!isRelevantApplicationEmail(email)) { skipped++; continue; }
         const parsed = parseEmailToApplication(email);
-        const exists = state.bewerbungen.find(b =>
-            b.firma.toLowerCase() === parsed.firma.toLowerCase() && b.datum === parsed.datum
-        );
-        if (exists) { skipped++; return; }
-        state.bewerbungen.unshift({
-            ...parsed,
-            id: 'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            notizen: `Importiert aus Gmail\nBetreff: ${email.subject}`
-        });
-        imported++;
-    });
+        const ok = await _importSingleApplication(parsed,
+            `Importiert aus Gmail\nBetreff: ${email.subject}`);
+        if (ok) imported++; else skipped++;
+    }
     saveToStorage();
     renderAll();
     showToast(`${imported} importiert, ${skipped} übersprungen`, 'success');
@@ -7318,32 +7337,20 @@ function renderEmlResults() {
         }).join('')}`;
 }
 
-function importEmlItem(i) {
+async function importEmlItem(i) {
     const item = state.emlEmails[i];
-    const exists = state.bewerbungen.find(b =>
-        b.firma.toLowerCase() === item.parsed.firma.toLowerCase() && b.datum === item.parsed.datum
-    );
-    if (exists) { showToast('Bereits vorhanden', 'warning'); return; }
-    state.bewerbungen.unshift({
-        ...item.parsed,
-        id: 'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        notizen: `Importiert aus EML\nBetreff: ${item.raw.subject}`
-    });
-    saveToStorage();
-    renderAll();
-    showToast('Importiert: ' + item.parsed.firma, 'success');
+    const ok = await _importSingleApplication(item.parsed,
+        `Importiert aus EML\nBetreff: ${item.raw.subject}`, 'eml');
+    if (ok) { renderAll(); showToast('Importiert: ' + item.parsed.firma, 'success'); }
 }
 
-function importAllEmlEmails() {
+async function importAllEmlEmails() {
     let imported = 0;
-    state.emlEmails.forEach((item, i) => {
-        const exists = state.bewerbungen.find(b =>
-            b.firma.toLowerCase() === item.parsed.firma.toLowerCase() && b.datum === item.parsed.datum
-        );
-        if (!exists) { importEmlItem(i); imported++; }
-    });
+    for (let i = 0; i < state.emlEmails.length; i++) {
+        const item = state.emlEmails[i];
+        if (await _importSingleApplication(item.parsed,
+            `Importiert aus EML\nBetreff: ${item.raw.subject}`, 'eml')) imported++;
+    }
     showToast(`${imported} importiert`, 'success');
 }
 
@@ -7395,21 +7402,19 @@ function analyzeEmailText() {
             </div>`).join('')}`;
 }
 
-function importTextItem(i) {
+async function importTextItem(i) {
     const item = state.textEmails[i];
-    state.bewerbungen.unshift({
-        ...item,
-        id: 'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-    });
-    saveToStorage();
-    renderAll();
-    showToast('Importiert: ' + item.firma, 'success');
+    const ok = await _importSingleApplication(item,
+        item.notizen || 'Manuell importiert', 'manuell');
+    if (ok) { renderAll(); showToast('Importiert: ' + item.firma, 'success'); }
 }
 
-function importAllTextEmails() {
-    state.textEmails.forEach((_, i) => importTextItem(i));
+async function importAllTextEmails() {
+    let imported = 0;
+    for (let i = 0; i < state.textEmails.length; i++) {
+        if (await _importSingleApplication(state.textEmails[i],
+            state.textEmails[i].notizen || 'Manuell importiert', 'manuell')) imported++;
+    }
     showToast('Alle importiert ✓', 'success');
 }
 
@@ -9481,37 +9486,17 @@ function renderImapResultsFiltered(emailsToRender) {
     }).join('');
 }
 
-function importSingleImapEmail(idx) {
+async function importSingleImapEmail(idx) {
     const email = imapFilteredEmails[idx];
     if (!email) return;
-
     if (!isEmailWithinDateRange(email.date)) {
         showToast('Email ist vor dem eingestellten Start-Datum', 'warning');
         return;
     }
-
     const parsed = parseEmailToApplication(email);
-    const exists = state.bewerbungen.find(b =>
-        b.firma.toLowerCase() === parsed.firma.toLowerCase() && b.datum === parsed.datum
-    );
-    if (exists) {
-        showToast('Bereits vorhanden: ' + parsed.firma, 'warning');
-        return;
-    }
-
-    state.bewerbungen.unshift({
-        ...parsed,
-        id:        'bew_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-        quelle:    'imap',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        notizen:   `Importiert via IMAP/POP3\nBetreff: ${email.subject}`
-    });
-
-    saveToStorage();
-    renderAll();
-    showToast('Importiert: ' + parsed.firma, 'success');
-    renderImapResults();
+    const ok = await _importSingleApplication(parsed,
+        `Importiert via IMAP/POP3\nBetreff: ${email.subject}`, 'imap');
+    if (ok) { renderAll(); showToast('Importiert: ' + parsed.firma, 'success'); renderImapResults(); }
 }
 
 /* ═══════════════════════════════════════════════════════
