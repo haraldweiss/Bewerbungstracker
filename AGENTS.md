@@ -497,7 +497,7 @@ Beide PRs (oben) wurden gemergt und auf die **Oracle VM** deployed (docker, nich
 - Fix: `docker-entrypoint.sh` app-Rolle bindet `${BIND_HOST:-127.0.0.1}`; `setup-oracle-vm.sh start_app` setzt `-e BIND_HOST=0.0.0.0` (Security-Grenze = host-loopback-Publish, wie email/imap).
 - **Der laufende app-Container nutzt bereits dieses Fix-Image.** Aber `master` bekommt den Fix erst nach Merge von #23 → **bis dahin app NICHT erneut aus master rebuilden** (sonst wieder 502).
 
-**⚠ Latente Landmine (NICHT gefixt, nur dokumentiert):** `setup-oracle-vm.sh::start_cron` setzt **keine** Env-Vars, aber der laufende `bewerbungen-cron` hat ~19 (`JOB_CRON_TOKEN`, `APP_INTERNAL_URL`, `MAIL_*`, `ENCRYPTION_KEY`, `DATABASE_URL` …, vermutlich via `--env-file /etc/bewerbungen/bewerbungen.env`). Ein `rebuild` über das Script würde **cron kaputt machen** (Auth zum App-Container weg → alle Cron-Stages fallen aus). Vor nächstem `rebuild`: `start_cron` reparieren (genauen Original-Run-Command bestätigen).
+**✅ Cron-Landmine GEFIXT → [PR #24](https://github.com/haraldweiss/Bewerbungstracker/pull/24):** `setup-oracle-vm.sh::start_cron` setzte **keine** Env-Vars, aber der laufende `bewerbungen-cron` hat ~20 — verifiziert **deckungsgleich** mit `/etc/bewerbungen/bewerbungen.env` (also per `--env-file` gestartet). Ein `rebuild` über das alte Script hätte cron lahmgelegt (Auth zum App-Container weg → `require_cron_token` 401 → alle Stages fallen aus). Fix: `start_cron` nutzt jetzt `--env-file "$CONFIG_DIR/bewerbungen.env"`. Laufender cron-Container wurde NICHT angefasst (läuft normal); Fix greift beim nächsten `rebuild`.
 
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed

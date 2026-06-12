@@ -170,10 +170,17 @@ start_imap_proxy() {
 }
 
 start_cron() {
+    # --env-file: Der Cron-Container braucht JOB_CRON_TOKEN + APP_INTERNAL_URL
+    # (für die curl-Trigger an die App) sowie die übrigen App-Env-Vars. Ohne
+    # dies läuft supercronic ohne Token → alle Stages scheitern an der Auth
+    # (require_cron_token → 401/403). Der laufende Container wurde exakt so
+    # gestartet (Env deckungsgleich mit bewerbungen.env). KEIN Volume — Cron
+    # arbeitet nur per curl auf APP_INTERNAL_URL, nicht direkt auf der DB.
     docker run -d \
         --name bewerbungen-cron \
         --restart unless-stopped \
         --network "$NETWORK_NAME" \
+        --env-file "$CONFIG_DIR/bewerbungen.env" \
         "$IMAGE" cron
     echo "▶ bewerbungen-cron gestartet"
 }
