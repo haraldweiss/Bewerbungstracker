@@ -105,6 +105,12 @@ setup_prereqs() {
 #   (4 Slashes = absolute path /app/data/bewerbungstracker.db)
 
 start_app() {
+    # BIND_HOST=0.0.0.0: gunicorn lauscht container-intern auf allen Interfaces,
+    # damit Dockers Port-DNAT (host 127.0.0.1:5000 → container eth0) ankommt.
+    # Die Security-Grenze ist das host-seitige -p 127.0.0.1:5000 (nur loopback),
+    # NICHT der container-interne Bind. Ohne dies bindet der Entrypoint auf
+    # 127.0.0.1 (Default) → Container unerreichbar (HTTP 502). Gleiches Muster
+    # wie email-service/imap-proxy.
     docker run -d \
         --name bewerbungen-app \
         --restart unless-stopped \
@@ -112,6 +118,7 @@ start_app() {
         -v "$CONFIG_DIR/bewerbungen.env:/app/.env:ro" \
         --network "$NETWORK_NAME" \
         -p 127.0.0.1:5000:5000 \
+        -e BIND_HOST=0.0.0.0 \
         "$IMAGE" app
     echo "▶ bewerbungen-app gestartet"
 }

@@ -480,6 +480,25 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 - Fix übernimmt die produktiv laufende Container-Version 1:1 + Test auf neuen System-Provider-Vertrag aktualisiert. `pytest tests/` → 205 passed.
 - **⚠ Image NICHT vor Merge neubauen** — `main` hat den Fix erst nach Merge; ein Rebuild aus aktuellem `main` würde Prod regredieren (Container läuft nur via SSH-Hotfix). Reihenfolge: **PR #21 mergen → dann Image neubauen.**
 
+### 2026-06-12 — Deploy auf Oracle VM: ai-provider PR #21 + Bewerbungstracker PR #22 live + Bind-Fix PR #23 (durch Claude Code)
+
+Beide PRs (oben) wurden gemergt und auf die **Oracle VM** deployed (docker, nicht IONOS).
+
+**ai-provider-service ([PR #21](https://github.com/haraldweiss/ai-provider-service/pull/21), gemergt):**
+- Image aus `main` neu gebaut (`/tmp/aip-deploy` via `git archive`), im Image verifiziert (compile, `Config.OPENCODE_API_KEY`, opencode `system:True`). Laufender Container: `/providers` → 200, opencode-Models laden, kein NameError.
+- `/etc/ai-provider/ai-provider.env` ist recreation-sicher (`DATABASE_URL` gesetzt). Einzige Env-Drift: `VAULT_PATH` fehlt im laufenden Container (älter als das Feature) — zieht bei nächster Neuerstellung automatisch.
+
+**Bewerbungstracker ([PR #22](https://github.com/haraldweiss/Bewerbungstracker/pull/22), gemergt = `930674a`):**
+- Image `localhost/bewerbungen:latest` aus `master` neu gebaut. **Nur `bewerbungen-app` recreated** (einziger Container mit Verhaltensänderung); worker/email/imap/cron unangetastet (kein PR-#22-Delta, Image trotzdem aktualisiert).
+- Verifiziert: intern+public HTTP 200, `service-worker.js` **v63** live, `/api/providers` 401, DB intakt (users=3, applications=99, job_matches=2387, gleiches Volume `bewerbungen_data`).
+
+**⚠ Dabei latenten Bug gefunden + gefixt → [PR #23](https://github.com/haraldweiss/Bewerbungstracker/pull/23) (OFFEN, noch nicht gemergt):**
+- Commit `f6c2b28` hardcodete app-gunicorn-Bind auf `127.0.0.1` im Container → mit `-p 127.0.0.1:5000:5000` (DNAT auf eth0) unerreichbar → **502 beim Rebuild aus master**. Lief bisher nur, weil das deployte Image älter als f6c2b28 war.
+- Fix: `docker-entrypoint.sh` app-Rolle bindet `${BIND_HOST:-127.0.0.1}`; `setup-oracle-vm.sh start_app` setzt `-e BIND_HOST=0.0.0.0` (Security-Grenze = host-loopback-Publish, wie email/imap).
+- **Der laufende app-Container nutzt bereits dieses Fix-Image.** Aber `master` bekommt den Fix erst nach Merge von #23 → **bis dahin app NICHT erneut aus master rebuilden** (sonst wieder 502).
+
+**⚠ Latente Landmine (NICHT gefixt, nur dokumentiert):** `setup-oracle-vm.sh::start_cron` setzt **keine** Env-Vars, aber der laufende `bewerbungen-cron` hat ~19 (`JOB_CRON_TOKEN`, `APP_INTERNAL_URL`, `MAIL_*`, `ENCRYPTION_KEY`, `DATABASE_URL` …, vermutlich via `--env-file /etc/bewerbungen/bewerbungen.env`). Ein `rebuild` über das Script würde **cron kaputt machen** (Auth zum App-Container weg → alle Cron-Stages fallen aus). Vor nächstem `rebuild`: `start_cron` reparieren (genauen Original-Run-Command bestätigen).
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/
