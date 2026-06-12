@@ -302,25 +302,33 @@ def _summarize_description(client, user_id: str, provider: str, model: str,
 
 def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary: str,
                             provider: str, model: str) -> bool:
-    """Match-Pfad via ai-provider-service (Production)."""
+    """Match-Pfad via ai-provider-service (Production) mit Ollama-Fallback-Kette."""
     client = ai_provider_client.get_client()
-    fallback_kwargs = ai_provider_client.build_fallback_kwargs(user, feature='match')
+    if MATCH_FALLBACK_ENABLED:
+        fallback_kwargs = {
+            'fallback_provider': ProviderConfig.OLLAMA,
+            'fallback_model': MATCH_OLLAMA_FALLBACK_MODEL,
+        }
+    else:
+        fallback_kwargs = ai_provider_client.build_fallback_kwargs(user, feature='match')
 
     from services.job_matching.feedback_context import get_user_feedback_context
     feedback_context = get_user_feedback_context(user.id)
 
-    def call_match(description: str):
+    def call_match(description: str, *, force_provider=None, force_model=None, use_fallback=True):
         user_msg = _build_user_message(cv_summary, {
             "title": raw.title, "description": description, "location": raw.location,
         }, feedback_context=feedback_context)
+        eff_model = force_model or model
+        kwargs = dict(fallback_kwargs) if use_fallback else {}
         return client.chat(
-            user_id=user.id, provider=provider, model=model,
+            user_id=user.id, provider=force_provider or provider, model=eff_model,
             messages=[
                 {"role": "system", "content": SYSTEM_MESSAGE_MATCH},
                 {"role": "user", "content": user_msg},
             ],
-            max_tokens=_max_tokens_for(model),
-            **fallback_kwargs,
+            max_tokens=_max_tokens_for(eff_model),
+            **kwargs,
         )
 
     try:
@@ -329,40 +337,31 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
         raise
     except Exception as e:
         logger.warning(
-            "service-match failed for match=%s user=%s provider=%s: %s: %s",
+            "service-match infra-fail match=%s user=%s provider=%s: %s: %s",
             match.id, user.id, provider, type(e).__name__, e,
         )
-        return False
+        return False  # Infra: kein Score, eval_attempts unberührt
 
     text = _strip_thinking_block(
         (response.content[0].text if response.content else '').strip()
     )
-    parsed = _extract_first_json_object(text)
-
     match._last_via = response.via
     match._last_fallback_used = response.fallback_used
 
-    if not parsed:
-        logger.info(
-            f'match={match.id} first try unparseable (text-len={len(text)}), '
-            f'retrying with summarized description'
-        )
+    if not _extract_first_json_object(text):
+        logger.info(f'match={match.id} unparseable, summarize-retry')
         try:
             sum_provider, sum_model = user.get_model_for('cv_summarize')
             short_desc = _summarize_description(
-                client, user.id,
-                sum_provider or provider,
-                sum_model or model,
-                raw.description or '',
-                fallback_kwargs=fallback_kwargs,
+                client, user.id, sum_provider or provider, sum_model or model,
+                raw.description or '', fallback_kwargs=fallback_kwargs,
             )
             if short_desc and short_desc != raw.description:
                 response2 = call_match(short_desc)
                 text2 = _strip_thinking_block(
                     (response2.content[0].text if response2.content else '').strip()
                 )
-                parsed2 = _extract_first_json_object(text2)
-                if parsed2:
+                if _extract_first_json_object(text2):
                     response.usage.input_tokens += response2.usage.input_tokens
                     response.usage.output_tokens += response2.usage.output_tokens
                     text = text2
@@ -371,13 +370,51 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
         except Exception as e:
             logger.warning(f'summarize-retry failed for match={match.id}: {e}')
 
+    if (not _extract_first_json_object(text)
+            and MATCH_FALLBACK_ENABLED
+            and response.via != ProviderConfig.OLLAMA):
+        logger.info(f'match={match.id} content-fallback -> ollama {MATCH_OLLAMA_FALLBACK_MODEL}')
+        try:
+            resp_o = call_match(
+                raw.description, force_provider=ProviderConfig.OLLAMA,
+                force_model=MATCH_OLLAMA_FALLBACK_MODEL, use_fallback=False,
+            )
+            text_o = _strip_thinking_block(
+                (resp_o.content[0].text if resp_o.content else '').strip()
+            )
+            if _extract_first_json_object(text_o):
+                text = text_o
+                response = resp_o
+                match._last_via = resp_o.via
+                match._last_fallback_used = True
+        except AIProviderQueuedError:
+            raise
+        except Exception as e:
+            logger.warning(
+                "ollama content-fallback infra-fail match=%s: %s: %s",
+                match.id, type(e).__name__, e,
+            )
+            return False  # Ollama nicht erreichbar = Infra: kein Score, Kappe unberührt
+
     result = _parse_match_response(
         text, response.usage.input_tokens, response.usage.output_tokens,
     )
 
+    if _result_is_content_failure(result):
+        match.eval_attempts = (match.eval_attempts or 0) + 1
+        match.match_score = None
+        match.missing_skills = []
+        match.match_reasoning = (
+            PERMANENT_FAIL_REASONING
+            if match.eval_attempts >= MATCH_MAX_EVAL_ATTEMPTS else None
+        )
+        logger.info(f'match={match.id} content-failure, eval_attempts={match.eval_attempts}')
+        return False
+
     match.match_score = result.score
     match.match_reasoning = result.reasoning
     match.missing_skills = result.missing_skills
+    match.eval_attempts = 0
     raw.crawl_status = 'matched'
 
     suspicious_reasons: list[str] = []
@@ -388,7 +425,6 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
     if has_suspicious_score_jump(match.prefilter_score, result.score):
         suspicious_reasons.append('score_jump')
     match.suspicious_reasons = ','.join(suspicious_reasons) if suspicious_reasons else None
-
     if suspicious_reasons:
         logger.info(
             f'match={match.id} flagged suspicious: {suspicious_reasons} '
@@ -404,7 +440,6 @@ def _run_match_via_service(user: User, match: JobMatch, raw: RawJob, cv_summary:
         key_owner = 'server'
 
     logged_model = response.model if (response.fallback_used and response.model) else model
-
     cost_tracker.record_call(
         user_id=user.id, endpoint='/api/jobs/match',
         model=logged_model, tokens_in=result.tokens_in,
@@ -486,6 +521,8 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
         True wenn erfolgreich bewertet (DB-Update gemacht).
         False wenn geskippt.
     """
+    if (match.eval_attempts or 0) >= MATCH_MAX_EVAL_ATTEMPTS:
+        return False  # permanent technisch fehlgeschlagen — nicht weiter auto-bewerten
     if match.match_score is not None and not _is_failed_evaluation(match):
         return False
     if _is_failed_evaluation(match):
