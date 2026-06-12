@@ -7,7 +7,6 @@ inferring from the actual mail samples. All 4 patterns in prod (Indeed,
 LinkedIn, XING) had `url_labels = ["Jobangebot ansehen", "View job"]`
 — literally the example. These tests ensure the prompt no longer leaks.
 """
-import pytest
 from services.job_sources.pattern_learner import _build_user_prompt, _EXAMPLE_OUTPUT
 
 
@@ -18,12 +17,6 @@ def _sample_mails(n=3):
     ]
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Vorbestehender Failure, von neuer CI aufgedeckt: pattern_learner.py:580 "
-    "enthaelt erneut 'Jobangebot ansehen' im Prompt — vermutliche Reintroduktion "
-    "des Leaks vom 2026-05-21. Braucht Prompt-Review (Domain), nicht Teil des CI-PRs.",
-)
 def test_prompt_does_not_leak_linkedin_url_labels():
     """The example output must not contain concrete LinkedIn URL-label phrases
     that the AI might copy verbatim."""
@@ -82,12 +75,6 @@ def test_prompt_explicitly_warns_against_copying_placeholders():
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Vorbestehender Failure, von neuer CI aufgedeckt: gleiche Leak-Stelle "
-    "wie test_prompt_does_not_leak_linkedin_url_labels (pattern_learner.py:580). "
-    "Braucht Prompt-Review (Domain), nicht Teil des CI-PRs.",
-)
 def test_field_explanation_no_concrete_linkedin_examples():
     """The 'Feld-Erklaerung' section in the prompt must not name specific
     LinkedIn phrases as examples."""
