@@ -76,6 +76,7 @@ class MatchResult:
     missing_skills: list
     tokens_in: int
     tokens_out: int
+    failed: bool = False   # True = technischer Inhalts-Fehler (kein echter Score)
 
 
 def _build_prompt(cv_summary: str, job: dict) -> str:

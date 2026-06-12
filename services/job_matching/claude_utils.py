@@ -220,6 +220,7 @@ def _parse_match_response(text: str, tokens_in: int, tokens_out: int) -> MatchRe
             missing_skills=[],
             tokens_in=tokens_in,
             tokens_out=tokens_out,
+            failed=True,
         )
     try:
         score, reasoning, skills, schema_warnings = _validate_match_schema(data)
@@ -240,6 +241,7 @@ def _parse_match_response(text: str, tokens_in: int, tokens_out: int) -> MatchRe
             missing_skills=[],
             tokens_in=tokens_in,
             tokens_out=tokens_out,
+            failed=True,
         )
 
 
