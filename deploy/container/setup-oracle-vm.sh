@@ -37,7 +37,11 @@ set -euo pipefail
 VOLUME_NAME="bewerbungen_data"
 NETWORK_NAME="bewerbungen-net"
 CONFIG_DIR="/etc/bewerbungen"
-IMAGE="localhost/bewerbungen:latest"
+# IMAGE_TAG steuert, welcher Image-Stand recreated wird. Default :latest, aber
+# fuer Rollback auf einen frueheren Build:  IMAGE_TAG=<sha> ./setup-oracle-vm.sh rebuild
+# (Builds erzeugt build.sh mit SHA-Tag + :latest.)
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+IMAGE="localhost/bewerbungen:${IMAGE_TAG}"
 
 # ── §1: Konfigurationsdatei ────────────────────────────────────────────────
 
