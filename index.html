@@ -7190,7 +7190,7 @@ async function _importSingleApplication(parsed, notes, sourceOverride) {
 
     const apiData = {
         company: parsed.firma,
-        position: parsed.position,
+        position: parsed.position || '(Keine Position)',
         status: parsed.status,
         applied_date: parsed.datum,
         salary: parsed.gehalt || '',
