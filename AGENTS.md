@@ -509,6 +509,18 @@ Beide PRs (oben) wurden gemergt und auf die **Oracle VM** deployed (docker, nich
 
 **✅ Cron-Landmine GEFIXT → [PR #24](https://github.com/haraldweiss/Bewerbungstracker/pull/24):** `setup-oracle-vm.sh::start_cron` setzte **keine** Env-Vars, aber der laufende `bewerbungen-cron` hat ~20 — verifiziert **deckungsgleich** mit `/etc/bewerbungen/bewerbungen.env` (also per `--env-file` gestartet). Ein `rebuild` über das alte Script hätte cron lahmgelegt (Auth zum App-Container weg → `require_cron_token` 401 → alle Stages fallen aus). Fix: `start_cron` nutzt jetzt `--env-file "$CONFIG_DIR/bewerbungen.env"`. Laufender cron-Container wurde NICHT angefasst (läuft normal); Fix greift beim nächsten `rebuild`.
 
+### 2026-06-12 — Prompt-Leak-Reintroduktion in pattern_learner gefixt + auf Oracle VM deployed (durch Claude Code)
+
+**Problem:** `services/job_sources/pattern_learner.py` (~Zeile 580, Feld-Erklärung für `body_card.url_labels`) enthielt erneut die wörtlichen Beispiel-Phrasen `'Jobangebot ansehen', 'View job', 'Show job'` samt LinkedIn-Bezug im KI-Prompt — Reintroduktion des am 2026-05-21 (`2fbc4b2`) behobenen Leaks (kleine AI-Modelle kopieren solche Beispiele 1:1 in alle Plattform-Patterns). Entdeckt beim CI-Aufsetzen ([PR #25](https://github.com/haraldweiss/Bewerbungstracker/pull/25)), dort bewusst ausgeklammert.
+
+**Fix → [PR #26](https://github.com/haraldweiss/Bewerbungstracker/pull/26) (gemergt = `a59415d`):** Phrasen durch Platzhalter `<LABEL_VOR_JOB_URL_AUS_MAIL>` ersetzt (konsistent mit `_EXAMPLE_OUTPUT`), Extraktions-Instruktion erhalten. Die verbleibenden `'Jobangebot ansehen'`-Vorkommen im File sind Kommentare/Docstrings (Incident-Doku), kein Prompt-Text.
+
+**xfail-Cleanup → [PR #27](https://github.com/haraldweiss/Bewerbungstracker/pull/27) (gemergt):** PR #25 hatte `test_prompt_does_not_leak_linkedin_url_labels` + `test_field_explanation_no_concrete_linkedin_examples` als `@pytest.mark.xfail(strict=False)` markiert. Da #25 nach #26 in master landete, waren beide Tests XPASS → Marker entfernt (jetzt echte Guards), ungenutzten `import pytest` mitentfernt. CI-Gate (`test` + `docker-smoke`) grün vor Merge.
+
+**Deploy (Oracle VM, docker) — blessed Pfad nach §3.8:** `master` (`35e4215`) per `git archive` → `/tmp/bewerbungen-build`, Image via `deploy/container/build.sh 35e4215` gebaut (taggt `35e4215` + `:latest`), dann `IMAGE_TAG=35e4215 setup-oracle-vm.sh rebuild`. **Alle 5 Container** auf `localhost/bewerbungen:35e4215` neu erstellt — bereinigt zugleich die bestehende Image-Drift (worker/email/imap/cron liefen vorher noch ältere Image-IDs). Verifiziert: alle 5 `Up`, app intern+public HTTP 200, `/api/providers` 401, `service-worker.js` v63 (Backend-only-Fix, kein SW-Bump nötig), DB intakt (users=3, applications=99, job_matches=2387, gleiches Volume `bewerbungen_data`). Funktionaler Smoke im Worker: `_build_user_prompt(...)` enthält keine Leak-Phrasen mehr, Platzhalter present. Pattern-Training läuft im **worker** (`pattern_learner_train`-Handler) — der Fix greift beim nächsten Training.
+
+**Rollback** bei Bedarf: `IMAGE_TAG=<alter-sha> setup-oracle-vm.sh rebuild` (build.sh taggt jeden Build mit SHA).
+
 <!-- Example:
 ### 2026-05-27 — services/ extraction landed
 - 924 lines out of api/, 797 into services/
