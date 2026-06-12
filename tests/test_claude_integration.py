@@ -44,7 +44,7 @@ def test_analyze_email(client, user_email, auth_token):
     assert 'model_used' in data
     assert 'cost' in data
     assert data['email_id'] == user_email.id
-    assert data['model_used'] == 'claude-haiku-3-5'
+    assert data['model_used'] == 'claude-haiku-4-5-20251001'
 
 
 def test_analyze_email_missing_email_id(client, auth_token):
@@ -155,7 +155,7 @@ def test_monthly_usage_after_api_calls(client, user_email, auth_token):
     data = response.get_json()
     assert data['api_calls'] == 2
     assert data['total_cost_usd'] > 0
-    assert 'claude-haiku-3-5' in data['cost_by_model']
+    assert 'claude-haiku-4-5-20251001' in data['cost_by_model']
 
 
 def test_claude_endpoints_require_auth(client):
@@ -204,7 +204,7 @@ def test_api_call_logging(client, user_email, auth_headers, app):
 
     assert len(api_calls) == 1
     call = api_calls[0]
-    assert call.model == 'claude-haiku-3-5'
+    assert call.model == 'claude-haiku-4-5-20251001'
     assert call.tokens_in == 150
     assert call.tokens_out == 500
     assert call.cost > 0

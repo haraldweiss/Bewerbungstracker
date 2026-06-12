@@ -1,0 +1,110 @@
+name: CI
+
+# Zwei Gates, die genau die Bug-Klassen abfangen, die in der Session
+# 2026-06-12 unbemerkt nach master kamen:
+#   - test:         roter Unit-Test (z.B. veralteter Provider-Vertrag)
+#   - docker-smoke: Image baut NICHT / Container bootet nicht / Container ist
+#                   nach dem Build UNERREICHBAR (der f6c2b28 gunicorn-Bind-502).
+# Unit-Tests allein fangen den Bind-Bug NICHT — dafuer muss das Image wirklich
+# gebaut, gebootet und angepingt werden.
+#
+# Security: keine untrusted github.event.* Inputs in run:-Schritten. Der
+# generierte Fernet-Key wird ueber env: durchgereicht (nicht inline interpoliert).
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install deps
+        run: pip install -r requirements.txt pytest
+      - name: pytest
+        run: pytest tests/ -q
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t bewerbungen:ci .
+
+      - name: Generate valid Fernet ENCRYPTION_KEY
+        id: fernet
+        run: |
+          KEY=$(docker run --rm --entrypoint python bewerbungen:ci \
+            -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+
+      # GUNICORN_WORKERS=1: frische CI-DB → mehrere Worker wuerden gleichzeitig
+      # db.create_all() rennen (Race: "table users already exists"). In Prod ist
+      # das Schema schon da. 1 Worker reicht fuer den Bind-/Boot-Smoke voellig.
+      # Geteiltes Volume ci-data (wie Prod: alle Rollen teilen /app/data), damit
+      # die App das Schema anlegt und die Hintergrund-Rollen es sehen.
+      - name: App-Rolle booten + Healthcheck (faengt f6c2b28-Bind-502)
+        env:
+          ENCRYPTION_KEY: ${{ steps.fernet.outputs.key }}
+        run: |
+          docker volume create ci-data >/dev/null
+          docker run -d --name bt-app \
+            -v ci-data:/app/data \
+            -e FLASK_ENV=production \
+            -e JWT_SECRET_KEY=ci-dummy-secret \
+            -e SECRET_KEY=ci-dummy-secret \
+            -e ENCRYPTION_KEY="$ENCRYPTION_KEY" \
+            -e DATABASE_URL=sqlite:////app/data/ci.db \
+            -e AUTH_REQUIRED=false \
+            -e BIND_HOST=0.0.0.0 \
+            -e GUNICORN_WORKERS=1 \
+            -p 127.0.0.1:5000:5000 \
+            bewerbungen:ci app
+          ok=
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5000/ || true)
+            if [ "$code" = "200" ]; then echo "OK app erreichbar (HTTP 200)"; ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "FAIL app NICHT erreichbar — Bind/Boot kaputt"; docker logs bt-app; exit 1
+          fi
+
+      # cron ist hier NICHT dabei: das supercronic-Binary im Image ist fuer
+      # ARM64 gepinnt (Prod = Oracle Ampere). Auf dem x86_64-CI-Runner gibt das
+      # "Exec format error". Die uebrigen Rollen sind reines Python (arch-agnostisch).
+      # TODO: supercronic-Download im Dockerfile arch-aware (TARGETARCH) machen,
+      # dann cron hier wieder aufnehmen.
+      - name: Hintergrund-Rollen booten (duerfen nicht sofort crashen)
+        env:
+          ENCRYPTION_KEY: ${{ steps.fernet.outputs.key }}
+        run: |
+          fail=0
+          for role in worker imap-proxy email-service; do
+            docker run -d --name "bt-$role" \
+              -v ci-data:/app/data \
+              -e FLASK_ENV=production \
+              -e JWT_SECRET_KEY=ci-dummy-secret \
+              -e ENCRYPTION_KEY="$ENCRYPTION_KEY" \
+              -e DATABASE_URL=sqlite:////app/data/ci.db \
+              -e BIND_HOST=0.0.0.0 \
+              -e JOB_CRON_TOKEN=ci-dummy \
+              -e APP_INTERNAL_URL=http://127.0.0.1:5000 \
+              bewerbungen:ci "$role"
+          done
+          sleep 10
+          for role in worker imap-proxy email-service; do
+            if [ "$(docker inspect -f '{{.State.Running}}' "bt-$role")" = "true" ]; then
+              echo "OK $role laeuft"
+            else
+              echo "FAIL $role gecrasht beim Boot:"; docker logs "bt-$role"; fail=1
+            fi
+          done
+          exit $fail

@@ -90,6 +90,16 @@ Anzeichen (eines reicht): wiederholte System-Compression-Hinweise; sehr viele/gr
 - Eine knappe Schluss-Nachricht: „Session bei ~90 %, Übergabe in §7 geschrieben, hier ist Schluss."
 
 **Faustregel:** Im Zweifel zu früh übergeben statt zu spät. Eine zu früh geschriebene Übergabe kostet wenig; eine bei einem Subagent-Push abgebrochene Session kostet richtig (verlorener Kontext + halbe Reviews + möglicherweise inkonsistente Commit-Reihenfolge).
+
+### 3.8 Keine persistenten Hotfixes in laufenden Containern (Pflicht)
+**Änderungen an Produktions-Containern NIE per `sed`/`docker cp`/`docker exec`-Edit „dauerhaft" lassen.** Solche Hotfixes überleben keinen Image-Neubau und erzeugen stille **Drift** zwischen „was läuft" und „was im Repo/Image ist" — genau das hat die Session 2026-06-12 gekostet (opencode-Hotfixes nur im Container, dazu zwei latente master-Bugs `f6c2b28`/cron-Env, die erst beim Rebuild zuschlugen).
+
+Erlaubt ist ein Hotfix **nur** zum sofortigen Service-Retten in einem Incident — und dann gilt **in derselben Session**:
+1. Fix in den Repo committen (Code **oder** `deploy/container/*`), PR auf.
+2. Image neu bauen (`deploy/container/build.sh` → SHA-Tag) und Container über `setup-oracle-vm.sh` neu erstellen, damit Laufendes == Committed.
+3. Im Handoff (§7) festhalten, falls der Repo-Teil noch offen ist.
+
+**Deploy-Disziplin:** Container immer über `setup-oracle-vm.sh` erzeugen (single source of truth für Volume-Namen/Env/Ports), nie per ad-hoc `docker run` aus dem Gedächtnis. Image immer mit `build.sh` bauen (taggt SHA + `:latest`) → Rollback via `IMAGE_TAG=<sha> setup-oracle-vm.sh rebuild`. Vor Merge müssen die CI-Gates grün sein (`.github/workflows/ci.yml`: pytest **und** Image-Build+Boot+Healthcheck — letzteres fängt die Bind-/Boot-Klasse, die Unit-Tests nicht sehen).
 ---
 
 ## 4. Verification standards
