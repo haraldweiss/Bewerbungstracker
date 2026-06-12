@@ -26,7 +26,7 @@ jobs:
           python-version: '3.12'
           cache: pip
       - name: Install deps
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest
       - name: pytest
         run: pytest tests/ -q
 
@@ -45,18 +45,26 @@ jobs:
             -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
           echo "key=$KEY" >> "$GITHUB_OUTPUT"
 
+      # GUNICORN_WORKERS=1: frische CI-DB → mehrere Worker wuerden gleichzeitig
+      # db.create_all() rennen (Race: "table users already exists"). In Prod ist
+      # das Schema schon da. 1 Worker reicht fuer den Bind-/Boot-Smoke voellig.
+      # Geteiltes Volume ci-data (wie Prod: alle Rollen teilen /app/data), damit
+      # die App das Schema anlegt und die Hintergrund-Rollen es sehen.
       - name: App-Rolle booten + Healthcheck (faengt f6c2b28-Bind-502)
         env:
           ENCRYPTION_KEY: ${{ steps.fernet.outputs.key }}
         run: |
+          docker volume create ci-data >/dev/null
           docker run -d --name bt-app \
+            -v ci-data:/app/data \
             -e FLASK_ENV=production \
             -e JWT_SECRET_KEY=ci-dummy-secret \
             -e SECRET_KEY=ci-dummy-secret \
             -e ENCRYPTION_KEY="$ENCRYPTION_KEY" \
-            -e DATABASE_URL=sqlite:////tmp/ci.db \
+            -e DATABASE_URL=sqlite:////app/data/ci.db \
             -e AUTH_REQUIRED=false \
             -e BIND_HOST=0.0.0.0 \
+            -e GUNICORN_WORKERS=1 \
             -p 127.0.0.1:5000:5000 \
             bewerbungen:ci app
           ok=
@@ -76,10 +84,11 @@ jobs:
           fail=0
           for role in worker imap-proxy email-service cron; do
             docker run -d --name "bt-$role" \
+              -v ci-data:/app/data \
               -e FLASK_ENV=production \
               -e JWT_SECRET_KEY=ci-dummy-secret \
               -e ENCRYPTION_KEY="$ENCRYPTION_KEY" \
-              -e DATABASE_URL="sqlite:////tmp/ci-$role.db" \
+              -e DATABASE_URL=sqlite:////app/data/ci.db \
               -e BIND_HOST=0.0.0.0 \
               -e JOB_CRON_TOKEN=ci-dummy \
               -e APP_INTERNAL_URL=http://127.0.0.1:5000 \
