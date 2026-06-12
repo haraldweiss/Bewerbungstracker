@@ -144,6 +144,8 @@ start_email_service() {
         --restart unless-stopped \
         -v "$VOLUME_NAME:/app/data:z" \
         --network "$NETWORK_NAME" \
+        -p 127.0.0.1:8766:8766 \
+        -e BIND_HOST=0.0.0.0 \
         "$IMAGE" email-service
     echo "▶ bewerbungen-email-service gestartet"
 }
@@ -154,6 +156,8 @@ start_imap_proxy() {
         --restart unless-stopped \
         -v "$VOLUME_NAME:/app/data:z" \
         --network "$NETWORK_NAME" \
+        -p 127.0.0.1:8765:8765 \
+        -e BIND_HOST=0.0.0.0 \
         "$IMAGE" imap-proxy
     echo "▶ bewerbungen-imap-proxy gestartet"
 }
