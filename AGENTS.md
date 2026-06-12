@@ -310,7 +310,7 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 
 **Dokumentation:** `deploy/container/setup-oracle-vm.sh` neu erstellt — Single-Source-of-Truth für alle `docker run`-Befehle auf der Oracle VM. Commands: `setup`, `start`, `stop`, `restart`, `rebuild`, `status`, `volume-info`, `migrate`, `logs`.
 
-### 2026-06-12 — Frontend: Import-Funktionen speicherten nur in localStorage → Refactored (durch opencode)
+### 2026-06-12 — Frontend: Import-Funktionen speicherten nur in localStorage → Refactored (durch opencode, Commit `a584dd4`)
 
 **Root Cause:** 7 manuelle Import-Funktionen (`importScriptEmail`, `importAllScriptEmails`, `importSingleImapEmail`, `importEmlItem`, `importAllEmlEmails`, `importTextItem`, `importAllTextEmails`) in `index.html` haben Bewerbungen nur in `state.bewerbungen` + `localStorage` geschrieben, **nicht** per API auf dem Server.
 
@@ -327,7 +327,29 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 - Jeder Konsument ruft `_importSingleApplication` + `renderAll()` + source-spezifisches Rendering
 
 **Betroffene Datei:** `index.html` (ca. +70 Zeilen netto).
-**NICHT deployed auf Oracle VM** — Frontend-Änderung, nur nach Git-Commit wirksam.
+**Deployed auf Oracle VM:** `index.html` per `docker cp` ins Container, Commit `a584dd4`, gepusht zu `github.com:haraldweiss/Bewerbungstracker`.
+
+### 2026-06-12 — Fix: `</script>` im Template-Literal + leere Position bei Import (durch opencode)
+
+**Problem 1:** `index.html:8080` enthielt `</script>` innerhalb eines JavaScript-Template-Literals (`...\`...<script src="..."></script>...\``). Der HTML-Parser beendete den äußeren `<script>`-Block vorzeitig → alle Funktionen danach (inkl. `_importSingleApplication`) wurden nie definiert → Seite zeigte JavaScript-Roh-Text.
+
+**Fix:** `</script>` → `<\/script>` im Template-Literal (JS-escaped, HTML-Parser sieht es nicht).
+
+**Problem 2:** Bei Absage-Mails wie "Deine Bewerbung / ControlExpert" extrahierte `parseEmailToApplication()` keine Position aus dem Subject → `POST /api/applications` gab 400 ("position required").
+
+**Fix:** `_importSingleApplication` setzt `'(Keine Position)'` als Fallback wenn `parsed.position` leer ist.
+**Deployed auf Oracle VM + gepusht (Commit `cd76de7`).**
+
+### 2026-06-12 — Fix: BIND_HOST + Port-Publishing für email-service und imap-proxy (durch opencode)
+
+**Root Cause:** Bei der Container-Neuerstellung (Volume-Fix) wurden `-p 127.0.0.1:8765:8765` / `-p 127.0.0.1:8766:8766` vergessen. Zudem fehlte `-e BIND_HOST=0.0.0.0`, wodurch die Dienste nur container-intern auf `127.0.0.1` lauschten.
+
+**Auswirkung:** Apache auf dem Host konnte die Dienste nicht über `127.0.0.1:8765/8766` erreichen → "Email Service nicht erreichbar" im Frontend.
+
+**Fix:**
+- `-p 127.0.0.1:8765:8765` und `-p 127.0.0.1:8766:8766` zu `docker run` hinzugefügt
+- `-e BIND_HOST=0.0.0.0` gesetzt (lauscht auf allen Interfaces)
+- `setup-oracle-vm.sh` aktualisiert (Commit `1b96543`)
 
 ### 2026-06-12 — ÜBERGABE an opencode: technische Fehlbewertungen neu bewerten + Ollama-Fallback (Plan fertig, NICHT implementiert)
 
