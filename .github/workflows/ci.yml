@@ -77,12 +77,17 @@ jobs:
             echo "FAIL app NICHT erreichbar — Bind/Boot kaputt"; docker logs bt-app; exit 1
           fi
 
+      # cron ist hier NICHT dabei: das supercronic-Binary im Image ist fuer
+      # ARM64 gepinnt (Prod = Oracle Ampere). Auf dem x86_64-CI-Runner gibt das
+      # "Exec format error". Die uebrigen Rollen sind reines Python (arch-agnostisch).
+      # TODO: supercronic-Download im Dockerfile arch-aware (TARGETARCH) machen,
+      # dann cron hier wieder aufnehmen.
       - name: Hintergrund-Rollen booten (duerfen nicht sofort crashen)
         env:
           ENCRYPTION_KEY: ${{ steps.fernet.outputs.key }}
         run: |
           fail=0
-          for role in worker imap-proxy email-service cron; do
+          for role in worker imap-proxy email-service; do
             docker run -d --name "bt-$role" \
               -v ci-data:/app/data \
               -e FLASK_ENV=production \
@@ -95,7 +100,7 @@ jobs:
               bewerbungen:ci "$role"
           done
           sleep 10
-          for role in worker imap-proxy email-service cron; do
+          for role in worker imap-proxy email-service; do
             if [ "$(docker inspect -f '{{.State.Running}}' "bt-$role")" = "true" ]; then
               echo "OK $role laeuft"
             else
