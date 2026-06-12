@@ -37,6 +37,27 @@ AUTO_CLAUDE_THRESHOLD = 50
 HARD_TIME_LIMIT_SEC = 25
 AI_CONFIRM_BUDGET = 50
 
+# Technische-Fehler-Retry (siehe docs/superpowers/specs/2026-06-12-technical-failure-reeval-design.md)
+MATCH_MAX_EVAL_ATTEMPTS = int(os.getenv("MATCH_MAX_EVAL_ATTEMPTS", "5"))
+MATCH_FALLBACK_ENABLED = os.getenv("MATCH_FALLBACK_ENABLED", "true").lower() in ("1", "true", "yes")
+MATCH_OLLAMA_FALLBACK_MODEL = os.getenv("MATCH_OLLAMA_FALLBACK_MODEL", "gemma4:12b")
+PERMANENT_FAIL_REASONING = "Technisch nicht bewertbar – bitte manuell prüfen."
+
+
+def _retry_backoff_hours(attempts: int) -> int:
+    """Mindest-Wartezeit bis zum nächsten Versuch: 1,2,4,8,12 (gekappt)."""
+    return min(2 ** max(attempts - 1, 0), 12)
+
+
+def _result_is_content_failure(result) -> bool:
+    """True bei technischem Inhalts-Fehler (ungültiges JSON), nicht bei echtem Score 0."""
+    if getattr(result, 'failed', False):
+        return True
+    # Lokaler Pfad (match_job_with_claude) hat kein failed-Flag — Heuristik:
+    return (result.score == 0
+            and (result.reasoning or '').strip().lower().startswith('bewertung fehlgeschlagen'))
+
+
 DEFAULT_MODEL = os.getenv("CLAUDE_DEFAULT_MODEL", "claude-haiku-4-5-20251001")
 COST_USD_PER_1M_TOKENS_IN = 0.80
 COST_USD_PER_1M_TOKENS_OUT = 4.00
