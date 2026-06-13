@@ -128,23 +128,23 @@ start_app() {
 }
 
 start_worker() {
-    # ⚠ ENCRYPTION_KEY muss explizit übergeben werden — der Worker hat KEIN
-    # .env-File (anders als APP). Ohne diesen Key können IMAP-Passwörter
-    # nicht entschlüsselt werden → Email-Import schlägt fehl mit
-    # "ENCRYPTION_KEY environment variable not set".
-    # Der Key kommt aus /etc/bewerbungen/bewerbungen.env.
-    local key
-    key=$(grep '^ENCRYPTION_KEY=' "$CONFIG_DIR/bewerbungen.env" 2>/dev/null | cut -d= -f2-)
-    if [ -z "$key" ]; then
-        echo "❌ ENCRYPTION_KEY in $CONFIG_DIR/bewerbungen.env nicht gefunden!"
-        return 1
-    fi
+    # Der Worker mountet DIESELBE .env wie die App (single source of truth) —
+    # via /app/.env, das der Entrypoint für ALLE Rollen sourct.
+    #
+    # FRÜHER bekam der Worker nur ein explizit durchgereichtes ENCRYPTION_KEY
+    # und KEIN .env-File. Dadurch fehlte ihm DATABASE_URL → er fiel auf den
+    # relativen Default `sqlite:///bewerbungstracker.db` (= /app/bewerbungstracker.db)
+    # zurück und pollte eine LEERE DB statt /app/data/bewerbungstracker.db.
+    # Folge (2026-06-12): enqueued Email-/Job-Import-Tasks blieben für immer
+    # `queued` — der Worker sah sie nie, der Import "funktionierte" scheinbar
+    # nicht (202 angenommen, aber nie verarbeitet). Mit dem .env-Mount erbt der
+    # Worker DATABASE_URL, ENCRYPTION_KEY und alle übrigen Vars identisch zur App.
     docker run -d \
         --name bewerbungen-worker \
         --restart unless-stopped \
         -v "$VOLUME_NAME:/app/data:z" \
+        -v "$CONFIG_DIR/bewerbungen.env:/app/.env:ro" \
         --network "$NETWORK_NAME" \
-        -e ENCRYPTION_KEY="$key" \
         "$IMAGE" worker
     echo "▶ bewerbungen-worker gestartet"
 }
