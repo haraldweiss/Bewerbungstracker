@@ -48,24 +48,43 @@ def _strip_tracking_params(url: str) -> str:
     )
 
 
-def _follow_redirect(url: str, timeout: float, accept_host_substr: str) -> str | None:
-    """HEAD-Request, Redirects folgen; nur Final-URLs auf der erwarteten Domain.
+# Browser-UA: manche Click-Tracker (StepStone SendGrid) antworten sonst nicht.
+_UA = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+    )
+}
 
-    Gibt None zurück bei Netz-Fehler oder wenn die Final-Domain nicht passt
-    (oder weiterhin ein Tracker-Host ist) → Caller behält den Eingabe-Link.
+
+def _follow_redirect(url: str, timeout: float, accept_host_substr: str) -> str | None:
+    """Folgt Redirects; nur Final-URLs auf der erwarteten Domain (SSRF-Schutz).
+
+    Erst HEAD (billig, z.B. Indeed), dann GET als Fallback — StepStone-SendGrid
+    timeoutet auf HEAD, antwortet aber auf GET. Gibt None zurück bei Netz-Fehler
+    oder wenn die Final-Domain nicht passt (oder weiter ein Tracker-Host ist) →
+    Caller behält den Eingabe-Link.
     """
-    try:
-        import requests
-        r = requests.head(url, allow_redirects=True, timeout=timeout)
-    except Exception:
-        return None
-    final = getattr(r, "url", "") or ""
-    host = urlparse(final).netloc.lower()
-    if accept_host_substr not in host:
-        return None
-    if host.startswith("click.") or host.startswith("cts.") or host.startswith("sl."):
-        return None  # noch ein Tracker → nicht übernehmen
-    return final
+    import requests
+    for method in ("head", "get"):
+        try:
+            fn = getattr(requests, method)
+            extra = {"stream": True} if method == "get" else {}
+            r = fn(url, allow_redirects=True, timeout=timeout, headers=_UA, **extra)
+            final = getattr(r, "url", "") or ""
+            if method == "get":
+                try:
+                    r.close()
+                except Exception:
+                    pass
+        except Exception:
+            continue
+        host = urlparse(final).netloc.lower()
+        if (accept_host_substr in host
+                and not host.startswith(("click.", "cts.", "sl."))):
+            return final
+        # Final-URL ungültig (fremde Domain / noch Tracker) → nächste Methode (GET).
+    return None
 
 
 def resolve_original_url(url, *, timeout: float = 4.0):
