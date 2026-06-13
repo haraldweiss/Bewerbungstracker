@@ -646,11 +646,17 @@ def import_match(user, match_id: int):
         reasoning = m.match_reasoning or "–"
         missing_str = ', '.join(m.missing_skills) if m.missing_skills else '–'
 
+    # raw.url ist bei Email-Quellen oft ein Tracking-/Redirect-Link
+    # (click.stepstone.de, linkedin.com/comm/..., cts.indeed.com). Für die
+    # Bewerbung wollen wir den ECHTEN Stellenlink. Best-effort, Fallback = raw.url.
+    from services.job_sources.url_resolver import resolve_original_url
+    original_link = resolve_original_url(raw.url)
+
     note_text = (
         f"Aus Job-Vorschlag importiert (Match-Score {score_str}).\n\n"
         f"Begruendung: {reasoning}\n\n"
         f"Fehlende Skills: {missing_str}\n\n"
-        f"Original-Link: {raw.url}"
+        f"Original-Link: {original_link}"
     )
 
     # Übertrage alle verfügbaren Felder vom RawJob.
@@ -665,7 +671,7 @@ def import_match(user, match_id: int):
         applied_date=datetime.utcnow().date(),
         location=raw.location,
         source=src.name if src else None,
-        link=raw.url,
+        link=original_link,
         notes=note_text,
     )
     db.session.add(application)
