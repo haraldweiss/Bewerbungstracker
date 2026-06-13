@@ -65,6 +65,7 @@ If `user.email` is unset, empty, or fake — **stop, fix it, then proceed**. Pas
 ### 3.5 Async task queue
 - Long-running work goes through `services/tasks/handlers/`. Don't block the Flask request thread for >1s.
 - Cron tasks defined in `services/tasks/handlers/cron_*.py`.
+- **Der WORKER-Container MUSS dieselbe `.env` mounten wie die APP** (`-v /etc/bewerbungen/bewerbungen.env:/app/.env:ro`) — der Entrypoint sourct `/app/.env` für alle Rollen. Ohne sie fehlt dem Worker `DATABASE_URL`, er fällt auf den **relativen** Default `sqlite:///bewerbungstracker.db` (= `/app/bewerbungstracker.db`, leer) zurück und pollt eine ANDERE DB als die App → enqueued Tasks bleiben stumm `queued`, der Worker sieht sie nie. Gleiche Failure-Klasse wie der Volume-Split 2026-06-12 (§7), nur via Env statt Volume. Schnelldiagnose: `docker exec -i bewerbungen-worker python -` mit `from app import create_app; create_app().config['SQLALCHEMY_DATABASE_URI']` → muss `sqlite:////app/data/bewerbungstracker.db` zeigen (4 Slashes, absolut), nicht den relativen Default.
 
 ### 3.6 `/loop` für Polling / wiederkehrende Tasks (Claude Code)
 - Wenn eine Aufgabe Polling, periodische Status-Checks oder wiederholtes Ausführen desselben Prompts / Slash-Commands erfordert, **`/loop` nutzen** statt sequenzieller Sleep-Schleifen oder manuellem Wiederausführen.
@@ -497,3 +498,19 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 - Test mock paths updated in tests/api/test_jobs_cron.py and test_jobs_user.py
 - NOT deployed to IONOS — needs manual deploy via DEPLOYMENT_IONOS.md
 -->
+
+### 2026-06-13 — Fix: Worker fehlte `DATABASE_URL` → Job-/Email-Import stumm `queued` (durch Claude Code)
+
+**Symptom:** Indeed/IMAP-Job-Import in den Einstellungen nahm den Klick an (`POST /api/jobs/sources/<id>/import-from-email` → 202), aber der Task wurde NIE verarbeitet — `task_queue.status='queued'` für immer (`started_at=NULL`). Rückfall der Failure-Klasse vom 2026-06-12 Volume-Split (oben), diesmal via Env statt Volume.
+
+**Root Cause:** `start_worker()` in `deploy/container/setup-oracle-vm.sh` mountete — anders als `start_app()` — KEINE `.env`, sondern reichte nur `-e ENCRYPTION_KEY` durch. → Worker ohne `DATABASE_URL` → Fallback auf relativen Default `sqlite:///bewerbungstracker.db` (= `/app/bewerbungstracker.db`, leere DB) statt `/app/data/bewerbungstracker.db`. Die API enqueued in die echte DB, der Worker pollte die leere → `pick_next_task()` lieferte immer `None`. Regression beim Container-Recreate am 2026-06-12. Diagnose: im Worker-App-Context lieferte `SELECT … WHERE status='queued'` 0 Zeilen vs. 3 in der echten DB; Worker-URI war `sqlite:///bewerbungstracker.db`.
+
+**Fix — [PR #29](https://github.com/haraldweiss/Bewerbungstracker/pull/29) gemerged → master `d4c2890`:**
+- `setup-oracle-vm.sh` `start_worker()`: mountet jetzt dieselbe `.env` wie die App (erbt `DATABASE_URL`+`ENCRYPTION_KEY`), fragiles manuelles ENCRYPTION_KEY-grep entfernt. Siehe neue Hard Rule §3.5.
+- `database.py:_set_sqlite_pragmas`: `busy_timeout=10000` jetzt VOR `journal_mode=WAL` — sonst failt die WAL-Pragma sofort mit „database is locked" bei Multi-Writer-Contention (das crash-loopte den Worker-Subprozess `worker.py:139 create_app→create_all` am 06-12 beim Start).
+
+**Deploy-Status (⚠ §3.8 — running ≠ committed):**
+- `.env`-Fix ist **LIVE**: Worker am 2026-06-13 manuell neu erstellt MIT `.env`-Mount (Incident-Recreate via ad-hoc `docker run`, NICHT über `setup-oracle-vm.sh`). Die 2 hängenden `email_import`-Tasks liefen in Sekunden auf `done`, Queue drainiert, neue Tasks mit Heartbeat/Progress.
+- Pragma-Fix steckt im **Image-Code** → greift erst nach Rebuild. Laufende Container nutzen noch `localhost/bewerbungen:35e4215` (vor beiden Commits).
+
+**OFFEN (nächster Deploy):** Image neubauen (`deploy/container/build.sh` → SHA-Tag) + alle Container über `setup-oracle-vm.sh rebuild` neu erstellen → dann running == committed inkl. Pragma-Härtung, und der Worker läuft wieder über das Skript statt über den manuellen Incident-Recreate.
