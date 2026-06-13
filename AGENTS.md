@@ -514,3 +514,20 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 - **Abschluss:** Image aus master `0f7b22b` neu gebaut + alle 5 Container über `setup-oracle-vm.sh rebuild` neu erstellt → laufend == committed, Worker wieder über das Skript (nicht mehr der manuelle Recreate). Verifiziert: alle 5 auf `localhost/bewerbungen:0f7b22b`, Worker-`DATABASE_URL=sqlite:////app/data/bewerbungstracker.db`, **0 Lock-Crashes** beim Start (Pragma-Härtung greift), App `/` 200, public https 200, `test_noop`-Task → `done`.
 
 **Build-Mechanik (oracle-vm hat KEINEN dauerhaften Checkout):** `git archive <sha> | ssh oracle-vm 'tar -x -C /tmp/bwt-build'` → `cd /tmp/bwt-build && ./deploy/container/build.sh <sha>` (expliziter Tag-Arg, da Archive kein `.git` hat) → `IMAGE_TAG=<sha> deploy/container/setup-oracle-vm.sh rebuild`. **Rollback:** altes Image `35e4215` bleibt → `IMAGE_TAG=35e4215 setup-oracle-vm.sh rebuild`.
+
+### 2026-06-13 — Add: Original-Stellenlink beim Übernehmen (Tracker-Auflösung) + Backfill (durch Claude Code)
+
+**Problem:** „📥 Übernehmen" (`POST /matches/<id>/import`) kopierte `raw_job.url` 1:1 in `Application.link`. Bei E-Mail-Quellen ist das ein Klick-Tracking-Redirect (StepStone `click.stepstone.de/f/a/…`, LinkedIn `comm/jobs/view/…`, Indeed `cts.indeed.com/…`), nicht der echte Stellenlink.
+
+**Lösung (PRs [#32](https://github.com/haraldweiss/Bewerbungstracker/pull/32) + [#33](https://github.com/haraldweiss/Bewerbungstracker/pull/33), gemerged → master `228a33e`):**
+- Neues Modul `services/job_sources/url_resolver.py` → `resolve_original_url(url)` (best-effort, 10 Unit-Tests):
+  - **LinkedIn**: `comm/jobs/view/<id>` → kanonisch `linkedin.com/jobs/view/<id>/` (reiner String, kein Netz).
+  - **StepStone/Indeed**: Redirect folgen — **HEAD, dann GET mit Browser-UA** (StepStone-SendGrid timeoutet auf HEAD), nur Final-URL auf erwarteter Domain (SSRF-Guard, analog `email_jobs._resolve_indeed_tracker`).
+  - **Generisch**: nur Tracking-Params (utm_*, trackingId) strippen, kein Netz.
+  - Fehler / fremde Domain → Eingabe-Link bleibt (nie schlechter als der Tracker).
+- `import_match` löst vor `Application.link` + „Original-Link"-Notiz auf.
+- `scripts/backfill_application_links.py` zieht Bestand nach (`--check`, `--limit`, `--sleep`).
+
+**Grenze StepStone:** Der öffentliche Posting-Link ist aus dem E-Mail-Tracker NICHT rekonstruierbar — die Kette endet bei einem personalisierten `www.stepstone.de/v2/magiclink/exchange?magicLink=<JWT>` (kann ablaufen). Das ist trotzdem besser als der opake `click.`-Tracker (echte Domain, browser-klickbar).
+
+**Deployed:** Image `228a33e`, alle 5 Container neu erstellt, App/public 200, Resolver im Container verifiziert. **Backfill gelaufen:** 25 LinkedIn (→ saubere `jobs/view`) + 9 StepStone (→ Magic-Link) = 34 Bewerbungen bereinigt, 0 `click.`/`comm`-Tracker übrig.
