@@ -348,6 +348,26 @@ _DB_PROFILE_HARD_BLACKLISTS: dict[str, "re.Pattern"] = {
         r")(?:\s|\(|$)",
         re.IGNORECASE,
     ),
+    # StepStone-Empfehlungs-Mails ("Du hast gute Chancen auf ein Interview")
+    # streuen Marketing-Sektion-Header ein, die KEINE Job-Titel sind. Ohne
+    # diesen Filter rutschte "Erhöhe deine Chancen – Du passt auch gut zu diesen
+    # Jobs" als Titel rein (und der echte Jobtitel als Firma).
+    "stepstone": re.compile(
+        r"^(?:"
+        r"Erhöhe\s+deine\s+Chancen|"
+        r"Du\s+passt\s+auch\s+gut|"
+        r"Passt\s+(?:hervorragend|gut|perfekt)|"
+        r"Neue?s?\s+Jobangebot\s+basierend|"
+        r"Du\s+hast\s+gute\s+Chancen|"
+        r"Top-?Fähigkeiten|"
+        r"Das\s+könnte\s+dich\s+interessieren|"
+        r"Weitere\s+(?:Jobs|Stellen)|"
+        r"Ähnliche\s+(?:Jobs|Stellen)|"
+        r"Empfohlene\s+(?:Jobs|Stellen)|"
+        r"Jobs?,?\s+die\s+(?:dir|zu\s+dir)"
+        r")",
+        re.IGNORECASE,
+    ),
 }
 
 
@@ -985,6 +1005,11 @@ class EmailJobsAdapter(JobSourceAdapter):
             title = (item.get('title') or '').strip()
             url = (item.get('url') or '').strip()
             if not title or not url:
+                continue
+            # Marketing-Sektion-Header (z.B. StepStone "Erhöhe deine Chancen…")
+            # auch im AI-Pfad filtern — der Card-Pfad tat das schon, dieser nicht.
+            if (self.profile.hard_title_blacklist_re
+                    and self.profile.hard_title_blacklist_re.search(title)):
                 continue
             company = item.get('company') or None
             location = item.get('location') or None
