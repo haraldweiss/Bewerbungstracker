@@ -10990,8 +10990,8 @@ async function onOverrideProviderChange(feature) {
         }
         const data = await r.json();
         const models = data.models || [];
-        const freeOverrideModels = (data.free_models || models.filter(m => m.endsWith('-free'))).sort();
-        const paidOverrideModels = models.filter(m => !freeOverrideModels.includes(m)).sort();
+        const freeOverrideModels = models.filter(m => m.endsWith('-free')).sort();
+        const paidOverrideModels = models.filter(m => !m.endsWith('-free')).sort();
 
         if (freeOverrideModels.length > 0) {
             const grp = document.createElement('optgroup');
@@ -11110,9 +11110,9 @@ async function openModelComparisonModal() {
             } catch (e) { /* skip */ }
         }
 
-        // Sort rows: free models first (grouped by -free suffix), then paid
-        const freeRows = rows.filter(r => r.isFree).sort((a, b) => a.model.localeCompare(b.model));
-        const paidRows = rows.filter(r => !r.isFree).sort((a, b) => a.model.localeCompare(b.model));
+        // Sort rows: free models first (groupted by -free suffix), then paid
+        const freeRows = rows.filter(r => r.model.endsWith('-free')).sort((a, b) => a.model.localeCompare(b.model));
+        const paidRows = rows.filter(r => !r.model.endsWith('-free')).sort((a, b) => a.model.localeCompare(b.model));
 
         content.replaceChildren();
         if (rows.length === 0) {
@@ -11199,7 +11199,7 @@ async function openModelComparisonModal() {
             tbody.appendChild(sepTr);
 
             for (const r of freeRows) {
-                renderModelRow(tbody, r, features, initialSelection, _benchmarkCache);
+                renderModelRow(tbody, r, features, initialSelection);
             }
         }
 
@@ -11215,7 +11215,7 @@ async function openModelComparisonModal() {
             tbody.appendChild(sepTr);
 
             for (const r of paidRows) {
-                renderModelRow(tbody, r, features, initialSelection, _benchmarkCache);
+                renderModelRow(tbody, r, features, initialSelection);
             }
         }
 
@@ -11257,7 +11257,7 @@ function closeModelComparisonModal() {
     document.getElementById('modelComparisonModal').style.display = 'none';
 }
 
-function renderModelRow(tbody, r, features, initialSelection, benchmarks) {
+function renderModelRow(tbody, r, features, initialSelection) {
     const tr = document.createElement('tr');
     tr.style.borderTop = '1px solid var(--border)';
     const tdModel = document.createElement('td');
@@ -11268,21 +11268,6 @@ function renderModelRow(tbody, r, features, initialSelection, benchmarks) {
     tdModel.appendChild(muted);
     tdModel.appendChild(document.createTextNode(r.model));
     tr.appendChild(tdModel);
-
-    // Benchmark-score cell
-    const tdBench = document.createElement('td');
-    tdBench.style.cssText = 'padding:0.4rem;text-align:center;font-size:0.8rem;';
-    const benchEntry = benchmarks && benchmarks[r.model];
-    if (benchEntry && benchEntry.overall != null) {
-        const score = benchEntry.overall;
-        tdBench.textContent = score + '/100';
-        tdBench.style.color = score >= 70 ? '#46b450' : (score >= 50 ? '#f0ad4e' : '#dc3232');
-        tdBench.title = 'Benchmark: ' + Object.entries(benchEntry.scores || {}).map(([k,v]) => k + '=' + v).join(', ');
-    } else {
-        tdBench.textContent = '—';
-        tdBench.style.color = '#ccc';
-    }
-    tr.appendChild(tdBench);
 
     const rowValue = r.provider + '|' + r.model;
     for (const f of features) {
@@ -11458,14 +11443,8 @@ async function onProviderChange() {
         }
 
         const models = data.models || [];
-        const freeModels = (data.free_models || models.filter(m => m.endsWith('-free'))).sort();
-        const paidModels = models.filter(m => !freeModels.includes(m)).sort();
-
-        // Opencode: Paid-Modelle nur mit eigenem API-Key anzeigen
-        let showPaid = true;
-        if (provider === 'opencode') {
-            showPaid = await _checkOpencodeUserConfig();
-        }
+        const freeModels = models.filter(m => m.endsWith('-free')).sort();
+        const paidModels = models.filter(m => !m.endsWith('-free')).sort();
 
         if (freeModels.length > 0) {
             const grp = document.createElement('optgroup');
@@ -11478,7 +11457,7 @@ async function onProviderChange() {
             });
             modelSelect.appendChild(grp);
         }
-        if (paidModels.length > 0 && showPaid) {
+        if (paidModels.length > 0) {
             const grp = document.createElement('optgroup');
             grp.label = '💳 Paid-Modelle';
             paidModels.forEach(model => {
@@ -11488,14 +11467,6 @@ async function onProviderChange() {
                 grp.appendChild(option);
             });
             modelSelect.appendChild(grp);
-        }
-        if (paidModels.length > 0 && !showPaid) {
-            const hint = document.createElement('option');
-            hint.value = '';
-            hint.disabled = true;
-            hint.textContent = '💳 Paid-Modelle — eigenes opencode API-Key in den Einstellungen hinterlegen';
-            hint.style.cssText = 'color:var(--text-muted);font-style:italic;';
-            modelSelect.appendChild(hint);
         }
 
         modelSelect.value = data.default || (data.models[0] || '');
