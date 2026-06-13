@@ -55,6 +55,31 @@ def test_stepstone_resolves_via_get_when_head_times_out(monkeypatch):
     assert out == real
 
 
+def test_stepstone_magiclink_unwraps_to_public_url():
+    # Der echte öffentliche Pfad steckt im returnUrl-Param des Magic-Links.
+    ml = ("https://www.stepstone.de/v2/magiclink/exchange?magicLink=eyJabc"
+          "&returnUrl=%2Fstellenangebote----13868133-inline.html%3FCID%3DR_EM_x%26lang%3Dde"
+          "&offer_position=2")
+    out = resolve_original_url(ml)
+    assert out == "https://www.stepstone.de/stellenangebote----13868133-inline.html"
+
+
+def test_stepstone_click_resolves_then_unwraps(monkeypatch):
+    ml = ("https://www.stepstone.de/v2/magiclink/exchange?magicLink=eyJabc"
+          "&returnUrl=%2Fstellenangebote----999-inline.html%3FCID%3Dx")
+    def head_timeout(*a, **k):
+        raise requests.ReadTimeout("x")
+    monkeypatch.setattr(requests, "head", head_timeout)
+    monkeypatch.setattr(requests, "get", lambda u, **k: _Resp(ml))
+    out = resolve_original_url("https://click.stepstone.de/f/a/OPAQUE~~/AAA~/xxxxx")
+    assert out == "https://www.stepstone.de/stellenangebote----999-inline.html"
+
+
+def test_stepstone_magiclink_without_returnurl_kept():
+    ml = "https://www.stepstone.de/v2/magiclink/exchange?magicLink=eyJabc"
+    assert resolve_original_url(ml) == ml
+
+
 def test_stepstone_redirect_to_foreign_domain_falls_back(monkeypatch):
     # SSRF-Schutz: Final-URL nicht stepstone (weder HEAD noch GET) → Tracker behalten.
     monkeypatch.setattr(requests, "head", lambda u, **k: _Resp("https://evil.example.com/"))

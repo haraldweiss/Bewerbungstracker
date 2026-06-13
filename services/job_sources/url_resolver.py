@@ -87,6 +87,28 @@ def _follow_redirect(url: str, timeout: float, accept_host_substr: str) -> str |
     return None
 
 
+def _unwrap_stepstone_magiclink(url: str) -> str:
+    """StepStone-Magic-Link → öffentliche Anzeigen-URL aus dem `returnUrl`-Param.
+
+    `www.stepstone.de/v2/magiclink/exchange?…&returnUrl=%2Fstellenangebote--…`
+    trägt den echten öffentlichen Pfad. Tracking-Query (CID/lang/…) wird
+    verworfen. Ohne `returnUrl` bleibt der Magic-Link erhalten (besser als nichts).
+    """
+    try:
+        parts = urlsplit(url)
+    except Exception:
+        return url
+    if "stepstone." not in parts.netloc.lower() or "magiclink" not in parts.path.lower():
+        return url
+    ret = dict(parse_qsl(parts.query)).get("returnUrl")
+    if not ret:
+        return url
+    path = urlsplit(ret).path or ret
+    if not path.startswith("/"):
+        return url
+    return urlunsplit(("https", "www.stepstone.de", path, "", ""))
+
+
 def resolve_original_url(url, *, timeout: float = 4.0):
     """Best-effort: Tracking-/Redirect-Link → Original-Stellenlink.
 
@@ -112,9 +134,15 @@ def resolve_original_url(url, *, timeout: float = 4.0):
     if "cts.indeed." in host or "/rc/clk" in u or "/pagead/clk" in u:
         return _follow_redirect(u, timeout, "indeed.") or url
 
-    # StepStone: SendGrid-Click-Tracker → echter Link via Redirect.
-    if "click.stepstone." in host or "sl.stepstone." in host:
-        return _follow_redirect(u, timeout, "stepstone.") or url
+    # StepStone: Magic-Link direkt entpacken; Click-Tracker erst folgen (HEAD→GET),
+    # dann den resultierenden Magic-Link auf die öffentliche Anzeigen-URL entpacken.
+    if "stepstone." in host:
+        if "magiclink" in urlparse(u).path.lower():
+            return _unwrap_stepstone_magiclink(u)
+        if "click.stepstone." in host or "sl.stepstone." in host:
+            resolved = _follow_redirect(u, timeout, "stepstone.")
+            return _unwrap_stepstone_magiclink(resolved) if resolved else url
+        return _strip_tracking_params(u)
 
     # Unbekannter Host: KEIN Netz-Call (SSRF), nur Tracking-Params strippen.
     return _strip_tracking_params(u)

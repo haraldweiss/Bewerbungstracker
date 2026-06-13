@@ -34,6 +34,7 @@ from services.job_sources.url_resolver import resolve_original_url
 _TRACKER_MARKERS = (
     "click.stepstone.", "sl.stepstone.", "/comm/jobs/view/",
     "cts.indeed.", "/rc/clk", "/pagead/clk", "utm_", "trackingId",
+    "/v2/magiclink",  # StepStone-Magic-Links → öffentliche Anzeigen-URL entpacken
 )
 
 
