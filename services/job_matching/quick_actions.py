@@ -5,6 +5,18 @@ from datetime import date
 
 from database import db
 from models import User, RawJob, JobMatch, Application
+from services.job_sources.url_resolver import resolve_original_url
+
+
+def _quick_action_note(action: str, raw: RawJob, match: JobMatch, link: str) -> str:
+    """Selbsterklärende Notiz: nackt 'aus JobMatch #N' hilft nicht — Firma,
+    Position und Original-Stellenlink gehören dazu."""
+    return (
+        f'Quick-Action {action} aus Job-Vorschlag (Match #{match.id}).\n\n'
+        f'Firma: {(raw.company or "—").strip()}\n'
+        f'Position: {(raw.title or "—").strip()}\n'
+        f'Original-Link: {link or "—"}'
+    )
 
 
 VALID_ACTIONS = frozenset({
@@ -71,13 +83,15 @@ def _find_application(user_id: str, company: str, title: str) -> Application | N
 def _apply_company_rejected(user: User, raw: RawJob, match: JobMatch,
                             existing: Application | None) -> None:
     if existing is None:
+        link = resolve_original_url(raw.url)
         db.session.add(Application(
             user_id=user.id,
             company=raw.company,
             position=raw.title,
             status='absage',
             applied_date=None,
-            notes=f'Quick-Action company_rejected aus JobMatch #{match.id}',
+            link=link,
+            notes=_quick_action_note('company_rejected', raw, match, link),
         ))
     elif existing.status not in _PROTECTED_STATUSES:
         existing.status = 'absage'
@@ -87,13 +101,15 @@ def _apply_already_applied(user: User, raw: RawJob, match: JobMatch,
                            existing: Application | None) -> None:
     if existing is not None:
         return
+    link = resolve_original_url(raw.url)
     db.session.add(Application(
         user_id=user.id,
         company=raw.company,
         position=raw.title,
         status='beworben',
         applied_date=date.today(),
-        notes=f'Quick-Action already_applied aus JobMatch #{match.id}',
+        link=link,
+        notes=_quick_action_note('already_applied', raw, match, link),
     ))
 
 
