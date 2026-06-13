@@ -509,8 +509,8 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 - `setup-oracle-vm.sh` `start_worker()`: mountet jetzt dieselbe `.env` wie die App (erbt `DATABASE_URL`+`ENCRYPTION_KEY`), fragiles manuelles ENCRYPTION_KEY-grep entfernt. Siehe neue Hard Rule §3.5.
 - `database.py:_set_sqlite_pragmas`: `busy_timeout=10000` jetzt VOR `journal_mode=WAL` — sonst failt die WAL-Pragma sofort mit „database is locked" bei Multi-Writer-Contention (das crash-loopte den Worker-Subprozess `worker.py:139 create_app→create_all` am 06-12 beim Start).
 
-**Deploy-Status (⚠ §3.8 — running ≠ committed):**
-- `.env`-Fix ist **LIVE**: Worker am 2026-06-13 manuell neu erstellt MIT `.env`-Mount (Incident-Recreate via ad-hoc `docker run`, NICHT über `setup-oracle-vm.sh`). Die 2 hängenden `email_import`-Tasks liefen in Sekunden auf `done`, Queue drainiert, neue Tasks mit Heartbeat/Progress.
-- Pragma-Fix steckt im **Image-Code** → greift erst nach Rebuild. Laufende Container nutzen noch `localhost/bewerbungen:35e4215` (vor beiden Commits).
+**Deploy-Status: ERLEDIGT — running == committed (2026-06-13).**
+- Zwischenstand (historisch): der `.env`-Fix lief zuerst als Incident-Recreate via ad-hoc `docker run` live (die 2 hängenden `email_import`-Tasks liefen sofort auf `done`), während der Pragma-Fix noch im alten Image `35e4215` fehlte.
+- **Abschluss:** Image aus master `0f7b22b` neu gebaut + alle 5 Container über `setup-oracle-vm.sh rebuild` neu erstellt → laufend == committed, Worker wieder über das Skript (nicht mehr der manuelle Recreate). Verifiziert: alle 5 auf `localhost/bewerbungen:0f7b22b`, Worker-`DATABASE_URL=sqlite:////app/data/bewerbungstracker.db`, **0 Lock-Crashes** beim Start (Pragma-Härtung greift), App `/` 200, public https 200, `test_noop`-Task → `done`.
 
-**OFFEN (nächster Deploy):** Image neubauen (`deploy/container/build.sh` → SHA-Tag) + alle Container über `setup-oracle-vm.sh rebuild` neu erstellen → dann running == committed inkl. Pragma-Härtung, und der Worker läuft wieder über das Skript statt über den manuellen Incident-Recreate.
+**Build-Mechanik (oracle-vm hat KEINEN dauerhaften Checkout):** `git archive <sha> | ssh oracle-vm 'tar -x -C /tmp/bwt-build'` → `cd /tmp/bwt-build && ./deploy/container/build.sh <sha>` (expliziter Tag-Arg, da Archive kein `.git` hat) → `IMAGE_TAG=<sha> deploy/container/setup-oracle-vm.sh rebuild`. **Rollback:** altes Image `35e4215` bleibt → `IMAGE_TAG=35e4215 setup-oracle-vm.sh rebuild`.
