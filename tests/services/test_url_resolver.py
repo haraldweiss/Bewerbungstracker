@@ -15,6 +15,9 @@ class _Resp:
     def __init__(self, url):
         self.url = url
 
+    def close(self):
+        pass
+
 
 # ── LinkedIn (reine String-Kanonisierung, kein Netz) ─────────────────────────
 
@@ -41,9 +44,21 @@ def test_stepstone_click_follows_redirect(monkeypatch):
     assert out == real
 
 
+def test_stepstone_resolves_via_get_when_head_times_out(monkeypatch):
+    # StepStone-SendGrid timeoutet auf HEAD, antwortet aber auf GET.
+    def head_timeout(*a, **k):
+        raise requests.ReadTimeout("HEAD timed out")
+    real = "https://www.stepstone.de/v2/magiclink/exchange?magicLink=eyJabc"
+    monkeypatch.setattr(requests, "head", head_timeout)
+    monkeypatch.setattr(requests, "get", lambda u, **k: _Resp(real))
+    out = resolve_original_url("https://click.stepstone.de/f/a/OPAQUE~~/AAA~/xxxxx")
+    assert out == real
+
+
 def test_stepstone_redirect_to_foreign_domain_falls_back(monkeypatch):
-    # SSRF-Schutz: Final-URL nicht stepstone → Tracker behalten.
+    # SSRF-Schutz: Final-URL nicht stepstone (weder HEAD noch GET) → Tracker behalten.
     monkeypatch.setattr(requests, "head", lambda u, **k: _Resp("https://evil.example.com/"))
+    monkeypatch.setattr(requests, "get", lambda u, **k: _Resp("https://evil.example.com/"))
     tracker = "https://click.stepstone.de/f/a/OPAQUE~~/AAA~/xxxxx"
     assert resolve_original_url(tracker) == tracker
 
@@ -52,6 +67,7 @@ def test_network_error_falls_back_to_input(monkeypatch):
     def boom(*a, **k):
         raise requests.RequestException("nope")
     monkeypatch.setattr(requests, "head", boom)
+    monkeypatch.setattr(requests, "get", boom)
     tracker = "https://click.stepstone.de/f/a/OPAQUE~~/AAA~/xxxxx"
     assert resolve_original_url(tracker) == tracker
 
