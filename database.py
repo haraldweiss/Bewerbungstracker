@@ -26,8 +26,13 @@ def _set_sqlite_pragmas(dbapi_connection, _connection_record):
         return
     cursor = dbapi_connection.cursor()
     try:
-        cursor.execute('PRAGMA journal_mode=WAL')
+        # busy_timeout MUSS zuerst gesetzt werden: `journal_mode=WAL` braucht
+        # selbst kurz einen Write-Lock, und ohne aktives busy_timeout failt es
+        # SOFORT mit "database is locked" bei Multi-Writer-Contention (app +
+        # worker + cron + email-service teilen sich eine SQLite-Datei). Erst den
+        # Timeout setzen → die WAL-Pragma (und alles danach) wartet bis zu 10s.
         cursor.execute('PRAGMA busy_timeout=10000')
+        cursor.execute('PRAGMA journal_mode=WAL')
         cursor.execute('PRAGMA synchronous=NORMAL')
     finally:
         cursor.close()
