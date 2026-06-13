@@ -45,6 +45,34 @@ def test_company_rejected_creates_application(app, setup):
         assert a.applied_date is None
 
 
+def test_company_rejected_note_carries_link_company_position(app, setup):
+    """Die Quick-Action-Notiz muss selbsterklärend sein: Original-Link,
+    Firma und Position — sonst hilft 'aus JobMatch #N' niemandem."""
+    user, raw, m = setup
+    with app.app_context():
+        from services.job_matching.quick_actions import apply_quick_action
+        apply_quick_action(user=user, match=m, raw=raw,
+                           action='company_rejected')
+        a = Application.query.filter_by(user_id=user.id, deleted=False).first()
+        assert a.link == 'https://x.test/1'
+        assert 'Signal Iduna Group AG' in a.notes
+        assert 'Senior Security Analyst' in a.notes
+        assert 'https://x.test/1' in a.notes
+        assert f'#{m.id}' in a.notes
+
+
+def test_already_applied_note_carries_link_and_company(app, setup):
+    user, raw, m = setup
+    with app.app_context():
+        from services.job_matching.quick_actions import apply_quick_action
+        apply_quick_action(user=user, match=m, raw=raw,
+                           action='already_applied')
+        a = Application.query.filter_by(user_id=user.id, deleted=False).first()
+        assert a.link == 'https://x.test/1'
+        assert 'Signal Iduna Group AG' in a.notes
+        assert 'https://x.test/1' in a.notes
+
+
 def test_company_rejected_idempotent_upgrades_existing_to_absage(app, setup):
     user, raw, m = setup
     with app.app_context():
