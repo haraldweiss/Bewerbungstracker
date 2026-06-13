@@ -377,6 +377,9 @@
             <span id="connStatusDot" style="width:8px;height:8px;border-radius:50%;background:#94A3B8;display:inline-block;"></span>
             <span id="connStatusText">Nicht verbunden</span>
         </div>
+        <div id="currentUserPill" style="display:none;align-items:center;gap:0.4rem;padding:0.4rem 0.9rem;background:rgba(255,255,255,0.1);border-radius:20px;font-size:0.82rem;border:1px solid rgba(255,255,255,0.2);max-width:240px;" title="Angemeldet als">
+            <span>👤</span><span id="currentUserLabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        </div>
         <button id="colorSchemeToggle" class="btn btn-secondary btn-sm" onclick="toggleColorScheme()" title="Dark/Light Mode">🌙</button>
         <button class="btn btn-success btn-sm" onclick="openAddModal()">+ Bewerbung</button>
         <button id="adminDashboardBtn" class="btn btn-primary btn-sm" onclick="goToAdminDashboard()" title="Admin Dashboard" style="display:none;">👑 Admin</button>
@@ -2703,12 +2706,23 @@ function validateMasterPassword(password) {
  */
 async function updateAdminButtonVisibility() {
     try {
-        // Check if Auth module is available and has isAdmin method
-        if (typeof Auth === 'undefined' || typeof Auth.isAdmin !== 'function') {
-            console.warn('⚠️ Auth.isAdmin not available yet, skipping admin check');
+        // Check if Auth module is available
+        if (typeof Auth === 'undefined' || typeof Auth.getCurrentUser !== 'function') {
+            console.warn('⚠️ Auth.getCurrentUser not available yet, skipping user check');
             return;
         }
-        const isUserAdmin = await Auth.isAdmin();
+        // Ein /auth/me-Call für beides: Admin-Status UND Anzeige des Users im Header.
+        const currentUser = await Auth.getCurrentUser();
+        const isUserAdmin = currentUser && currentUser.is_admin === true;
+
+        // Eingeloggten User oben dauerhaft anzeigen.
+        const userLabel = document.getElementById('currentUserLabel');
+        const userPill = document.getElementById('currentUserPill');
+        if (userLabel && userPill && currentUser && currentUser.email) {
+            userLabel.textContent = currentUser.email;
+            userPill.title = `Angemeldet als ${currentUser.email}`;
+            userPill.style.display = 'flex';
+        }
 
         // Update top bar admin button
         const adminBtn = document.getElementById('adminDashboardBtn');
