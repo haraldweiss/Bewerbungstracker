@@ -659,6 +659,16 @@ def import_match(user, match_id: int):
         f"Original-Link: {original_link}"
     )
 
+    # Duplikat-Prüfung: gleiche Firma + Position (case-insensitive)
+    existing_app = db.session.query(Application.id).filter(
+        Application.user_id == user.id,
+        Application.deleted == False,
+        db.func.lower(Application.company) == db.func.lower(raw.company or ''),
+        db.func.lower(Application.position) == db.func.lower(raw.title or ''),
+    ).first()
+    if existing_app:
+        return jsonify({'error': 'Bewerbung existiert bereits', 'existing_id': existing_app[0]}), 409
+
     # Übertrage alle verfügbaren Felder vom RawJob.
     # applied_date semantisch: Tag an dem der User sich BEWORBEN hat — also
     # heute, wenn er den Vorschlag jetzt importiert. NICHT das Job-Posting-

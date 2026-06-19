@@ -115,6 +115,16 @@ def create_application(user):
     if not data.get('company') or not data.get('position'):
         return {'error': 'Company and position required'}, 400
 
+    # Duplikat-Prüfung: gleiche Firma + Position (case-insensitive)
+    dup = Application.query.filter(
+        Application.user_id == user.id,
+        Application.deleted == False,
+        db.func.lower(Application.company) == db.func.lower(data['company']),
+        db.func.lower(Application.position) == db.func.lower(data['position']),
+    ).first()
+    if dup:
+        return {'error': 'Bewerbung existiert bereits', 'existing_id': dup.id}, 409
+
     app = Application(
         user_id=user.id,
         company=data['company'],

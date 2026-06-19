@@ -7339,9 +7339,9 @@ function parseEmailToApplication(email) {
 async function _importSingleApplication(parsed, notes, sourceOverride) {
     const exists = state.bewerbungen.find(b =>
         b.firma.toLowerCase() === parsed.firma.toLowerCase() &&
-        b.datum === parsed.datum
+        (b.position || '').toLowerCase() === (parsed.position || '').toLowerCase()
     );
-    if (exists) { showToast('Bereits vorhanden: ' + parsed.firma, 'warning'); return false; }
+    if (exists) { showToast('Bereits vorhanden: ' + parsed.firma + ' - ' + parsed.position, 'warning'); return false; }
 
     const apiData = {
         company: parsed.firma,
