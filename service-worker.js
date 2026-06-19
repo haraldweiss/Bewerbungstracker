@@ -10,8 +10,8 @@
  *  - Service worker itself: never cached (ensures updates propagate)
  */
 
-// Bump bei jedem Frontend-Release das index.html / static assets ändert,
-// sonst bleibt die alte Version aus dem SW-Cache hängen.
+// Kein manueller Bump mehr nötig — index.html wird network-first geladen.
+// Andere Static Assets (Bilder, Fonts) nutzen weiterhin cache-first.
 const CACHE_NAME = 'bewerbungs-tracker-v64';
 const OFFLINE_URL = '/';
 
@@ -136,10 +136,28 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: cache-first, network fallback.
+  // Static assets: cache-first (Bilder/Fonts), network fallback.
   // Only cache responses that look like static assets (by extension / root path).
+  //
+  // index.html und / (root): network-first, cache fallback.
+  // Dadurch ist das Frontend immer frisch — kein manueller CACHE-Bump mehr nötig.
+  // Bei Offline wird die gecachte Version ausgeliefert.
   event.respondWith(
     caches.match(request).then((cached) => {
+      // Network-first for index.html and root
+      if (request.mode === 'navigate' || url === OFFLINE_URL || url.endsWith('/index.html')) {
+        return fetch(request)
+          .then((response) => {
+            if (response.ok) {
+              const clone = response.clone();
+              caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+            }
+            return response;
+          })
+          .catch(() => cached || caches.match(OFFLINE_URL));
+      }
+
+      // Cache-first for other static assets
       if (cached) {
         return cached;
       }
@@ -153,7 +171,6 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
         .catch(() => {
-          // Offline fallback: serve the cached shell for navigations
           return caches.match(OFFLINE_URL);
         });
     })
