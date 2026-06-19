@@ -5005,6 +5005,25 @@ const JobsView = (() => {
             state.total = (r && r.total) || 0;
             // Cache für bulkScore — damit bereits bewertete Matches geskippt werden können
             state.lastMatches = matches;
+            // Browser-Notification für neue high-scoring Matches
+            if (window._notifiedMatchIds === undefined) window._notifiedMatchIds = new Set();
+            const threshold = parseInt(state.filters.minScore) || 70;
+            const newHigh = matches.filter(m =>
+                m.claude_score >= threshold &&
+                m.status === 'new' &&
+                !window._notifiedMatchIds.has(m.id)
+            );
+            for (const m of newHigh.slice(0, 3)) {
+                window._notifiedMatchIds.add(m.id);
+                const company = m.raw_job?.company || m.company_name || 'Unbekannt';
+                const title = m.raw_job?.title || m.position || 'Stelle';
+                sendBrowserNotification(
+                    `🎯 ${company}`,
+                    `${title} (KI-Score: ${m.claude_score})`,
+                    '/?view=jobs'
+                );
+            }
+
             const container = $('jobs-list');
             if (matches.length === 0) {
                 container.innerHTML = renderEmptyState();
@@ -5342,6 +5361,11 @@ const JobsView = (() => {
                     } else {
                         alert(`✅ Bewerbung erstellt (ID ${r.application_id})`);
                     }
+                    sendBrowserNotification(
+                        '✅ Bewerbung übernommen',
+                        `${m.raw_job?.company || m.company_name || ''} — ${m.raw_job?.title || m.position || ''}`,
+                        '/?view=bewerbungen'
+                    );
                     fetchMatches();
                 }
             } catch (e) {
@@ -7338,6 +7362,11 @@ async function _importSingleApplication(parsed, notes, sourceOverride) {
         const created = await response.json();
         state.bewerbungen.unshift(_mapBackendToDB(created));
         saveToStorage();
+        sendBrowserNotification(
+            '📬 Bewerbung importiert',
+            `${apiData.company} — ${apiData.position}`,
+            '/?view=bewerbungen'
+        );
         return true;
     } catch (error) {
         console.error('Import error:', error);
@@ -8908,6 +8937,24 @@ document.addEventListener('keydown', e => {
         document.body.style.overflow = '';
     }
 });
+
+/* ── Browser Notification ─────────────────────────── */
+function sendBrowserNotification(title, body, url) {
+    if (!state.settings.pushNotificationsEnabled) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    try {
+        const n = new Notification(title, {
+            body: body,
+            icon: '/icon.svg',
+            tag: 'bewerbungstracker',
+        });
+        if (url) {
+            n.onclick = () => { window.focus(); if (url) window.location.href = url; n.close(); };
+        }
+        setTimeout(() => n.close(), 8000);
+    } catch (e) { /* silent */ }
+}
 
 /* ═══════════════════════════════════════════════════════
    TOAST
