@@ -24,6 +24,7 @@ def _parse_job_type_blacklist(raw):
 
 from api.auth import token_required
 from database import db
+from models import JobSource
 
 
 profile_bp = Blueprint('profile', __name__, url_prefix='/api')
@@ -372,6 +373,41 @@ def get_imap_status(user):
     }), 200
 
 
+def _auto_create_email_sources(user):
+    """Legt email-JobSources (indeed, linkedin, xing) an, fallls nicht vorhanden.
+
+    Wird nach erfolgreichem IMAP-Credentials-Speichern aufgerufen, damit
+    der Cron (indeed_email_import_all) automatisch Quellen zum Importieren
+    findet. Idempotent — existierende Sources werden nicht angerührt.
+    """
+    from services.job_sources.email_jobs import PROFILES, get_profile
+
+    default_config = {
+        "folder": "[Google Mail]/Alle Nachrichten",
+        "lookback_days": 30,
+        "limit": 100,
+    }
+    created = []
+    for slug in PROFILES:
+        source_type = f"{slug}_email"
+        existing = JobSource.query.filter_by(
+            user_id=user.id, type=source_type
+        ).first()
+        if existing is not None:
+            continue
+        src = JobSource(
+            user_id=user.id,
+            type=source_type,
+            name=f"{get_profile(slug).source_label} Email",
+            enabled=True,
+        )
+        src.config = dict(default_config)
+        db.session.add(src)
+        db.session.flush()
+        created.append(src)
+    if created:
+        db.session.commit()
+
 @profile_bp.post('/profile/imap')
 @token_required
 def set_imap_credentials(user):
@@ -396,16 +432,24 @@ def set_imap_credentials(user):
     if not success:
         return jsonify({"error": msg}), 500
 
+    # Auto-create email JobSources wenn nicht vorhanden (idempotent)
+    # Sonst findet der Cron keine Quellen und importiert nie.
+    _auto_create_email_sources(user)
+
     return jsonify({"status": "ok", "configured": True}), 200
 
 
 @profile_bp.delete('/profile/imap')
 @token_required
 def clear_imap_credentials(user):
-    """Entfernt IMAP-Credentials komplett (User möchte z.B. wieder Apps-Script)."""
+    """Entfernt IMAP-Credentials + deaktiviert Email-JobSources."""
     user.imap_host = None
     user.imap_user = None
     user.imap_password_encrypted = None
+    JobSource.query.filter(
+        JobSource.user_id == user.id,
+        JobSource.type.endswith('_email'),
+    ).update({'enabled': False})
     db.session.commit()
     return ('', 204)
 
