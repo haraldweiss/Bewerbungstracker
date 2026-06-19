@@ -396,6 +396,7 @@
     <button class="nav-btn" id="nav-jobs" onclick="showView('jobs')">🔍 Job-Vorschläge <span id="nav-jobs-badge" class="badge" style="display:none;background:var(--danger);color:white;border-radius:999px;padding:2px 8px;font-size:0.75em;margin-left:4px"></span></button>
     <div class="nav-section">Email Import</div>
     <button class="nav-btn" id="nav-gmail" onclick="showView('gmail')">📧 Mail Connector</button>
+    <button class="nav-btn" id="nav-calendar" onclick="showView('calendar')">📅 Kalender</button>
     <div class="nav-section">System</div>
     <button class="nav-btn" id="nav-deleted" onclick="showView('deleted')">🗑️ Gelöschte Einträge</button>
     <button class="nav-btn" id="nav-cvcompare" onclick="showView('cvcompare')">📋 CV Vergleich</button>
@@ -888,6 +889,20 @@
                 <button class="btn btn-success btn-sm" onclick="importAllTextEmails()">+ Alle importieren</button>
             </div>
             <div id="textEmailList"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ CALENDAR ═══ -->
+<div class="view" id="view-calendar" style="padding:1rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;flex-wrap:wrap;gap:0.75rem;">
+        <h1 style="font-size:1.5rem;font-weight:700;">📅 Kalender — Interviews & Termine</h1>
+        <button class="btn btn-secondary btn-sm" onclick="loadCalendarEvents()">🔄 Aktualisieren</button>
+    </div>
+    <div id="calendarEventsList">
+        <div style="text-align:center;padding:2rem;color:var(--text-muted);">
+            <div style="font-size:2rem;margin-bottom:0.5rem;">📅</div>
+            <em>Lade Termine …</em>
         </div>
     </div>
 </div>
@@ -3342,6 +3357,7 @@ function showView(name) {
         // For other views, just render normally
         if (name === 'kanban') renderKanban();
         if (name === 'deleted') loadDeletedEntries();
+        if (name === 'calendar') loadCalendarEvents();
         if (name === 'users') loadUsersPage();
         if (name === 'cvcompare') showCVTab('upload');
         if (name === 'jobs') JobsView.onShow();
@@ -6806,6 +6822,102 @@ async function deleteBewerbung(id) {
 ═══════════════════════════════════════════════════════ */
 async function loadDeletedEntries() {
     try {
+
+/**
+ * Load upcoming interview/calendar events
+ */
+async function loadCalendarEvents() {
+    const container = document.getElementById('calendarEventsList');
+    container.innerHTML = `
+        <div style="text-align:center;padding:2rem;color:var(--text-muted);">
+            <div class="spinner" style="margin:0 auto 0.5rem;"></div>
+            <em>Lade Termine …</em>
+        </div>
+    `;
+    try {
+        const events = await Auth.fetch('/applications/upcoming', { method: 'GET' });
+        if (!Array.isArray(events) || events.length === 0) {
+            container.innerHTML = `
+                <div class="card" style="text-align:center;padding:2rem;">
+                    <div style="font-size:2.5rem;margin-bottom:0.5rem;">📅</div>
+                    <h3 style="margin-bottom:0.25rem;">Keine Termine gefunden</h3>
+                    <p style="color:var(--text-muted);font-size:0.9rem;">
+                        Termine werden aus Bewerbungen mit Status "Interview" oder aus E-Mails
+                        mit Interview-Keywords erkannt.
+                    </p>
+                </div>
+            `;
+            return;
+        }
+
+        // Sort by date (upcoming first)
+        const now = new Date();
+        events.sort((a, b) => {
+            const ad = a.start ? new Date(a.start) : new Date(9999, 0, 1);
+            const bd = b.start ? new Date(b.start) : new Date(9999, 0, 1);
+            return ad - bd;
+        });
+
+        const html = events.map(e => {
+            const start = e.start ? new Date(e.start) : null;
+            const end = e.end ? new Date(e.end) : null;
+            const isPast = start && start < now;
+            const isToday = start && start.toDateString() === now.toDateString();
+
+            let dateStr = '—', timeStr = '';
+            if (start) {
+                dateStr = start.toLocaleDateString('de-DE', {
+                    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+                });
+                timeStr = start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                if (end) {
+                    timeStr += ' – ' + end.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                }
+            }
+
+            const badgeClass = isPast ? 'status-error' : isToday ? 'status-warning' : 'status-ok';
+            const badgeText = isPast ? '✅ Vergangen' : isToday ? '🔴 Heute' : '🟢 Bevorstehend';
+
+            return `<div class="card" style="margin-bottom:0.75rem;border-left:4px solid ${isPast ? 'var(--text-muted)' : isToday ? 'var(--warning)' : 'var(--secondary)'}">
+                <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:0.5rem;">
+                    <div style="flex:1;">
+                        <div style="font-weight:600;font-size:1.05rem;">${escapeHtml(e.position)}</div>
+                        <div style="color:var(--text-muted);font-size:0.9rem;">${escapeHtml(e.company)}</div>
+                        <div style="margin-top:0.35rem;">
+                            <span style="font-size:0.9rem;">📅 ${dateStr}</span>
+                            ${timeStr ? `<span style="font-size:0.9rem;margin-left:0.75rem;">⏰ ${timeStr}</span>` : ''}
+                        </div>
+                        ${e.meeting_url ? `<div style="margin-top:0.35rem;"><a href="${escapeHtml(e.meeting_url)}" target="_blank" style="color:var(--primary-light);font-size:0.9rem;">🔗 Meeting-Link</a></div>` : ''}
+                        ${e.meeting_passcode ? `<div style="margin-top:0.2rem;font-size:0.85rem;color:var(--text-muted);">🔑 Code: ${escapeHtml(e.meeting_passcode)}</div>` : ''}
+                    </div>
+                    <div style="text-align:right;flex-shrink:0;">
+                        <div style="font-size:0.8rem;font-weight:600;" class="${badgeClass}">${badgeText}</div>
+                        <div style="margin-top:0.35rem;display:flex;gap:0.35rem;">
+                            ${e.has_ics && e.application_id ? `<a class="btn btn-secondary btn-sm" href="/api/applications/${e.application_id}/calendar-event.ics" download style="text-decoration:none;">📥 ICS</a>` : ''}
+                            <a class="btn btn-secondary btn-sm" href="/?view=bewerbungen&id=${e.application_id}" style="text-decoration:none;">👁️</a>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        const upcoming = events.filter(e => e.start && new Date(e.start) >= now).length;
+        container.innerHTML = `
+            <div style="margin-bottom:1rem;font-size:0.9rem;color:var(--text-muted);">
+                ${events.length} Termine gefunden
+                ${upcoming > 0 ? `— ${upcoming} bevorstehend` : ''}
+            </div>
+            ${html}
+        `;
+    } catch (error) {
+        console.error('Error loading calendar events:', error);
+        container.innerHTML = `
+            <div class="card" style="border-left:4px solid var(--danger);padding:1rem;">
+                <p style="color:var(--danger);">❌ Fehler beim Laden der Termine: ${escapeHtml(error.message)}</p>
+            </div>
+        `;
+    }
+}
         const response = await fetchAPI('/api/applications/deleted');
         if (!response.ok) throw new Error(`API error: ${response.statusText}`);
 
