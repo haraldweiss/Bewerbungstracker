@@ -776,3 +776,92 @@ def delete_platform(user, slug):
     db.session.delete(row)
     db.session.commit()
     return jsonify({"deleted": slug}), 200
+
+@admin_bp.get('/status-overview')
+@token_required
+@admin_required
+def status_overview(user):
+    """Status-Übersicht für Admin-Dashboard.
+
+    Liefert aggregierte Daten über JobSources, Task-Queue und Provider-Health.
+    """
+    from models import JobSource, TaskQueue
+    from sqlalchemy import func as sa_func
+
+    # ── JobSources ────────────────────────────────────────────────────
+    sources = JobSource.query.order_by(JobSource.type, JobSource.name).all()
+    job_sources = []
+    for s in sources:
+        job_sources.append({
+            'id': s.id,
+            'name': s.name,
+            'type': s.type,
+            'enabled': s.enabled,
+            'user_id': s.user_id,
+            'last_crawled_at': s.last_crawled_at.isoformat() if s.last_crawled_at else None,
+            'last_error': s.last_error[:200] if s.last_error else None,
+            'consecutive_failures': s.consecutive_failures or 0,
+            'crawl_interval_min': s.crawl_interval_min,
+        })
+
+    # ── Queue-Statistiken ─────────────────────────────────────────────
+    counts = db.session.query(
+        TaskQueue.status,
+        sa_func.count(TaskQueue.id),
+    ).group_by(TaskQueue.status).all()
+    queue_stats = {row[0]: row[1] for row in counts}
+
+    # ── Letzte Cron-Tasks (letzte 10, alle User) ─────────────────────
+    recent = TaskQueue.query.order_by(
+        TaskQueue.created_at.desc()
+    ).limit(10).all()
+    recent_tasks = []
+    for t in recent:
+        recent_tasks.append({
+            'id': t.id,
+            'type': t.type,
+            'status': t.status,
+            'created_at': t.created_at.isoformat() if t.created_at else None,
+            'started_at': t.started_at.isoformat() if t.started_at else None,
+            'finished_at': t.finished_at.isoformat() if t.finished_at else None,
+            'error': t.error[:200] if t.error else None,
+        })
+
+    # ── Cron-Stage: Letzter Lauf pro Type ────────────────────────────
+    cron_stages = db.session.query(
+        TaskQueue.type,
+        sa_func.max(TaskQueue.created_at).label('last_run'),
+        sa_func.max(TaskQueue.finished_at).label('last_finished'),
+    ).filter(
+        TaskQueue.type.like('cron_%'),
+        TaskQueue.status == 'completed',
+    ).group_by(TaskQueue.type).all()
+    cron_health = {}
+    for row in cron_stages:
+        cron_health[row[0]] = {
+            'last_run': row[1].isoformat() if row[1] else None,
+            'last_finished': row[2].isoformat() if row[2] else None,
+        }
+
+    # ── Health-Checks ─────────────────────────────────────────────────
+    # IMAP-Proxy (schnell, keine Auth)
+    import urllib.request as _ur
+    health = {}
+    for name, url in [
+        ('imap_proxy', 'http://bewerbungen-imap-proxy:8765/'),
+        ('ai_provider', 'http://ai-provider:8767/health'),
+    ]:
+        try:
+            req = _ur.Request(url, method='GET')
+            resp = _ur.urlopen(req, timeout=5)
+            health[name] = {'status': 'ok' if resp.status < 500 else 'degraded'}
+        except Exception as e:
+            health[name] = {'status': 'error', 'error': str(e)[:100]}
+
+    return jsonify({
+        'job_sources': job_sources,
+        'queue_stats': queue_stats,
+        'recent_tasks': recent_tasks,
+        'cron_health': cron_health,
+        'health': health,
+    }), 200

@@ -74,6 +74,74 @@
             font-size: 2.5rem;
         }
 
+        /* ── Status Overview Cards ──────────────────────────── */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .status-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1rem 1.25rem;
+            transition: box-shadow 0.15s;
+        }
+        .status-card:hover {
+            box-shadow: var(--shadow);
+        }
+        .status-card .label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 0.25rem;
+        }
+        .status-card .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.15rem;
+        }
+        .status-card .sub {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .status-card .icon {
+            font-size: 1.3rem;
+            margin-right: 0.35rem;
+        }
+        .status-ok      { color: var(--secondary); }
+        .status-warning { color: var(--warning); }
+        .status-error   { color: var(--danger); }
+        .status-info    { color: var(--info); }
+
+        .source-error {
+            color: var(--danger);
+            font-size: 0.8rem;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .last-run-fresh  { color: var(--secondary); }
+        .last-run-stale  { color: var(--warning); }
+        .last-run-old    { color: var(--text-muted); }
+
+        .table-wrapper h2 .badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            background: var(--primary);
+            color: #fff;
+            vertical-align: middle;
+            margin-left: 0.4rem;
+        }
+        .table-wrapper h2 .badge.ok   { background: var(--secondary); }
+        .table-wrapper h2 .badge.warn { background: var(--warning); }
+        .table-wrapper h2 .badge.err  { background: var(--danger); }
+
         .admin-header h1 {
             font-size: 1.75rem;
             font-weight: 700;
@@ -601,6 +669,57 @@
         <!-- Alert Container -->
         <div id="alertContainer"></div>
 
+        <!-- Status Overview -->
+        <div class="table-wrapper" id="statusOverviewSection" style="margin-bottom: 1.5rem;">
+            <h2 style="padding: 1rem 1rem 0.5rem;">📊 Status-Übersicht</h2>
+            <div style="padding: 0 1rem 1rem;">
+                <!-- Health + Queue Cards -->
+                <div class="status-grid" id="statusHealthGrid"></div>
+
+                <!-- Cron-Health Tabelle -->
+                <details style="margin-top: 1rem;">
+                    <summary style="cursor:pointer;font-weight:600;color:var(--text-muted);">🕒 Letzte Cron-Läufe</summary>
+                    <div class="table-responsive" style="margin-top:0.5rem;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Stage</th>
+                                    <th>Letzter Start</th>
+                                    <th>Letztes Ende</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cronHealthBody">
+                                <tr><td colspan="4"><div class="loading-state"><div class="spinner"></div><span>Lade …</span></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+
+                <!-- JobSources -->
+                <details style="margin-top: 0.75rem;" open>
+                    <summary style="cursor:pointer;font-weight:600;color:var(--text-muted);">📡 Job-Quellen (<span id="sourceCount">0</span>)</summary>
+                    <div class="table-responsive" style="margin-top:0.5rem;max-height:400px;overflow-y:auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Typ</th>
+                                    <th>Status</th>
+                                    <th>Zuletzt gecrawlt</th>
+                                    <th>Intervall</th>
+                                    <th>Fehler</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jobSourcesBody">
+                                <tr><td colspan="6"><div class="loading-state"><div class="spinner"></div><span>Lade …</span></div></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            </div>
+        </div>
+
         <!-- Job-Discovery Pending Requests -->
         <div class="table-wrapper" id="jdRequestsSection" style="display:none; margin-bottom: 1.5rem;">
             <h2 style="padding: 1rem 1rem 0.5rem;">🔍 Ausstehende Job-Discovery Anfragen <span id="jdRequestsBadge" class="badge"></span></h2>
@@ -799,6 +918,7 @@
             // Load users
             loadUsers();
             loadJdRequests();
+            loadStatusOverview();
 
             // Attach event listeners
             attachEventListeners();
@@ -857,6 +977,113 @@
                         </td>
                     </tr>`;
             }).join('');
+        }
+
+        /**
+         * Load Status Overview (health, queue, sources, cron)
+         */
+        async function loadStatusOverview() {
+            try {
+                const data = await Auth.fetch('/admin/status-overview', { method: 'GET' });
+
+                // ── Health + Queue Cards ──────────────────────────
+                const grid = document.getElementById('statusHealthGrid');
+                const cards = [];
+
+                // Health cards
+                const healthItems = {
+                    imap_proxy:  { icon: '📬', label: 'IMAP-Proxy' },
+                    ai_provider: { icon: '🤖', label: 'AI-Provider' },
+                };
+                for (const [key, cfg] of Object.entries(healthItems)) {
+                    const h = (data.health || {})[key] || {};
+                    const statusClass = h.status === 'ok' ? 'status-ok'
+                        : h.status === 'degraded' ? 'status-warning' : 'status-error';
+                    cards.push(`<div class="status-card">
+                        <div class="label"><span class="icon">${cfg.icon}</span>${cfg.label}</div>
+                        <div class="value ${statusClass}">${h.status || 'unbekannt'}</div>
+                        <div class="sub">${h.error || ''}</div>
+                    </div>`);
+                }
+
+                // Queue cards
+                const qs = data.queue_stats || {};
+                const queueItems = [
+                    { key: 'queued',    icon: '⏳', label: 'Queued' },
+                    { key: 'running',   icon: '🔄', label: 'Running' },
+                    { key: 'completed', icon: '✅', label: 'Completed' },
+                    { key: 'failed',    icon: '❌', label: 'Failed' },
+                ];
+                for (const qi of queueItems) {
+                    const count = qs[qi.key] || 0;
+                    const sc = qi.key === 'failed' && count > 0 ? 'status-error'
+                        : qi.key === 'queued' && count > 5 ? 'status-warning'
+                        : 'status-info';
+                    cards.push(`<div class="status-card">
+                        <div class="label"><span class="icon">${qi.icon}</span>${qi.label}</div>
+                        <div class="value ${sc}">${count}</div>
+                        <div class="sub">Tasks</div>
+                    </div>`);
+                }
+
+                grid.innerHTML = cards.join('');
+
+                // ── Cron Health ───────────────────────────────────
+                const cronBody = document.getElementById('cronHealthBody');
+                const cronHealth = data.cron_health || {};
+                const cronStages = Object.keys(cronHealth).sort();
+                if (cronStages.length === 0) {
+                    cronBody.innerHTML = '<tr><td colspan="4"><em style="color:var(--text-muted);padding:1rem;display:block;">Noch keine Cron-Läufe aufgezeichnet.</em></td></tr>';
+                } else {
+                    const now = new Date();
+                    cronBody.innerHTML = cronStages.map(stage => {
+                        const ch = cronHealth[stage];
+                        const lastRun = ch.last_finished ? new Date(ch.last_finished) : null;
+                        let ageClass = 'last-run-old';
+                        let ageLabel = 'nie';
+                        if (lastRun) {
+                            const hours = (now - lastRun) / 3600000;
+                            ageClass = hours < 1.5 ? 'last-run-fresh'
+                                : hours < 6 ? 'last-run-stale' : 'last-run-old';
+                            ageLabel = lastRun.toLocaleString('de-DE');
+                        }
+                        return `<tr>
+                            <td><code>${escapeHtml(stage)}</code></td>
+                            <td>${ch.last_run ? new Date(ch.last_run).toLocaleString('de-DE') : '—'}</td>
+                            <td class="${ageClass}">${ageLabel}</td>
+                            <td class="${ageClass}">${lastRun ? '✅' : '⏳'}</td>
+                        </tr>`;
+                    }).join('');
+                }
+
+                // ── JobSources ────────────────────────────────────
+                const srcBody = document.getElementById('jobSourcesBody');
+                const sources = data.job_sources || [];
+                document.getElementById('sourceCount').textContent = sources.length;
+                if (sources.length === 0) {
+                    srcBody.innerHTML = '<tr><td colspan="6"><em style="color:var(--text-muted);padding:1rem;display:block;">Keine Job-Quellen konfiguriert.</em></td></tr>';
+                } else {
+                    srcBody.innerHTML = sources.map(s => {
+                        const lastCrawl = s.last_crawled_at ? new Date(s.last_crawled_at).toLocaleString('de-DE') : 'nie';
+                        const errText = s.last_error ? escapeHtml(s.last_error) : '';
+                        const failures = s.consecutive_failures || 0;
+                        const statusIcon = !s.enabled ? '⏸️'
+                            : failures >= 3 ? '❌' : '✅';
+                        return `<tr>
+                            <td>${escapeHtml(s.name)}</td>
+                            <td><code>${escapeHtml(s.type)}</code></td>
+                            <td>${statusIcon} ${s.enabled ? 'aktiv' : 'deaktiviert'}${failures > 0 ? ` (${failures}× Fehler)` : ''}</td>
+                            <td>${lastCrawl}</td>
+                            <td>${s.crawl_interval_min || 60} min</td>
+                            <td class="source-error" title="${errText}">${errText}</td>
+                        </tr>`;
+                    }).join('');
+                }
+            } catch (error) {
+                console.warn('Status-Übersicht konnte nicht geladen werden:', error.message);
+                document.getElementById('statusHealthGrid').innerHTML =
+                    '<div class="status-card"><div class="label">⚠️ Fehler</div><div class="value status-error">Laden fehlgeschlagen</div></div>';
+            }
         }
 
         async function approveJd(userId, email) {
