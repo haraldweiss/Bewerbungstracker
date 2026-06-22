@@ -151,6 +151,8 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 | Container build | see `deploy/container/build.sh` |
 | Services layer | `services/` — business logic |
 | API layer | `api/` — thin routing only |
+| Admin API | `api/admin.py` — Status-Übersicht, Health-Checks |
+| Calendar API | `api/calendar.py` — Interview-Erkennung + Kalender-Ansicht |
 | Async tasks | `services/tasks/handlers/` |
 | Anthropic client | `services/job_matching/claude_utils.py::_get_anthropic_client` |
 | Email parsing | `services/email_import_utils.py` |
