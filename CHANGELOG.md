@@ -372,3 +372,24 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 **Grenze StepStone:** Der öffentliche Posting-Link ist aus dem E-Mail-Tracker NICHT rekonstruierbar — die Kette endet bei einem personalisierten `www.stepstone.de/v2/magiclink/exchange?magicLink=<JWT>` (kann ablaufen). Das ist trotzdem besser als der opake `click.`-Tracker (echte Domain, browser-klickbar).
 
 **Deployed:** Image `228a33e`, alle 5 Container neu erstellt, App/public 200, Resolver im Container verifiziert. **Backfill gelaufen:** 25 LinkedIn (→ saubere `jobs/view`) + 9 StepStone (→ Magic-Link) = 34 Bewerbungen bereinigt, 0 `click.`/`comm`-Tracker übrig.
+
+### 2026-06-22 — 503 beim Match-Scoring gefixt + Ollama-Modell-Umstellung + Bulk-Scoring angestoßen (durch pi/Claude Code)
+
+**Problem:** Klick auf "🤖 Bewerten lassen" (`POST /api/jobs/matches/{id}/score`) gab 503 zurück. Root Cause (via SSH auf Oracle VM, Docker-Logs + Traceback-Analyse):
+- User-Konfiguration nutzte `opencode` / `opencode-deepseek-v4-flash-free`
+- DeepSeek-Free lieferte unparsbares JSON zurück → Summarize-Retry → 2 AI-Provider-Calls pro Match
+- Gesamtzeit > 60s → Gunicorn-Worker-Timeout → Worker stirbt → Apache 503
+- ai-provider-service hatte ebenfalls Worker-Timeouts (120s) mit qwen3.6 (23 GB, zu langsam)
+
+**Fix (Runtime-Konfig, kein Code-Commit):**
+- **Modell umgestellt:** User `harald.weiss@wolfinisoftware.de` → `ai_provider=ollama`, `ai_model=mistral-nemo:12b-instruct-2407-q5_K_M` (vorher: `opencode`/`opencode-deepseek-v4-flash-free`)
+- **Gunicorn-Timeout erhöht:** `GUNICORN_TIMEOUT=180` in `/etc/bewerbungen/bewerbungen.env` (vorher: default 60s)
+- **Worker neugestartet** (`docker restart bewerbungen-worker`)
+- **Bulk-Scoring** für 64 neue Matches angestoßen (Task-ID `3d5ea8a5`, läuft im Hintergrund)
+
+**Verifikation:** Test-Score Match #592 → HTTP 200, `match_score: 87.0`, `provider_used: ollama`, `model_used: mistral-nemo:12b-instruct-2407-q5_K_M`.
+
+**WordPress wolfinisoftware.de (gleiche Oracle VM):**
+- **Kritisch:** File-Ownership `root:root` → `apache:apache` + `FS_METHOD=direct` → Auto-Updates repariert
+- **Empfohlen:** System-Cron eingerichtet (`*/15 * * * * curl -s https://wolfinisoftware.de/wp-cron.php`) → verspätete Cron-Events behoben
+- **Empfohlen:** Stale WP-Super-Cache-Config aus `wp-config.php` entfernt (Plugin nicht mehr installiert, Redis-Cache läuft als Object Cache)
