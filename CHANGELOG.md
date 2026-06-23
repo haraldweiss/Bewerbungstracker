@@ -2,6 +2,24 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-06-23 — URL-Normalisierung beim Speichern von RawJobs + Deploy (durch pi/Claude Code)
+
+**Problem:** Der "Original"-Link bei Job-Vorschlägen führte oft auf tote Seiten (HTTP 500) — Tracking-Links von StepStone/LinkedIn/Indeed waren abgelaufen.
+
+**Lösung:** Neue Funktion  in  ohne Netzwerk-Calls:
+  - **LinkedIn:**  → 
+  - **StepStone:** Magic-Link → öffentliche Anzeigen-URL aus 
+  - **Alle:** Tracking-Parameter entfernt (, , , …)
+  - Fehlschlag sicher: unbekanntes Format → Original-URL bleibt erhalten
+
+**Geänderte Dateien (3):**
+  - : +  (synthetische Normalisierung)
+  - :  → 
+  - :  beim RawJob-Erzeugen
+
+**Deployed:** Image  auf oracle-vm, alle 5 Container recreatet, Funktion verifiziert.
+**Git:**  auf , gepusht.
+
 ### 2026-06-05 — Quick-Reasons-UI Phase 1: Tasks 4-9 implementiert (durch opencode)
 - **Task 4** ✅ — `services/job_matching/quick_actions.py` + 11 Unit-Tests. `apply_quick_action()` mit 4 Aktionen (company_rejected, already_applied, job_unavailable, wrong_job_type). Idempotent, ProtectedStatuses gegen Downgrade. QuickActionError -> 400.
 - **Task 5** ✅ — PATCH `/api/jobs/matches/<id>` versteht `quick_action` + `job_type`. Setzt status='dismissed' implizit, ignoriert user-feedback_text bei quick_action. 6 Integration-Tests.
