@@ -146,3 +146,33 @@ def resolve_original_url(url, *, timeout: float = 4.0):
 
     # Unbekannter Host: KEIN Netz-Call (SSRF), nur Tracking-Params strippen.
     return _strip_tracking_params(u)
+
+def normalize_url(url: str) -> str:
+    """Leichte URL-Normalisierung OHNE Netzwerk-Calls.
+
+    Wandelt bekannte Tracking-Formate (LinkedIn, StepStone Magic-Link) in die
+    echte Stellen-URL um und entfernt Tracking-Parameter. Für Indeed und
+    StepStone-Click-Tracker (die Redirect-Following brauchen) siehe
+    resolve_original_url().
+    """
+    if not url or not isinstance(url, str):
+        return url
+    u = url.strip()
+    try:
+        host = urlparse(u).netloc.lower()
+    except Exception:
+        return url
+
+    # LinkedIn: comm/jobs/view/<id> → canonical (kein Netz nötig)
+    if "linkedin.com" in host:
+        m = _LINKEDIN_VIEW_RE.search(urlparse(u).path)
+        if m:
+            return f"https://www.linkedin.com/jobs/view/{m.group(1)}/"
+        return _strip_tracking_params(u)
+
+    # StepStone Magic-Link direkt entpacken (kein Netz nötig)
+    if "stepstone." in host and "magiclink" in urlparse(u).path.lower():
+        return _unwrap_stepstone_magiclink(u)
+
+    # Für alle anderen: nur Tracking-Parameter entfernen (kein Netz)
+    return _strip_tracking_params(u)

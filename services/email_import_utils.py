@@ -12,6 +12,7 @@ import time
 from datetime import datetime, timedelta
 
 import requests
+from services.job_sources.url_resolver import normalize_url
 
 from database import db
 from models import JobSource, RawJob, JobMatch, Application
@@ -211,7 +212,7 @@ def create_raw_job_and_match(
     Idempotent: existiert bereits ein RawJob mit gleichem (source_id, external_id)
     UND ein JobMatch fuer denselben User, gibt die Funktion (None, None) zurueck.
     """
-    url = (job_data.get('url') or '').strip()
+    url = normalize_url((job_data.get("url") or "").strip())
     external_id = (job_data.get('external_id') or url or '')[:512]
 
     existing_raw = RawJob.query.filter_by(

@@ -27,6 +27,7 @@ def handle_cron_crawl_source(payload: dict, *, progress_cb: Optional[Callable] =
         MAX_NEW_JOBS_PER_TICK, HARD_TIME_LIMIT_SEC, AUTO_DISABLE_FAILURE_COUNT,
     )
     from services.job_sources import get_adapter
+    from services.job_sources.url_resolver import normalize_url
 
     started = time.time()
     src = _select_due_source()
@@ -75,7 +76,7 @@ def handle_cron_crawl_source(payload: dict, *, progress_cb: Optional[Callable] =
             title=fj.title,
             company=fj.company,
             location=fj.location,
-            url=fj.url,
+            url=normalize_url(fj.url),
             description=fj.description,
             posted_at=fj.posted_at,
             crawl_status='raw',
