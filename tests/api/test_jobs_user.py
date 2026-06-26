@@ -56,7 +56,8 @@ def test_list_sources_returns_global_and_own(client, app, user_factory, auth_hea
     assert "Other-User" not in names
 
 
-def test_create_own_source(client, auth_header):
+def test_create_own_source(client, auth_header, monkeypatch):
+    monkeypatch.setattr('api.jobs_user.is_url_safe_for_rss', lambda _url: True)
     headers, user = auth_header
     r = client.post("/api/jobs/sources", json={
         "name": "My RSS", "type": "rss", "config": {"url": "https://example.com/feed.xml"},
@@ -222,8 +223,9 @@ def test_create_source_bundesagentur_missing_both(client, auth_header):
 # PATCH /api/jobs/sources/<id>
 # ---------------------------------------------------------------------------
 
-def test_update_source_fields(client, auth_header):
+def test_update_source_fields(client, auth_header, monkeypatch):
     """Eigene Quelle: name, enabled, crawl_interval_min, config updaten → 200."""
+    monkeypatch.setattr('api.jobs_user.is_url_safe_for_rss', lambda _url: True)
     headers, user = auth_header
     src = JobSource(user_id=user.id, name="Old", type="rss",
                     config={"url": "https://example.com/old"})
@@ -785,6 +787,42 @@ def test_bulk_status_update_dismisses_matches(client, app, user_factory, auth_he
     for m in matches:
         db.session.refresh(m)
         assert m.status == "dismissed"
+
+
+def test_bulk_dismiss_updates_learning_profile(client, app, user_factory, auth_header):
+    from models import JobEmbedding, UserLearnProfile
+    from services.job_matching.embedder import vector_pack
+
+    headers, user = auth_header
+    src = JobSource(name="bulk-learn", type="rss", config={"url": "x"})
+    db.session.add(src)
+    db.session.flush()
+
+    raw = RawJob(
+        source_id=src.id,
+        external_id="bulk-learn-1",
+        title="Security Engineer",
+        url="https://example.test/job",
+        crawl_status="matched",
+    )
+    db.session.add(raw)
+    db.session.flush()
+    match = JobMatch(raw_job_id=raw.id, user_id=user.id, status="new", match_score=70)
+    db.session.add(match)
+    db.session.flush()
+    db.session.add(JobEmbedding(raw_job_id=raw.id, vector=vector_pack([1.0] + [0.0] * 767)))
+    db.session.commit()
+
+    r = client.patch(
+        "/api/jobs/matches/bulk",
+        json={"match_ids": [match.id], "status": "dismissed"},
+        headers=headers,
+    )
+
+    assert r.status_code == 200
+    profile = UserLearnProfile.query.filter_by(user_id=user.id).first()
+    assert profile is not None
+    assert profile.samples_dismissed == 1
 
 
 def test_bulk_status_update_skips_other_users_matches(client, app, user_factory, auth_header):

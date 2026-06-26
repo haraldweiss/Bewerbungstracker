@@ -568,6 +568,13 @@ def update_match(user, match_id: int):
         m.status = 'dismissed'
         m.feedback_text = FEEDBACK_TEXT_BY_ACTION[quick_action]
         db.session.commit()
+
+        from services.job_matching.learner import update_centroid_for_feedback
+        try:
+            update_centroid_for_feedback(user, m)
+        except Exception as e:
+            current_app.logger.warning('Centroid update failed: %s', e)
+
         return jsonify({"id": m.id, "status": m.status}), 200
 
     new_status = data.get("status")
@@ -826,6 +833,13 @@ def update_match_bulk(user):
             continue
         m.status = new_status
         updated += 1
+
+        if new_status == 'dismissed':
+            from services.job_matching.learner import update_centroid_for_feedback
+            try:
+                update_centroid_for_feedback(user, m)
+            except Exception as e:
+                current_app.logger.warning('Centroid update failed: %s', e)
 
     db.session.commit()
     return jsonify({
