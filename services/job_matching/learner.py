@@ -49,6 +49,15 @@ def _incremental_mean(old_centroid_blob, old_count: int, new_vec: np.ndarray) ->
     return ((old * old_count + new_vec) / (old_count + 1)).astype(np.float32)
 
 
+def _dismissed_balance_factor(samples_imported: int, samples_dismissed: int) -> float:
+    """Scale dismissed similarity down when dismisses heavily outnumber imports."""
+    imported = max(samples_imported or 0, 1)
+    dismissed = max(samples_dismissed or 0, 1)
+    if dismissed <= imported * 3:
+        return 1.0
+    return max(0.35, min(1.0, (imported * 3) / dismissed))
+
+
 def update_centroid_for_feedback(user, match) -> None:
     """Update Centroid nach Status-Change auf dismissed/imported."""
     from database import db
@@ -120,7 +129,11 @@ def compute_score_adjustment(user, raw_job_id: int, base_score: float) -> float:
     sim_dis = cosine_similarity(job_vec, dis_centroid)
 
     alpha = (user.job_learn_weight_pct or 30) / 100.0
-    adjusted = base_score * (1 + alpha * (sim_imp - sim_dis))
+    dismissed_factor = _dismissed_balance_factor(
+        profile.samples_imported or 0,
+        profile.samples_dismissed or 0,
+    )
+    adjusted = base_score * (1 + alpha * (sim_imp - (sim_dis * dismissed_factor)))
     return max(0.0, min(100.0, adjusted))
 
 

@@ -108,3 +108,30 @@ def test_compute_score_adjustment_clamps_to_100():
         result = compute_score_adjustment(user, raw_job_id=1, base_score=80.0)
         assert result <= 100.0
         assert result >= 0.0
+
+
+def test_compute_score_adjustment_dismissed_imbalance_is_bounded():
+    user = MagicMock()
+    user.job_learn_enabled = True
+    user.job_learn_min_samples = 3
+    user.job_learn_weight_pct = 30
+    user.id = 'u1'
+
+    imported_vec = np.ones(768, dtype=np.float32)
+    dismissed_vec = np.ones(768, dtype=np.float32)
+    job_vec = np.ones(768, dtype=np.float32)
+
+    with patch('services.job_matching.learner._load_profile') as mock_lp, \
+         patch('services.job_matching.learner._load_embedding') as mock_le:
+        profile = MagicMock()
+        profile.samples_imported = 10
+        profile.samples_dismissed = 1000
+        profile.imported_centroid = vector_pack(imported_vec)
+        profile.dismissed_centroid = vector_pack(dismissed_vec)
+        mock_lp.return_value = profile
+        mock_le.return_value = job_vec
+
+        adjusted = compute_score_adjustment(user, raw_job_id=123, base_score=50.0)
+
+    assert adjusted > 50.0
+    assert adjusted <= 65.0
