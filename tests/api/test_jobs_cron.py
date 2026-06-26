@@ -65,7 +65,8 @@ def _run_cron_handler_sync(app, response, handler_fn):
 
 
 @responses.activate
-def test_crawl_source_picks_due_source_creates_raw_jobs_and_matches(app, client, user_factory):
+def test_crawl_source_picks_due_source_creates_raw_jobs_and_matches(app, client, user_factory, monkeypatch):
+    monkeypatch.setattr('services.job_sources.rss.validate_rss_url', lambda _url: None)
     _make_admin()
     user = user_factory(job_discovery_enabled=True, cv_data_json='{"cv":{"skills":["react"]}}')
 
