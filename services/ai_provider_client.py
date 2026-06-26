@@ -60,10 +60,10 @@ class ChatResponse:
 class AIProviderClient:
     """HTTP-Client für ai-provider-service."""
 
-    def __init__(self, base_url: Optional[str] = None, token: Optional[str] = None, timeout: int = 180):
+    def __init__(self, base_url: Optional[str] = None, token: Optional[str] = None, timeout: int = None):
         self.base_url = (base_url or Config.AI_PROVIDER_SERVICE_URL).rstrip('/')
         self.token = token or Config.AI_PROVIDER_SERVICE_TOKEN
-        self.timeout = timeout
+        self.timeout = timeout or Config.AI_TIMEOUT_SECONDS
         if not self.base_url:
             raise ValueError("AI_PROVIDER_SERVICE_URL nicht gesetzt")
         if not self.token:

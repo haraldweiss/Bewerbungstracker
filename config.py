@@ -37,6 +37,9 @@ class Config:
     # statt lokal über ProviderFactory zu laufen.
     AI_PROVIDER_SERVICE_URL = os.getenv('AI_PROVIDER_SERVICE_URL', '')
     AI_PROVIDER_SERVICE_TOKEN = os.getenv('AI_PROVIDER_SERVICE_TOKEN', '')
+    
+    # AI Timeout (HTTP Timeout für AI Provider Service)
+    AI_TIMEOUT_SECONDS = int(os.getenv('AI_TIMEOUT_SECONDS', '180'))
 
     # Email Configuration
     MAIL_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
