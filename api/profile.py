@@ -25,6 +25,7 @@ def _parse_job_type_blacklist(raw):
 from api.auth import token_required
 from database import db
 from models import JobSource
+from services.job_matching.claude_utils import reset_empty_cv_matches
 
 
 profile_bp = Blueprint('profile', __name__, url_prefix='/api')
@@ -152,11 +153,18 @@ def update_cv(user):
 
     user.cv_data_json = json.dumps(data)
     user.updated_at = datetime.utcnow()
+
+    # Reaktiviere Matches, die mit leerem CV bewertet wurden (Signatur
+    # "CV empty ..." in missing_skills), damit sie mit dem neuen Lebenslauf
+    # sauber neu bewertet werden.
+    reactivated = reset_empty_cv_matches(user.id)
+
     db.session.commit()
     return {
         'cv': data,
         'updated_at': user.updated_at.isoformat(),
         'is_first_cv_upload': is_first_cv_upload,
+        'reactivated_matches': reactivated,
     }, 200
 
 

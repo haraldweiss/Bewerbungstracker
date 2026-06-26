@@ -487,3 +487,115 @@ def test_estimate_cost_usd_does_not_round_sub_cent_calls_to_zero():
     cost = estimate_cost_usd('claude-haiku-4-5-20251001', 2552, 241)
     assert cost > 0.0, "sub-cent costs must not round to zero"
     assert cost < 0.01, "should still be sub-cent for haiku-typical call"
+
+
+def test_run_claude_match_for_skips_when_cv_empty(app, user_factory):
+    """Leerer/fehlender CV → kein LLM-Call, klarer Hinweis, Match bleibt
+    verfügbar (match_score=NULL). Regression für Vorfall 2026-06-26: das Modell
+    antwortete bei leerem CV mit "CV empty - cannot assess required skills" als
+    missing_skill, der als echter Skill im UI angezeigt wurde."""
+    from api.jobs_cron import _run_claude_match_for
+    from services.job_matching.claude_utils import NO_CV_REASONING
+
+    # User OHNE cv_data_json → _build_cv_summary liefert ""
+    user = user_factory()
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new', match_score=None)
+    db.session.add(m); db.session.commit()
+
+    fake_client = MagicMock()
+    result = _run_claude_match_for(fake_client, user, m)
+
+    assert result is False
+    assert m.match_score is None                 # bleibt verfügbar für Neu-Bewertung
+    assert m.match_reasoning == NO_CV_REASONING  # klarer Hinweis statt LLM-Metatext
+    assert m.missing_skills == []
+    fake_client.assert_not_called()              # KEIN teurer/fehleranfälliger Call
+
+
+def test_run_claude_match_for_eval_attempts_not_incremented_on_empty_cv(app, user_factory):
+    """Bei leerem CV darf eval_attempts NICHT steigen – sonst fiele der Match
+    nach MATCH_MAX_EVAL_ATTEMPTS aus der Queue und käme auch mit späterem CV
+    nie wieder zur Bewertung."""
+    from api.jobs_cron import _run_claude_match_for
+
+    user = user_factory()
+    user.job_daily_budget_cents = 1000
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+    m = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                 match_score=None, eval_attempts=2)
+    db.session.add(m); db.session.commit()
+
+    _run_claude_match_for(MagicMock(), user, m)
+
+    assert m.eval_attempts == 2  # unverändert
+
+
+def test_reset_empty_cv_matches_reactivates_stale_matches(app, user_factory):
+    """Matches mit der "CV empty"-Signatur in missing_skills (bereits bewertet,
+    match_score gesetzt) werden auf match_score=NULL zurückgesetzt, damit sie
+    mit vorhandenem CV neu bewertet werden."""
+    from services.job_matching.claude_utils import reset_empty_cv_matches
+    import json as _j
+
+    user = user_factory(cv_data_json='{"cv": {"summary": "Dev", "skills": ["python"]}}')
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+
+    # Match, der fälschlich mit leerem CV bewertet wurde (das Symptom)
+    stale = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                     match_score=0,
+                     match_reasoning="kein match",
+                     _missing_skills=_j.dumps(["CV empty - cannot assess required skills"]))
+    db.session.add(stale); db.session.commit()
+
+    count = reset_empty_cv_matches(user.id)
+    db.session.commit()
+
+    assert count == 1
+    db.session.refresh(stale)
+    assert stale.match_score is None          # wieder in der Queue
+    assert stale.match_reasoning is None
+    assert stale.missing_skills == []
+
+
+def test_reset_empty_cv_matches_ignores_real_skills(app, user_factory):
+    """Echte Skills dürfen NICHT als "CV empty"-Signatur matchen – keine
+    False Positives bei regulären Bewertungen."""
+    from services.job_matching.claude_utils import reset_empty_cv_matches
+    import json as _j
+
+    user = user_factory(cv_data_json='{"cv": {"skills": ["python"]}}')
+    db.session.commit()
+
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src); db.session.flush()
+    raw = RawJob(source_id=src.id, external_id="a", title="Dev", url="https://j/1")
+    db.session.add(raw); db.session.flush()
+
+    # Normal bewerteter Match mit echten fehlenden Skills
+    normal = JobMatch(raw_job_id=raw.id, user_id=user.id, status='new',
+                      match_score=70, match_reasoning="gut",
+                      _missing_skills=_j.dumps(["kubernetes", "docker"]))
+    db.session.add(normal); db.session.commit()
+
+    count = reset_empty_cv_matches(user.id)
+
+    assert count == 0
+    db.session.refresh(normal)
+    assert normal.match_score == 70  # unverändert

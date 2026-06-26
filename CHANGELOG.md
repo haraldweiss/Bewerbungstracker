@@ -2,6 +2,27 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-06-26 — CV-leere-Matches Guard + Auto-Reaktivierung bei CV-Upload (durch pi/Claude Code)
+
+**Problem:** Wenn ein User noch keinen Lebenslauf (CV) hinterlegt hatte, wurden Matches trotzdem ans Bewertungs-LLM geschickt. Das Modell antwortete mit Metatext wie `"CV empty - cannot assess required skills"` in `missing_skills`, der im UI 1:1 als "⚠ Fehlt im CV:" angezeigt wurde — verwirrend und semantisch falsch. Zudem erhielten diese Matches einen Score (meist 0) und fielen damit dauerhaft aus der Bewertungs-Queue (`match_score IS NULL`-Filter), sodass sie nie neu bewertet wurden, selbst wenn der User später einen CV anlegte.
+
+**Lösung (zwei Teile):**
+1. **Guard in `_run_claude_match_for`** (`services/job_matching/claude_utils.py`): Bei leerem `cv_summary` wird der Match **nicht** ans LLM geschickt. Stattdessen:
+   - `match_score` bleibt `NULL` → Match bleibt in der Queue
+   - `match_reasoning` = klarer Hinweis: "Noch kein Lebenslauf hinterlegt – wird automatisch bewertet, sobald du einen Lebenslauf (CV) anlegst."
+   - `missing_skills = []` (kein Metatext als "Skill")
+   - `eval_attempts` **nicht** erhöht → Match fällt auch nach vielen Ticks nicht aus der Queue
+   
+2. **Auto-Reaktivierung beim CV-Upload** (`api/profile.py:update_cv` + `reset_empty_cv_matches` in `claude_utils.py`): Wenn ein User einen CV speichert, werden **alle** seine Matches, die die "CV empty"-Signatur in `missing_skills` tragen (z.B. "CV empty - cannot assess required skills"), auf `match_score=NULL` zurückgesetzt. Der nächste Cron-Lauf bewertet sie dann mit dem echten CV sauber neu.
+
+**Geänderte Dateien (4):**
+- `services/job_matching/claude_utils.py` — +`NO_CV_REASONING` Konstante, Guard in `_run_claude_match_for`, neue Funktion `reset_empty_cv_matches(user_id)`.
+- `api/profile.py` — Import + Aufruf von `reset_empty_cv_matches(user.id)` in `update_cv`, Response-Feld `reactivated_matches`.
+- `tests/api/test_jobs_cron.py` — 4 neue Tests: Guard-Logik (leerer CV → kein LLM-Call, `eval_attempts` nicht erhöht), `reset_empty_cv_matches` (reaktiviert Signatur-Matches, ignoriert echte Skills).
+- `CHANGELOG.md` — dieser Eintrag.
+
+**Verifikation:** `pytest tests/api/test_jobs_cron.py` (20/20 passed, inkl. 4 neue). Breitere Suite: 376/377 passed (1 pre-existing failure in `test_ai_provider_client.py`, unabhängig).
+
 ### 2026-06-23 — URL-Normalisierung beim Speichern von RawJobs + Deploy (durch pi/Claude Code)
 
 **Problem:** Der "Original"-Link bei Job-Vorschlägen führte oft auf tote Seiten (HTTP 500) — Tracking-Links von StepStone/LinkedIn/Indeed waren abgelaufen.

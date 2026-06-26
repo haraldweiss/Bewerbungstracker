@@ -13,6 +13,8 @@ import os
 import time
 from typing import Callable, Optional
 
+from sqlalchemy import or_
+
 from database import db
 from models import User, RawJob, JobMatch, ApiCall
 from services import cost_tracker, ai_provider_client
@@ -42,6 +44,15 @@ MATCH_MAX_EVAL_ATTEMPTS = int(os.getenv("MATCH_MAX_EVAL_ATTEMPTS", "5"))
 MATCH_FALLBACK_ENABLED = os.getenv("MATCH_FALLBACK_ENABLED", "true").lower() in ("1", "true", "yes")
 MATCH_OLLAMA_FALLBACK_MODEL = os.getenv("MATCH_OLLAMA_FALLBACK_MODEL", "gemma4:12b")
 PERMANENT_FAIL_REASONING = "Technisch nicht bewertbar – bitte manuell prüfen."
+
+# Hinweis, wenn ein Match nicht bewertet werden kann, weil der User noch keinen
+# auswertbaren Lebenslauf hinterlegt hat. Wird als match_reasoning gesetzt
+# (match_score bleibt NULL), damit der Match in der Bewertungs-Queue bleibt und
+# bei CV-Anlage automatisch neu bewertet wird.
+NO_CV_REASONING = (
+    "Noch kein Lebenslauf hinterlegt – wird automatisch bewertet, sobald du "
+    "einen Lebenslauf (CV) anlegst."
+)
 
 
 def _retry_backoff_hours(attempts: int) -> int:
@@ -551,6 +562,23 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
         return False
 
     cv_summary = _build_cv_summary(user.cv_data_json)
+
+    if not cv_summary.strip():
+        # Kein auswertbarer CV → kein LLM-Call. Ohne diese Guard antwortet das
+        # Modell bei leerem CV mit Metatext (z.B. "CV empty - cannot assess
+        # required skills"), der als "fehlender Skill" persistiert und im UI
+        # als solcher angezeigt wird (Vorfall 2026-06-26). Match bleibt
+        # verfügbar (match_score=NULL) und wird automatisch neu bewertet, sobald
+        # der User einen Lebenslauf anlegt (reset_empty_cv_matches reaktiviert
+        # etwaige Alt-Einträge beim CV-Upload).
+        # eval_attempts bewusst NICHT erhöhen – sonst fiele der Match nach
+        # MATCH_MAX_EVAL_ATTEMPTS aus der Queue und käme selbst mit späterem
+        # CV nie wieder zur Bewertung.
+        if match.match_reasoning != NO_CV_REASONING:
+            match.match_reasoning = NO_CV_REASONING
+            match.missing_skills = []
+        return False
+
     feat_provider, feat_model = user.get_model_for('match')
     provider = feat_provider or ProviderConfig.CLAUDE
     model = feat_model or DEFAULT_MODEL
@@ -558,6 +586,40 @@ def _run_claude_match_for(client, user: User, match: JobMatch) -> bool:
     if ai_provider_client.is_enabled():
         return _run_match_via_service(user, match, raw, cv_summary, provider, model)
     return _run_match_via_local_factory(user, match, raw, cv_summary, provider, model)
+
+
+def reset_empty_cv_matches(user_id: str) -> int:
+    """Reaktiviert Matches, die mit leerem/fehlerhaftem CV bewertet wurden.
+
+    Erkennt das Symptom an der LLM-Signatur in ``missing_skills`` (z.B.
+    "CV empty - cannot assess required skills"): das Modell liefert bei
+    fehlendem CV gültiges JSON mit Score + diesem Metatext als "Skill".
+    Diese Matches haben bereits ``match_score != None`` und tauchen daher
+    nicht mehr in der Bewertungs-Queue auf (die Cron-Query filtert
+    ``match_score IS NULL``). Setzt sie auf NULL zurück, damit der nächste
+    Cron-Lauf sie mit vorhandenem CV sauber bewertet.
+
+    Aufgerufen beim CV-Upload (``api/profile.py:update_cv``).
+
+    Returns:
+        Anzahl reaktivierter Matches (0 = keine betroffen).
+    """
+    stale = (JobMatch.query
+             .filter(JobMatch.user_id == user_id,
+                     JobMatch.match_score.isnot(None),
+                     or_(JobMatch._missing_skills.ilike('%cv empty%'),
+                         JobMatch._missing_skills.ilike('%cannot assess%')))
+             .all())
+    for m in stale:
+        m.match_score = None
+        m.match_reasoning = None
+        m.missing_skills = []
+        m.suspicious_reasons = None
+        # eval_attempts zurücksetzen, falls der Match vorher als permanent
+        # fehlgeschlagen markiert war – er soll vollständige Retry-Chancen haben.
+        if (m.eval_attempts or 0) >= MATCH_MAX_EVAL_ATTEMPTS:
+            m.eval_attempts = 0
+    return len(stale)
 
 
 def _ai_confirm_prefilter_dismiss(user, raw, cv_summary: str):
