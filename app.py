@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 # `python script.py` (z.B. scripts/*) muss load_dotenv() ganz oben stehen.
 load_dotenv()
 
-from flask import Flask, jsonify, send_file
+from flask import Flask, jsonify, send_file, request
 from flask_cors import CORS
 from config import config
 from database import db
@@ -47,6 +47,26 @@ def create_app(config_class=None):
             'supports_credentials': True
         }
     })
+
+    # Security Headers
+    @app.after_request
+    def add_security_headers(response):
+        # Content Security Policy
+        csp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://bewerbungen.wolfinisoftware.de; frame-ancestors 'none';"
+        
+        # HSTS (nur in HTTPS-Umgebung)
+        if request.is_secure:
+            response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        
+        # Weitere Security Headers
+        response.headers['Content-Security-Policy'] = csp
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+        
+        return response
 
     # Initialize database
     db.init_app(app)
