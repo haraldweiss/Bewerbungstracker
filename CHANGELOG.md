@@ -20,6 +20,16 @@ Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 we
 **Deployed:** Image  auf oracle-vm, alle 5 Container recreatet, Funktion verifiziert.
 **Git:**  auf , gepusht.
 
+### 2026-06-23 — Prod-Fix: StepStone-Tracking-URL + fehlende Company bei Match #3640 (durch pi/Claude Code)
+
+**Symptom:** Letzter Job-Vorschlag (Match #3640 / RawJob #3209 — "IT Security Operation Koordinator (m/w/d)") hatte eine StepStone-Tracking-URL (`click.stepstone.de/f/a/...`) statt der echten Stellenanzeige. Company-Feld war leer (`None`). Beim Öffnen/Import kam HTTP 500.
+
+**Fix (Production-DB auf Oracle VM, kein Code-Commit):**
+- `RawJob #3209.url` aktualisiert: `click.stepstone.de/f/a/...` → `https://www.stepstone.de/stellenangebote--IT-Security-Operation-Koordinator-m-w-d-Neuss-Pierburg-GmbH--13966783-inline.html`
+- `RawJob #3209.company` gesetzt: `None` → `Pierburg GmbH`
+
+**Verifikation:** Match #3640: status=new, score=75.0, Company=Pierburg GmbH, URL=stepstone.de/stellenangebote--IT-Security-...
+
 ### 2026-06-05 — Quick-Reasons-UI Phase 1: Tasks 4-9 implementiert (durch opencode)
 - **Task 4** ✅ — `services/job_matching/quick_actions.py` + 11 Unit-Tests. `apply_quick_action()` mit 4 Aktionen (company_rejected, already_applied, job_unavailable, wrong_job_type). Idempotent, ProtectedStatuses gegen Downgrade. QuickActionError -> 400.
 - **Task 5** ✅ — PATCH `/api/jobs/matches/<id>` versteht `quick_action` + `job_type`. Setzt status='dismissed' implizit, ignoriert user-feedback_text bei quick_action. 6 Integration-Tests.
