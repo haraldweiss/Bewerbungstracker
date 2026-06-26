@@ -58,6 +58,55 @@ def _dismissed_balance_factor(samples_imported: int, samples_dismissed: int) -> 
     return max(0.35, min(1.0, (imported * 3) / dismissed))
 
 
+_SENIORITY_TERMS = (
+    "senior", "principal", "lead", "leiter", "leitung", "head of",
+    "director", "chief", "junior", "werkstudent", "praktikant", "intern",
+)
+
+
+def _load_reason_counts(profile) -> dict[str, int]:
+    try:
+        counts = json.loads(profile.reason_counts) if profile.reason_counts else {}
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(counts, dict):
+        return {}
+    parsed: dict[str, int] = {}
+    for key, value in counts.items():
+        if isinstance(value, int):
+            parsed[str(key)] = value
+    return parsed
+
+
+def _strong_reason(counts: dict[str, int], reason: str) -> bool:
+    return counts.get(reason, 0) >= 3
+
+
+def _apply_reason_adjustments(user, raw_job_id: int, score: float, profile) -> float:
+    from database import db
+    from models import RawJob
+
+    counts = _load_reason_counts(profile)
+    if not counts:
+        return score
+
+    raw = db.session.get(RawJob, raw_job_id)
+    if raw is None:
+        return score
+
+    adjusted = score
+    title_desc = f"{raw.title or ''} {raw.description or ''}".lower()
+
+    if _strong_reason(counts, "wrong_seniority"):
+        if any(term in title_desc for term in _SENIORITY_TERMS):
+            adjusted *= 0.90
+
+    if _strong_reason(counts, "missing_skills"):
+        adjusted *= 0.95
+
+    return max(0.0, min(100.0, round(adjusted, 2)))
+
+
 def update_centroid_for_feedback(user, match) -> None:
     """Update Centroid nach Status-Change auf dismissed/imported."""
     from database import db
@@ -134,7 +183,8 @@ def compute_score_adjustment(user, raw_job_id: int, base_score: float) -> float:
         profile.samples_dismissed or 0,
     )
     adjusted = base_score * (1 + alpha * (sim_imp - (sim_dis * dismissed_factor)))
-    return max(0.0, min(100.0, adjusted))
+    adjusted = max(0.0, min(100.0, adjusted))
+    return _apply_reason_adjustments(user, raw_job_id, adjusted, profile)
 
 
 def get_learn_profile_stats(user) -> dict:

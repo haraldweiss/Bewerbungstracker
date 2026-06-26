@@ -135,3 +135,46 @@ def test_compute_score_adjustment_dismissed_imbalance_is_bounded():
 
     assert adjusted > 50.0
     assert adjusted <= 65.0
+
+
+def test_compute_score_adjustment_penalizes_repeated_wrong_seniority(app, user_factory):
+    import json
+    from database import db
+    from models import JobEmbedding, JobSource, RawJob, UserLearnProfile
+
+    user = user_factory()
+    user.job_learn_enabled = True
+    user.job_learn_min_samples = 3
+    user.job_learn_weight_pct = 30
+
+    source = JobSource(name="test", type="rss")
+    db.session.add(source)
+    db.session.flush()
+
+    raw = RawJob(
+        source_id=source.id,
+        external_id="seniority-1",
+        title="Senior Principal Enterprise Architect",
+        description="Very senior leadership role with architecture governance.",
+        url="https://example.test/job",
+        crawl_status="matched",
+    )
+    db.session.add(raw)
+    db.session.flush()
+
+    vec = [1.0] + [0.0] * 767
+    profile = UserLearnProfile(
+        user_id=user.id,
+        imported_centroid=vector_pack(vec),
+        dismissed_centroid=vector_pack(vec),
+        samples_imported=5,
+        samples_dismissed=5,
+        reason_counts=json.dumps({"wrong_seniority": 5}),
+    )
+    db.session.add(profile)
+    db.session.add(JobEmbedding(raw_job_id=raw.id, vector=vector_pack(vec)))
+    db.session.commit()
+
+    adjusted = compute_score_adjustment(user, raw_job_id=raw.id, base_score=80.0)
+
+    assert adjusted == 72.0
