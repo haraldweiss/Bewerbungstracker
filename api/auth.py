@@ -12,6 +12,28 @@ from services.email_service import send_confirmation_email, send_admin_new_user_
 from services.encryption_service import EncryptionService
 from services.key_cache import get_key_cache
 from database import db
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+# Rate limiting setup
+import os
+
+def _get_storage_uri() -> str:
+    """Redis URL oder None für In-Memory Storage."""
+    return os.getenv("REDIS_URL", None)
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri=_get_storage_uri(),  # None = in-memory (für dev ohne Redis)
+    storage_options={"redis_socket_connect_timeout": 30},
+    strategy="fixed-window"  # Besser für Login-Brute-Force Schutz
+)
+
+# Rate limits for specific endpoints
+LOGIN_RATE_LIMIT = "5 per hour"
+REGISTER_RATE_LIMIT = "3 per hour"
+REFRESH_RATE_LIMIT = "10 per hour"
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
@@ -56,6 +78,7 @@ def admin_required(f):
 
 
 @auth_bp.route('/register', methods=['POST'])
+@limiter.limit(REGISTER_RATE_LIMIT)
 def register():
     """Register new user - creates inactive user and sends confirmation email.
 
@@ -179,6 +202,7 @@ def confirm_email():
 
 
 @auth_bp.route('/login', methods=['POST'])
+@limiter.limit(LOGIN_RATE_LIMIT)
 def login():
     """Login user and return JWT token"""
     data = request.get_json()
@@ -228,6 +252,7 @@ def login():
 
 
 @auth_bp.route('/refresh', methods=['POST'])
+@limiter.limit(REFRESH_RATE_LIMIT)
 def refresh():
     """Refresh access token using refresh token"""
     data = request.get_json()

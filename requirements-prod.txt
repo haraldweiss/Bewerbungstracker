@@ -2,9 +2,10 @@
 # Install with: pip install -r requirements-prod.txt
 
 # Web Framework
-Flask==2.3.3
-Flask-SQLAlchemy==3.0.5
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
 Flask-CORS==4.0.0
+Flask-Limiter==3.5.0
 
 # Configuration & Environment
 python-dotenv==1.0.0
