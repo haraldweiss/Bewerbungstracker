@@ -183,7 +183,7 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 **Was sich ändert:** Der Gateway (`ai-provider-service`) stellt seit gestern (PR [#14](https://github.com/haraldweiss/ai-provider-service/pull/14) + Phase 1.5/2, deployed auf VPS) eine Markdown-Memory-Schicht bereit. **Bewerbungstracker schreibt aktuell NICHT** dorthin — der Eintrag ist nur informativ, damit künftige Erweiterungen wissen dass das da ist.
 
 **Was Bewerbungstracker tun könnte** (wenn Bedarf entsteht):
-- `POST https://bewerbungen.wolfinisoftware.de/ai-provider/memory/events` mit `{"user_id":"<...>", "app":"bewerbungstracker", "event_type":"application_created", "payload":{"company":"...", "position":"...", "platform":"..."}}` bei jedem neu erkannten Job
+- `POST https://ai-provider-service.wolfinisoftware.de/memory/events` mit `{"user_id":"<...>", "app":"bewerbungstracker", "event_type":"application_created", "payload":{"company":"...", "position":"...", "platform":"..."}}` bei jedem neu erkannten Job
 - `POST .../memory/notes` mit freien Markdown-Notizen wenn semi-strukturiert reicht
 - `GET .../memory/search?q=<keyword>&user_id=<...>` zur FTS5-Suche über vergangene Jobs/Notizen (porter+unicode61)
 - Vault per WebDAV unter `/ai-provider/memory/dav/?user_id=<...>` direkt in Obsidian öffnen
