@@ -77,6 +77,27 @@ def test_patch_job_unavailable_only_marks_feedback(client, setup):
     assert Application.query.filter_by(user_id=user_id).count() == 0
 
 
+def test_quick_action_updates_learning_profile(client, setup):
+    from models import JobEmbedding, UserLearnProfile
+    from services.job_matching.embedder import vector_pack
+
+    user_id, m_id, user = setup
+    match = db.session.get(JobMatch, m_id)
+    db.session.add(JobEmbedding(raw_job_id=match.raw_job_id, vector=vector_pack([1.0] + [0.0] * 767)))
+    db.session.commit()
+
+    r = client.patch(
+        f'/api/jobs/matches/{m_id}',
+        json={'quick_action': 'job_unavailable'},
+        headers=auth_headers_for(user),
+    )
+
+    assert r.status_code == 200
+    profile = UserLearnProfile.query.filter_by(user_id=user_id).first()
+    assert profile is not None
+    assert profile.samples_dismissed == 1
+
+
 def test_patch_wrong_job_type_updates_user_blacklist(client, setup):
     user_id, m_id, user = setup
     headers = auth_headers_for(user)

@@ -2,6 +2,14 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-06-26 — Feedback-Learning verbessert (durch Codex)
+
+- Adaptive Job-Score-Anpassung balanciert stark ungleiche `imported`/`dismissed`-Samples, damit viele Ablehnungen gute Import-Signale nicht vollständig überrollen.
+- Wiederholte strukturierte Feedback-Gründe wirken konservativ auf spätere Scores; `wrong_seniority` senkt passende Seniority-Muster, `missing_skills` wirkt als kleine Zusatzbremse.
+- Quick-Actions und Bulk-Dismisses aktualisieren jetzt ebenfalls das `UserLearnProfile`, sofern Job-Embeddings vorhanden sind.
+- Tests stabilisiert: Source-/Cron-Tests patchen den SSRF-Guard lokal, damit `example.com`-DNS in der lokalen Umgebung nicht die eigentliche Endpoint-Logik verdeckt.
+- Verifikation: `venv/bin/pytest tests/services/test_learner.py tests/services/test_prefilter_learner.py tests/api/test_quick_actions_endpoint.py tests/api/test_jobs_user.py tests/integration/test_learning_e2e.py -v` → 70 passed; `venv/bin/pytest tests/api/test_jobs_cron.py -v` → 20 passed.
+
 ### 2026-06-26 — CV-leere-Matches Guard + Auto-Reaktivierung bei CV-Upload (durch pi/Claude Code)
 
 **Problem:** Wenn ein User noch keinen Lebenslauf (CV) hinterlegt hatte, wurden Matches trotzdem ans Bewertungs-LLM geschickt. Das Modell antwortete mit Metatext wie `"CV empty - cannot assess required skills"` in `missing_skills`, der im UI 1:1 als "⚠ Fehlt im CV:" angezeigt wurde — verwirrend und semantisch falsch. Zudem erhielten diese Matches einen Score (meist 0) und fielen damit dauerhaft aus der Bewertungs-Queue (`match_score IS NULL`-Filter), sodass sie nie neu bewertet wurden, selbst wenn der User später einen CV anlegte.
@@ -175,7 +183,7 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 **Was sich ändert:** Der Gateway (`ai-provider-service`) stellt seit gestern (PR [#14](https://github.com/haraldweiss/ai-provider-service/pull/14) + Phase 1.5/2, deployed auf VPS) eine Markdown-Memory-Schicht bereit. **Bewerbungstracker schreibt aktuell NICHT** dorthin — der Eintrag ist nur informativ, damit künftige Erweiterungen wissen dass das da ist.
 
 **Was Bewerbungstracker tun könnte** (wenn Bedarf entsteht):
-- `POST https://bewerbungen.wolfinisoftware.de/ai-provider/memory/events` mit `{"user_id":"<...>", "app":"bewerbungstracker", "event_type":"application_created", "payload":{"company":"...", "position":"...", "platform":"..."}}` bei jedem neu erkannten Job
+- `POST https://ai-provider-service.wolfinisoftware.de/memory/events` mit `{"user_id":"<...>", "app":"bewerbungstracker", "event_type":"application_created", "payload":{"company":"...", "position":"...", "platform":"..."}}` bei jedem neu erkannten Job
 - `POST .../memory/notes` mit freien Markdown-Notizen wenn semi-strukturiert reicht
 - `GET .../memory/search?q=<keyword>&user_id=<...>` zur FTS5-Suche über vergangene Jobs/Notizen (porter+unicode61)
 - Vault per WebDAV unter `/ai-provider/memory/dav/?user_id=<...>` direkt in Obsidian öffnen

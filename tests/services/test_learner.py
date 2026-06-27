@@ -108,3 +108,73 @@ def test_compute_score_adjustment_clamps_to_100():
         result = compute_score_adjustment(user, raw_job_id=1, base_score=80.0)
         assert result <= 100.0
         assert result >= 0.0
+
+
+def test_compute_score_adjustment_dismissed_imbalance_is_bounded():
+    user = MagicMock()
+    user.job_learn_enabled = True
+    user.job_learn_min_samples = 3
+    user.job_learn_weight_pct = 30
+    user.id = 'u1'
+
+    imported_vec = np.ones(768, dtype=np.float32)
+    dismissed_vec = np.ones(768, dtype=np.float32)
+    job_vec = np.ones(768, dtype=np.float32)
+
+    with patch('services.job_matching.learner._load_profile') as mock_lp, \
+         patch('services.job_matching.learner._load_embedding') as mock_le:
+        profile = MagicMock()
+        profile.samples_imported = 10
+        profile.samples_dismissed = 1000
+        profile.imported_centroid = vector_pack(imported_vec)
+        profile.dismissed_centroid = vector_pack(dismissed_vec)
+        mock_lp.return_value = profile
+        mock_le.return_value = job_vec
+
+        adjusted = compute_score_adjustment(user, raw_job_id=123, base_score=50.0)
+
+    assert adjusted > 50.0
+    assert adjusted <= 65.0
+
+
+def test_compute_score_adjustment_penalizes_repeated_wrong_seniority(app, user_factory):
+    import json
+    from database import db
+    from models import JobEmbedding, JobSource, RawJob, UserLearnProfile
+
+    user = user_factory()
+    user.job_learn_enabled = True
+    user.job_learn_min_samples = 3
+    user.job_learn_weight_pct = 30
+
+    source = JobSource(name="test", type="rss")
+    db.session.add(source)
+    db.session.flush()
+
+    raw = RawJob(
+        source_id=source.id,
+        external_id="seniority-1",
+        title="Senior Principal Enterprise Architect",
+        description="Very senior leadership role with architecture governance.",
+        url="https://example.test/job",
+        crawl_status="matched",
+    )
+    db.session.add(raw)
+    db.session.flush()
+
+    vec = [1.0] + [0.0] * 767
+    profile = UserLearnProfile(
+        user_id=user.id,
+        imported_centroid=vector_pack(vec),
+        dismissed_centroid=vector_pack(vec),
+        samples_imported=5,
+        samples_dismissed=5,
+        reason_counts=json.dumps({"wrong_seniority": 5}),
+    )
+    db.session.add(profile)
+    db.session.add(JobEmbedding(raw_job_id=raw.id, vector=vector_pack(vec)))
+    db.session.commit()
+
+    adjusted = compute_score_adjustment(user, raw_job_id=raw.id, base_score=80.0)
+
+    assert adjusted == 72.0
