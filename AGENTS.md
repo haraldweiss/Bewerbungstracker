@@ -101,6 +101,19 @@ Erlaubt ist ein Hotfix **nur** zum sofortigen Service-Retten in einem Incident �
 3. Im Handoff (§7) festhalten, falls der Repo-Teil noch offen ist.
 
 **Deploy-Disziplin:** Container immer über `setup-oracle-vm.sh` erzeugen (single source of truth für Volume-Namen/Env/Ports), nie per ad-hoc `docker run` aus dem Gedächtnis. Image immer mit `build.sh` bauen (taggt SHA + `:latest`) → Rollback via `IMAGE_TAG=<sha> setup-oracle-vm.sh rebuild`. Vor Merge müssen die CI-Gates grün sein (`.github/workflows/ci.yml`: pytest **und** Image-Build+Boot+Healthcheck — letzteres fängt die Bind-/Boot-Klasse, die Unit-Tests nicht sehen).
+
+### 3.9 ai-provider-service Token-Sync nach Rebuild (Pflicht)
+**Wenn der ai-provider-service Container neu gebaut wird, ändert sich sein `SERVICE_TOKEN` (aus SECRET_KEY generiert).** Der Bewerbungstracker liest diesen Token aus `/etc/bewerbungen/bewerbungen.env` (`AI_PROVIDER_SERVICE_TOKEN`) — das passiert NICHT automatisch.
+
+**Symptom:** `AIProviderServiceError: 401: Missing or invalid Bearer token` bei allen AI-Calls (Match-Score, Cover Letter, etc.). Die App zeigt 500 Internal Server Error statt Bewertungsergebnis.
+
+**Fix-Workflow:**
+1. Token aus ai-provider-service auslesen: `docker inspect ai-provider --format '{{range .Config.Env}}{{println .}}{{end}}' | grep SERVICE_TOKEN`
+2. Neuen Wert in `/etc/bewerbungen/bewerbungen.env` eintragen: `AI_PROVIDER_SERVICE_TOKEN=<neuer-wert>`
+3. App + Worker neu starten: `docker restart bewerbungen-app bewerbungen-worker`
+4. Test: `POST /api/jobs/matches/<id>/score` muss 200 liefern
+
+**Vorbeugung:** Nach jedem `docker build` des ai-provider-service das Token-Update in die Deploy-Checkliste aufnehmen. Das Setup-Skript (`setup-oracle-vm.sh`) müsste idealerweise den Token automatisch synchronisieren.
 ---
 
 ## 4. Verification standards
