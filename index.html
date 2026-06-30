@@ -3717,6 +3717,14 @@ const JdSourcesUI = (() => {
         slot.innerHTML = _sourceProgressHtml(sourceId);
     }
 
+    function _clearSourceProgressLater(sourceId, delayMs = 12000) {
+        if (!_sourceProgress) return;
+        window.setTimeout(() => {
+            _sourceProgress.clear(sourceId);
+            _refreshSourceProgress(sourceId);
+        }, delayMs);
+    }
+
     async function refresh() {
         const tbody = $('jdSourcesTableBody');
         if (!tbody) return;
@@ -4087,6 +4095,10 @@ const JdSourcesUI = (() => {
         if (_importRunning) {
             if (!_importQueue.includes(id)) {
                 _importQueue.push(id);
+                if (_sourceProgress) {
+                    _sourceProgress.setWaiting(id, 'import', _importQueue.indexOf(id) + 1);
+                    _refreshSourceProgress(id);
+                }
                 const btn = document.querySelector(`button[onclick="JdSourcesUI.importFromEmail(${id})"]`);
                 if (btn) {
                     btn.disabled = true;
@@ -4132,11 +4144,19 @@ const JdSourcesUI = (() => {
                 body: requestBody,
             });
             if (!enqRes || !enqRes.task_id) throw new Error('Leere oder ungültige Antwort vom Server');
+            if (_sourceProgress) {
+                _sourceProgress.start(id, 'import', enqRes.task_id);
+                _refreshSourceProgress(id);
+            }
 
             if (btn) btn.textContent = '⏳ Verarbeite…';
 
             // Ergebnis hat dieselbe Form wie früher: imported, blocked, duplicates, …
             const r = await pollTask(enqRes.task_id, task => {
+                if (_sourceProgress) {
+                    _sourceProgress.updateFromTask(id, task);
+                    _refreshSourceProgress(id);
+                }
                 // Fortschritt im Button anzeigen, falls vorhanden
                 if (btn && task.progress != null) {
                     btn.textContent = '⏳ ' + task.progress + '%…';
@@ -4148,16 +4168,25 @@ const JdSourcesUI = (() => {
             const blocked = r.blocked || [];
             const dup = r.duplicates || 0;
             const total = r.total_emails || 0;
+            if (_sourceProgress) {
+                _sourceProgress.complete(
+                    id,
+                    `Fertig: ${total} Mails geprueft, ${imported} neu${dup ? `, ${dup} Duplikate` : ''}`
+                );
+                _refreshSourceProgress(id);
+            }
 
             // Kein Approval nötig → einfache Erfolgsmeldung
             if (blocked.length === 0) {
                 alert(`✅ Import abgeschlossen.\n\n${total} Email(s) geprüft\n${imported} neue(r) Job-Vorschlag(e) importiert${dup ? `\n${dup} Duplikat(e) übersprungen` : ''}.`);
                 refresh();
+                _clearSourceProgressLater(id);
                 return;
             }
 
             // Blocked Jobs → Approval-Dialog
             openImportApprovalDialog(id, r);
+            _clearSourceProgressLater(id, 20000);
         } catch (e) {
             let msg = (e && e.message) ? e.message : String(e);
             // Browser-JSON.parse-Fehler von HTML-Response (Server-Crash, Apache 5xx) abfangen.
@@ -4167,6 +4196,10 @@ const JdSourcesUI = (() => {
             if (isBrowserJsonParseError) {
                 msg = 'Server-Timeout oder -Crash (HTML-Antwort). '
                     + 'Bitte später nochmal versuchen.';
+            }
+            if (_sourceProgress) {
+                _sourceProgress.fail(id, msg);
+                _refreshSourceProgress(id);
             }
             alert(`❌ Import fehlgeschlagen: ${msg}`);
         } finally {
@@ -4187,6 +4220,12 @@ const JdSourcesUI = (() => {
         if (!confirm(emailSources.length + ' Email-Quellen nacheinander importieren?\n\n(sequenziell, kann mehrere Minuten dauern)')) {
             return;
         }
+        emailSources.forEach((source, index) => {
+            if (_sourceProgress) {
+                _sourceProgress.setWaiting(source.id, 'import', index + 1);
+                _refreshSourceProgress(source.id);
+            }
+        });
         // forEach reicht — importFromEmail enqueued bei laufendem Import,
         // erster Call startet, alle weiteren landen in der Queue.
         emailSources.forEach(s => importFromEmail(s.id));
@@ -4215,24 +4254,43 @@ const JdSourcesUI = (() => {
                 method: 'POST', body: JSON.stringify({}),
             });
             if (!enqRes || !enqRes.task_id) throw new Error('Leere oder ungültige Antwort vom Server');
+            if (_sourceProgress) {
+                _sourceProgress.start(sourceId, 'learn', enqRes.task_id);
+                _refreshSourceProgress(sourceId);
+            }
 
             // Ergebnis hat dieselbe Form wie früher: ok, hit_rate, sample_count, …
             const r = await pollTask(enqRes.task_id, task => {
-                if (task.progress != null) {
-                    showToast('🧠 ' + platform.toUpperCase() + ': ' + task.progress + '%…', 'info');
+                if (_sourceProgress) {
+                    _sourceProgress.updateFromTask(sourceId, task);
+                    _refreshSourceProgress(sourceId);
                 }
             });
             if (r && r.ok) {
                 const pct = Math.round((r.hit_rate || 0) * 100);
+                if (_sourceProgress) {
+                    _sourceProgress.complete(sourceId, 'Fertig: ' + pct + '% Hit-Rate');
+                    _refreshSourceProgress(sourceId);
+                    _clearSourceProgressLater(sourceId);
+                }
                 showToast('✅ ' + platform.toUpperCase() + ' Pattern gelernt: ' + pct + '% Hit-Rate auf ' + r.sample_count + ' Test-Mails', 'success');
                 refresh();
                 if (typeof loadLearnedPatterns === 'function') loadLearnedPatterns();
             } else if (r && r.error) {
                 const pct = r.hit_rate != null ? ' (' + Math.round(r.hit_rate*100) + '%)' : '';
+                if (_sourceProgress) {
+                    _sourceProgress.fail(sourceId, r.error);
+                    _refreshSourceProgress(sourceId);
+                }
                 alert('❌ Pattern-Train fehlgeschlagen' + pct + ':\n\n' + r.error);
             }
         } catch (e) {
-            alert('❌ ' + (e && e.message ? e.message : 'Fehler beim Pattern-Train'));
+            const msg = e && e.message ? e.message : 'Fehler beim Pattern-Train';
+            if (_sourceProgress) {
+                _sourceProgress.fail(sourceId, msg);
+                _refreshSourceProgress(sourceId);
+            }
+            alert('❌ ' + msg);
         }
     }
 
