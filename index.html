@@ -13,8 +13,8 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%234CAF50' width='180' height='180' rx='40'/><text x='90' y='90' font-size='100' fill='white' text-anchor='middle' dominant-baseline='middle'>📋</text></svg>">
     <link rel="stylesheet" href="/components/components.css">
     <title>📋 Bewerbungs-Tracker v4</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="/components/vendor/jspdf.umd.min.js"></script>
+    <script src="/components/vendor/jspdf.plugin.autotable.min.js"></script>
     <!-- PDF & DOCX Parsing Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -8547,9 +8547,9 @@ function exportPDF() {
             if (data.column.index === 0 && data.section === 'body') {
                 const item = sortedB[data.row.index];
                 if (item && item.link) {
-                    // Draw link text in blue and underlined
+                    // Draw link text in blue; textWithLink keeps the URL clickable.
                     doc.setTextColor(0, 0, 255);
-                    doc.setFont(undefined, 'underline');
+                    doc.setFont(undefined, 'normal');
                     doc.textWithLink(item.firma, data.cell.x + 2, data.cell.y + data.cell.height/2 + 1, { pageNumber: undefined, url: item.link });
                     doc.setTextColor(30,30,50);
                     doc.setFont(undefined, 'normal');
