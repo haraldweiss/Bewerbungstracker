@@ -25,7 +25,7 @@
     <script src="/frontend/auth.js"></script>
     <!-- Task polling helper (must load before JdSourcesUI inline script) -->
     <script src="/frontend/js/task-poller.js"></script>
-    <script src="/frontend/js/source-progress.js"></script>
+    <script src="/frontend/js/source-progress.js?v=20260630b"></script>
     <style>
         :root {
             --primary: #4F46E5; --primary-light: #818CF8; --primary-dark: #3730A3;
@@ -96,6 +96,26 @@
         .jd-source-progress-detail {
             color: var(--text-muted);
             overflow-wrap: anywhere;
+        }
+        .jd-source-operation-notice {
+            margin: 0.75rem 0;
+            padding: 0.65rem 0.75rem;
+            border: 1px solid rgba(59, 130, 246, 0.35);
+            border-radius: 6px;
+            background: rgba(59, 130, 246, 0.10);
+            color: var(--text);
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+        .jd-source-operation-notice strong {
+            color: var(--primary-light);
+        }
+        .jd-source-operation-notice-error {
+            border-color: rgba(239, 68, 68, 0.45);
+            background: rgba(239, 68, 68, 0.10);
+        }
+        .jd-source-operation-notice-error strong {
+            color: var(--danger);
         }
 
         /* RESPONSIVE TYPOGRAPHY */
@@ -1330,6 +1350,9 @@
             <button class="btn btn-success btn-sm" onclick="JdSourcesUI.openCreate()">+ Eigene Quelle</button>
             <button class="btn btn-primary btn-sm" onclick="JdSourcesUI.importAll()" title="Alle aktiven Email-Quellen sequenziell importieren">📧 Alle importieren</button>
             <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.refresh()">🔄</button>
+        </div>
+        <div id="jdSourceOperationNotice" class="jd-source-operation-notice">
+            Bereit. Beim Import oder Lernen siehst du hier die aktuell verarbeitete Quelle; pro Quelle erscheint zusätzlich eine Progressbar in der Zeile.
         </div>
         <table id="jdSourcesTable" style="width:100%;font-size:0.88rem;border-collapse:collapse">
             <thead>
@@ -3715,6 +3738,7 @@ const JdSourcesUI = (() => {
             return;
         }
         slot.innerHTML = _sourceProgressHtml(sourceId);
+        _refreshSourceOperationNotice();
     }
 
     function _clearSourceProgressLater(sourceId, delayMs = 12000) {
@@ -3725,6 +3749,39 @@ const JdSourcesUI = (() => {
         }, delayMs);
     }
 
+    function _sourceName(sourceId) {
+        const src = (_sourcesCache || []).find(s => Number(s.id) === Number(sourceId));
+        return src ? (src.name || `Quelle #${sourceId}`) : `Quelle #${sourceId}`;
+    }
+
+    function _refreshSourceOperationNotice() {
+        const notice = $('jdSourceOperationNotice');
+        if (!notice) return;
+        if (!_sourceProgress || !window.SourceProgress) {
+            notice.classList.remove('jd-source-operation-notice-error');
+            notice.innerHTML = 'Bereit. Beim Import oder Lernen siehst du hier die aktuell verarbeitete Quelle; pro Quelle erscheint zusätzlich eine Progressbar in der Zeile.';
+            return;
+        }
+        const entries = Object.values(_sourceProgress.snapshot());
+        const active = entries
+            .map(entry => window.SourceProgress.buildSourceProgressView(entry, Date.now()))
+            .filter(Boolean)
+            .sort((a, b) => {
+                const rank = { active: 0, pending: 1, error: 2, success: 3 };
+                return (rank[a.tone] ?? 9) - (rank[b.tone] ?? 9);
+            });
+        if (active.length === 0) {
+            notice.classList.remove('jd-source-operation-notice-error');
+            notice.innerHTML = 'Bereit. Beim Import oder Lernen siehst du hier die aktuell verarbeitete Quelle; pro Quelle erscheint zusätzlich eine Progressbar in der Zeile.';
+            return;
+        }
+        const view = active[0];
+        const source = view.sourceLabel ? `${escapeHtml(view.sourceLabel)} · ` : '';
+        const suffix = active.length > 1 ? ` · ${active.length - 1} weitere Quelle(n) warten/laufen` : '';
+        notice.classList.toggle('jd-source-operation-notice-error', view.tone === 'error');
+        notice.innerHTML = `<strong>${escapeHtml(view.operationLabel)} · ${escapeHtml(view.stateLabel)}</strong>: ${source}${view.progress}%${view.detail ? ` · ${escapeHtml(view.detail)}` : ''}${suffix}`;
+    }
+
     async function refresh() {
         const tbody = $('jdSourcesTableBody');
         if (!tbody) return;
@@ -3733,6 +3790,7 @@ const JdSourcesUI = (() => {
             const list = (r && r.sources) || [];
             _sourcesCache = list;
             await _loadDynamicPlatforms();
+            _refreshSourceOperationNotice();
             tbody.innerHTML = list.length === 0
                 ? `<tr><td colspan="4" style="padding:0.6rem;color:var(--text-muted)">Keine Quellen.</td></tr>`
                 : list.map(s => {
@@ -3868,7 +3926,7 @@ const JdSourcesUI = (() => {
             const bulkFolderDefault = isGmail ? '[Google Mail]/Alle Nachrichten' : 'INBOX';
             const imapBannerHtml = imapHost
                 ? `<div style="padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.75rem;font-size:0.82rem;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);">✅ IMAP: <strong>${escapeHtml(imapUser)}</strong>&nbsp;@&nbsp;${escapeHtml(imapHost)}</div>`
-                : `<div style="padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.75rem;font-size:0.82rem;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);">⚠️ Kein IMAP-Konto konfiguriert. <a href="#" onclick="JdSourcesUI.closeCreate();showView('einstellungen');return false;" style="color:var(--warning,#F59E0B)">→ Einstellungen öffnen</a></div>`;
+                : `<div style="padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.75rem;font-size:0.82rem;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);">⚠️ Kein IMAP-Konto konfiguriert. <a href="#" onclick="JdSourcesUI.closeCreate();showView('settings');return false;" style="color:var(--warning,#F59E0B)">→ Einstellungen öffnen</a></div>`;
             c.innerHTML = `
                 ${imapBannerHtml}
                 <div style="background:var(--bg-card2);padding:0.75rem;border-radius:6px;margin-bottom:0.75rem">
@@ -3904,7 +3962,7 @@ const JdSourcesUI = (() => {
                     : 'background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);');
             banner.innerHTML = imapHost
                 ? `✅ IMAP: <strong>${escapeHtml(imapUser)}</strong>&nbsp;@&nbsp;${escapeHtml(imapHost)}`
-                : `⚠️ Kein IMAP-Konto konfiguriert. <a href="#" onclick="JdSourcesUI.closeCreate();showView('einstellungen');return false;" style="color:var(--warning,#F59E0B)">→ Einstellungen öffnen</a>`;
+                : `⚠️ Kein IMAP-Konto konfiguriert. <a href="#" onclick="JdSourcesUI.closeCreate();showView('settings');return false;" style="color:var(--warning,#F59E0B)">→ Einstellungen öffnen</a>`;
             c.appendChild(banner);
 
             const grp1 = document.createElement('div');
@@ -4096,7 +4154,7 @@ const JdSourcesUI = (() => {
             if (!_importQueue.includes(id)) {
                 _importQueue.push(id);
                 if (_sourceProgress) {
-                    _sourceProgress.setWaiting(id, 'import', _importQueue.indexOf(id) + 1);
+                    _sourceProgress.setWaiting(id, 'import', _importQueue.indexOf(id) + 1, _sourceName(id));
                     _refreshSourceProgress(id);
                 }
                 const btn = document.querySelector(`button[onclick="JdSourcesUI.importFromEmail(${id})"]`);
@@ -4145,7 +4203,7 @@ const JdSourcesUI = (() => {
             });
             if (!enqRes || !enqRes.task_id) throw new Error('Leere oder ungültige Antwort vom Server');
             if (_sourceProgress) {
-                _sourceProgress.start(id, 'import', enqRes.task_id);
+                _sourceProgress.start(id, 'import', enqRes.task_id, _sourceName(id));
                 _refreshSourceProgress(id);
             }
 
@@ -4222,7 +4280,7 @@ const JdSourcesUI = (() => {
         }
         emailSources.forEach((source, index) => {
             if (_sourceProgress) {
-                _sourceProgress.setWaiting(source.id, 'import', index + 1);
+                _sourceProgress.setWaiting(source.id, 'import', index + 1, source.name || `Quelle #${source.id}`);
                 _refreshSourceProgress(source.id);
             }
         });
@@ -4255,7 +4313,7 @@ const JdSourcesUI = (() => {
             });
             if (!enqRes || !enqRes.task_id) throw new Error('Leere oder ungültige Antwort vom Server');
             if (_sourceProgress) {
-                _sourceProgress.start(sourceId, 'learn', enqRes.task_id);
+                _sourceProgress.start(sourceId, 'learn', enqRes.task_id, _sourceName(sourceId));
                 _refreshSourceProgress(sourceId);
             }
 

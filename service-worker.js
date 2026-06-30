@@ -12,7 +12,7 @@
 
 // Kein manueller Bump mehr nötig — index.html wird network-first geladen.
 // Andere Static Assets (Bilder, Fonts) nutzen weiterhin cache-first.
-const CACHE_NAME = 'bewerbungs-tracker-v64';
+const CACHE_NAME = 'bewerbungs-tracker-v65';
 const OFFLINE_URL = '/';
 
 // Static assets to pre-cache on install. Explicitly excludes service-worker.js

@@ -18,6 +18,7 @@ describe('source progress helper', () => {
         expect(buildSourceProgressView(state.get(12), 4_000)).toEqual({
             visible: true,
             operationLabel: 'Import',
+            sourceLabel: '',
             stateLabel: 'Wartet',
             progress: 0,
             tone: 'pending',
@@ -27,12 +28,13 @@ describe('source progress helper', () => {
 
     test('running entries calculate elapsed and eta from progress', () => {
         const state = createSourceOperationState(() => 10_000);
-        state.start(12, 'import', 'task-1');
+        state.start(12, 'import', 'task-1', 'Indeed');
         state.updateFromTask(12, { status: 'running', progress: 25 });
 
         expect(buildSourceProgressView(state.get(12), 40_000)).toEqual({
             visible: true,
             operationLabel: 'Import',
+            sourceLabel: 'Indeed',
             stateLabel: 'Laeuft',
             progress: 25,
             tone: 'active',
@@ -48,6 +50,7 @@ describe('source progress helper', () => {
         expect(buildSourceProgressView(state.get(12), 12_000)).toEqual({
             visible: true,
             operationLabel: 'Lernen',
+            sourceLabel: '',
             stateLabel: 'Fertig',
             progress: 100,
             tone: 'success',
@@ -63,6 +66,7 @@ describe('source progress helper', () => {
         expect(buildSourceProgressView(state.get(12), 12_000)).toEqual({
             visible: true,
             operationLabel: 'Import',
+            sourceLabel: '',
             stateLabel: 'Fehler',
             progress: 100,
             tone: 'error',
