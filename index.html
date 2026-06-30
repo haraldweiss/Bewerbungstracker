@@ -25,6 +25,7 @@
     <script src="/frontend/auth.js"></script>
     <!-- Task polling helper (must load before JdSourcesUI inline script) -->
     <script src="/frontend/js/task-poller.js"></script>
+    <script src="/frontend/js/source-progress.js"></script>
     <style>
         :root {
             --primary: #4F46E5; --primary-light: #818CF8; --primary-dark: #3730A3;
@@ -63,6 +64,39 @@
         }
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+        .jd-source-progress {
+            margin-top: 0.45rem;
+            max-width: 24rem;
+            font-size: 0.78rem;
+        }
+        .jd-source-progress-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.75rem;
+            color: var(--text-muted);
+        }
+        .jd-source-progress-track {
+            height: 0.45rem;
+            margin: 0.2rem 0;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.22);
+        }
+        .jd-source-progress-fill {
+            height: 100%;
+            border-radius: inherit;
+            background: var(--primary);
+            transition: width 180ms ease;
+        }
+        .jd-source-progress-pending .jd-source-progress-fill { background: var(--warning, #f59e0b); }
+        .jd-source-progress-success .jd-source-progress-fill { background: var(--secondary, #10b981); }
+        .jd-source-progress-error .jd-source-progress-fill { background: var(--danger, #ef4444); }
+        .jd-source-progress-error .jd-source-progress-detail { color: var(--danger, #ef4444); }
+        .jd-source-progress-detail {
+            color: var(--text-muted);
+            overflow-wrap: anywhere;
+        }
 
         /* RESPONSIVE TYPOGRAPHY */
         h1 { font-size: 1.5rem; font-weight: 700; }
@@ -3652,6 +3686,36 @@ const JdSourcesUI = (() => {
     const _importQueue = [];
     let _importRunning = false;
     let _currentImportId = null;
+    const _sourceProgress = window.SourceProgress
+        ? window.SourceProgress.createSourceOperationState()
+        : null;
+
+    function _sourceProgressHtml(sourceId) {
+        if (!_sourceProgress || !window.SourceProgress) return '';
+        const view = window.SourceProgress.buildSourceProgressView(
+            _sourceProgress.get(sourceId),
+            Date.now()
+        );
+        if (!view || !view.visible) return '';
+        const tone = view.tone || 'active';
+        return `<div class="jd-source-progress jd-source-progress-${tone}" data-source-progress="${sourceId}">
+            <div class="jd-source-progress-head">
+                <span>${escapeHtml(view.operationLabel)} · ${escapeHtml(view.stateLabel)}</span>
+                <span>${view.progress}%</span>
+            </div>
+            <div class="jd-source-progress-track"><div class="jd-source-progress-fill" style="width:${view.progress}%"></div></div>
+            <div class="jd-source-progress-detail">${escapeHtml(view.detail || '')}</div>
+        </div>`;
+    }
+
+    function _refreshSourceProgress(sourceId) {
+        const slot = document.querySelector(`[data-source-progress-slot="${sourceId}"]`);
+        if (!slot) {
+            refresh();
+            return;
+        }
+        slot.innerHTML = _sourceProgressHtml(sourceId);
+    }
 
     async function refresh() {
         const tbody = $('jdSourcesTableBody');
@@ -3679,6 +3743,7 @@ const JdSourcesUI = (() => {
                         <td style="padding:0.4rem">
                             ${escapeHtml(s.name)}<br>
                             <small style="color:var(--text-muted)">${ownership} · letzter Crawl: ${last}</small>
+                            <div data-source-progress-slot="${s.id}">${_sourceProgressHtml(s.id)}</div>
                         </td>
                         <td style="padding:0.4rem">${TYPE_LABELS[s.type] || s.type}</td>
                         <td style="padding:0.4rem">${status}</td>
