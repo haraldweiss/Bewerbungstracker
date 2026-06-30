@@ -460,3 +460,12 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 - **Kritisch:** File-Ownership `root:root` → `apache:apache` + `FS_METHOD=direct` → Auto-Updates repariert
 - **Empfohlen:** System-Cron eingerichtet (`*/15 * * * * curl -s https://wolfinisoftware.de/wp-cron.php`) → verspätete Cron-Events behoben
 - **Empfohlen:** Stale WP-Super-Cache-Config aus `wp-config.php` entfernt (Plugin nicht mehr installiert, Redis-Cache läuft als Object Cache)
+
+### 2026-06-30 — PDF-Export Assets Fix deployed
+
+- **Problem:** Application-Overview PDF-Export funktionierte nicht — `window.jspdf is undefined` weil die CDN-Links zu cdnjs-hosted jsPDF/AutoTable nicht luden.
+- **Fix:** jsPDF 2.5.1 + AutoTable 3.5.31 lokal in `components/vendor/` vorgebundelt, `index.html` auf lokale Assets umgestellt, nicht unterstützten `underline`-Style entfernt der Runtime-Warnings beim Zeichnen von Firmennamen erzeugte.
+- **Neue Dateien:** `components/vendor/jspdf.umd.min.js` (364KB), `components/vendor/jspdf.plugin.autotable.min.js` (37KB), `frontend/js/application-pdf-assets.test.js`.
+- **Verifikation lokal:** Browser-Repro bestätigte den `window.jspdf`-Crash vor dem Fix; `npm test -- frontend/js/application-pdf-assets.test.js --runInBand` → passed; Flask test_client → 200 für Vendor-Assets.
+- **Commits:** `32516bd` auf `codex/source-import-progressbars`, gepusht.
+- **Deployed:** Image `localhost/bewerbungen:32516bd` auf Oracle VM gebaut, Container via `setup-oracle-vm.sh rebuild` neu erstellt. Alle 5 Container laufen auf neuem Image (SHA `32516bd`). Vendor-Assets im Container verifiziert (`components/vendor/jspdf.umd.min.js`, `jspdf.plugin.autotable.min.js`).
