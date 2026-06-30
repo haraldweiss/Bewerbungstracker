@@ -24,19 +24,21 @@ function createSourceOperationState(nowMs) {
     const entries = new Map();
 
     return {
-        setWaiting(sourceId, operation, queuePosition) {
+        setWaiting(sourceId, operation, queuePosition, sourceLabel) {
             entries.set(Number(sourceId), {
                 operation,
+                sourceLabel: sourceLabel || '',
                 status: 'waiting',
                 progress: 0,
                 queuePosition: Number(queuePosition) || 1,
                 startedAtMs: now(),
             });
         },
-        start(sourceId, operation, taskId) {
+        start(sourceId, operation, taskId, sourceLabel) {
             entries.set(Number(sourceId), {
                 operation,
                 taskId,
+                sourceLabel: sourceLabel || '',
                 status: 'running',
                 progress: 0,
                 startedAtMs: now(),
@@ -94,6 +96,7 @@ function buildSourceProgressView(entry, nowMs) {
     const base = {
         visible: true,
         operationLabel: operationLabel(entry.operation),
+        sourceLabel: entry.sourceLabel || '',
         stateLabel: 'Laeuft',
         progress,
         tone: 'active',
