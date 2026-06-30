@@ -2,6 +2,16 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-06-30 — Quellenimport-Progressbars deployed (durch Codex)
+
+- Quellen-Tabelle zeigt jetzt pro Quelle eine kompakte Progressbar für manuellen Email-Import, „Alle importieren" und Pattern-Lernen.
+- Anzeige umfasst Aktion, Status, Prozent, Laufzeit und eine grobe ETA; wartende Quellen zeigen ihre Queue-Position.
+- Neuer Frontend-Helper `frontend/js/source-progress.js` kapselt Progress-State, Laufzeit-/ETA-Formatierung und Fehler-/Erfolgssummaries; Jest-Abdeckung in `frontend/js/source-progress.test.js`.
+- **Deployed:** Image `localhost/bewerbungen:856d795` auf `oracle-vm`, alle 5 Container über `deploy/container/setup-oracle-vm.sh rebuild` neu erstellt.
+- **Verifikation lokal:** `npm test -- frontend/js/source-progress.test.js --runInBand` → 5 passed; `npm test -- frontend --runInBand` → 7 suites / 143 tests passed; `venv/bin/pytest tests/api/test_tasks_api.py tests/api/test_indeed_email_import.py tests/api/test_pattern_learner_api.py -q` → 58 passed.
+- **Verifikation Prod:** alle 5 Container laufen auf `localhost/bewerbungen:856d795`; App lokal `http://127.0.0.1:5000/` → 200; public `https://bewerbungen.wolfinisoftware.de/` → 200; `/frontend/js/source-progress.js` → 200; Worker-DB-URI `sqlite:////app/data/bewerbungstracker.db`.
+- **Bekannte Testlage:** voller `venv/bin/pytest tests/ -q` bleibt mit 14 bestehenden Failures in unberührten Bereichen (`ai_provider_client`, SSRF/RSS/url_health_check) rot; kein echter IMAP-Import in Produktion ausgelöst.
+
 ### 2026-06-26 — Feedback-Learning verbessert (durch Codex)
 
 - Adaptive Job-Score-Anpassung balanciert stark ungleiche `imported`/`dismissed`-Samples, damit viele Ablehnungen gute Import-Signale nicht vollständig überrollen.
