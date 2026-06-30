@@ -15,7 +15,7 @@
     <title>📋 Bewerbungs-Tracker v4</title>
     <script src="/components/vendor/jspdf.umd.min.js"></script>
     <script src="/components/vendor/jspdf.plugin.autotable.min.js"></script>
-    <!-- PDF & DOCX Parsing Libraries (vendored — no CDN) -->
+<!-- PDF & DOCX Parsing Libraries (vendored — no CDN) -->
     <script src="/components/vendor/pdf.min.js"></script>
     <script src="/components/vendor/mammoth.browser.min.js"></script>
     <!-- Encryption: TweetNaCl.js for secure password encryption -->
@@ -8547,9 +8547,9 @@ function exportPDF() {
             if (data.column.index === 0 && data.section === 'body') {
                 const item = sortedB[data.row.index];
                 if (item && item.link) {
-                    // Draw link text in blue and underlined
+                    // Draw link text in blue; textWithLink keeps the URL clickable.
                     doc.setTextColor(0, 0, 255);
-                    doc.setFont(undefined, 'underline');
+                    doc.setFont(undefined, 'normal');
                     doc.textWithLink(item.firma, data.cell.x + 2, data.cell.y + data.cell.height/2 + 1, { pageNumber: undefined, url: item.link });
                     doc.setTextColor(30,30,50);
                     doc.setFont(undefined, 'normal');
