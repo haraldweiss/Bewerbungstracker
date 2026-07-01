@@ -6849,6 +6849,22 @@ async function deleteBewerbung(id) {
 ═══════════════════════════════════════════════════════ */
 async function loadDeletedEntries() {
     try {
+        const response = await fetchAPI('/api/applications/deleted');
+        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+
+        const data = await response.json();
+        const deleted = data.applications || [];
+
+        renderDeletedEntries(deleted);
+    } catch (error) {
+        console.error('Error loading deleted entries:', error);
+        document.getElementById('deletedList').innerHTML = `
+            <div class="card" style="border-left:4px solid #ff6b6b;">
+                <p style="color:var(--text-muted);">❌ Fehler beim Laden gelöschter Einträge</p>
+            </div>
+        `;
+    }
+}
 
 /**
  * Load upcoming interview/calendar events
@@ -6941,22 +6957,6 @@ async function loadCalendarEvents() {
         container.innerHTML = `
             <div class="card" style="border-left:4px solid var(--danger);padding:1rem;">
                 <p style="color:var(--danger);">❌ Fehler beim Laden der Termine: ${escapeHtml(error.message)}</p>
-            </div>
-        `;
-    }
-}
-        const response = await fetchAPI('/api/applications/deleted');
-        if (!response.ok) throw new Error(`API error: ${response.statusText}`);
-
-        const data = await response.json();
-        const deleted = data.applications || [];
-
-        renderDeletedEntries(deleted);
-    } catch (error) {
-        console.error('Error loading deleted entries:', error);
-        document.getElementById('deletedList').innerHTML = `
-            <div class="card" style="border-left:4px solid #ff6b6b;">
-                <p style="color:var(--text-muted);">❌ Fehler beim Laden gelöschter Einträge</p>
             </div>
         `;
     }
