@@ -42,6 +42,11 @@ If `user.email` is unset, empty, or fake — **stop, fix it, then proceed**. Pas
 - DB schema migrations
 - CV file upload paths (security-sensitive)
 
+### Routing fallback when Care is unavailable
+- Routing is a risk signal, not an absolute refusal rule. If Claude Code/Care is unavailable and the user explicitly asks to continue, opencode (or another throughput agent) may handle a Care-routed task **only with narrow scope and extra discipline**.
+- Required fallback discipline: state that the task is normally Care-routed, keep changes minimal, follow the documented runbook/script exactly, avoid ad-hoc production edits, commit before deploy, deploy via `deploy/container/build.sh` + `deploy/container/setup-oracle-vm.sh`, verify with concrete commands, and document the outcome in `CHANGELOG.md`.
+- If the task touches secrets, raw email/CV contents, DB migrations, or irreversible production data changes and the safe path is unclear, stop and ask for explicit user confirmation before proceeding.
+
 ---
 
 ## 3. Hard rules
