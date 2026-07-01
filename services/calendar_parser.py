@@ -11,6 +11,12 @@ from zoneinfo import ZoneInfo
 
 BERLIN = ZoneInfo("Europe/Berlin")
 
+# German month names for parsing dates like "3. Juli 2026"
+_GERMAN_MONTHS = {
+    'januar': 1, 'februar': 2, 'märz': 3, 'maerz': 3, 'april': 4, 'mai': 5, 'juni': 6,
+    'juli': 7, 'august': 8, 'september': 9, 'oktober': 10, 'november': 11, 'dezember': 12
+}
+
 _RE_DATE_NUM = re.compile(
     r"(\d{1,2})\.(\d{1,2})\.(\d{4})[,\s]+(?:um\s+)?(\d{1,2}):(\d{2})",
     re.IGNORECASE,
@@ -19,6 +25,16 @@ _RE_DATE_NUM = re.compile(
 # Negativer Lookahead (?!\d) verhindert Match auf "26.5.2026".
 _RE_DATE_NUM_NOYEAR = re.compile(
     r"(\d{1,2})\.(\d{1,2})\.(?!\d)\s*(?:um\s+)?(\d{1,2}):(\d{2})",
+    re.IGNORECASE,
+)
+# Deutsche Monatsnamen: "3. Juli 2026 um 13:00 Uhr"
+_RE_DATE_GERMAN_MONTH = re.compile(
+    r"(\d{1,2})\.?\s+([a-zA-ZäöüÄÖÜ]+)\s+(\d{4})\s+um\s+(\d{1,2}):(\d{2})\s*Uhr?",
+    re.IGNORECASE,
+)
+# Flexible Zeit: "2.6.2026 um 11 Uhr" (ohne Minuten)
+_RE_DATE_FLEX_TIME = re.compile(
+    r"(\d{1,2})\.(\d{1,2})\.(\d{4})[,\s]+(?:um\s+)?(\d{1,2})(?::(\d{2}))?\s*Uhr?",
     re.IGNORECASE,
 )
 _RE_DATE_ISO = re.compile(
@@ -99,6 +115,18 @@ def parse_interview_event(text: str, now: Optional[datetime] = None) -> ParsedIn
 
 
 def _extract_datetime(text: str, now: Optional[datetime] = None) -> Optional[datetime]:
+    m = _RE_DATE_GERMAN_MONTH.search(text)
+    if m:
+        day, month_name, year, hour, minute = (int(m.group(1)), m.group(2).lower(), int(m.group(3)), int(m.group(4)), int(m.group(5)))
+        month = _GERMAN_MONTHS.get(month_name)
+        if month:
+            return _safe_dt(year, month, day, hour, minute)
+
+    m = _RE_DATE_FLEX_TIME.search(text)
+    if m:
+        day, month, year, hour, minute = (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4)), int(m.group(5) or 0))
+        return _safe_dt(year, month, day, hour, minute)
+
     m = _RE_DATE_ISO.search(text)
     if m:
         y, mo, d, h, mi = (int(x) for x in m.groups())
