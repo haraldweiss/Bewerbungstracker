@@ -2,6 +2,25 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-01 — Kalenderansicht stabilisiert + Oracle-VM-Deploy (durch Codex)
+
+**Ausgangslage:** Die Kalenderansicht zeigte nur "Lade Termine …" bzw. einzelne Termine mit falschem Jahr. Der erste Parser-Fix war zwar als Live-Hotfix in App/Worker sichtbar, aber noch nicht als Image dauerhaft deployed.
+
+**Fixes + Commits:**
+- `cbc15b8` — `services/calendar_parser.py`: deutsche Monatsnamen (`3. Juli 2026`) und flexible Uhrzeiten ohne Minuten (`11 Uhr`) werden erkannt. Danach Image `localhost/bewerbungen:cbc15b8` gebaut und alle 5 Container via `deploy/container/setup-oracle-vm.sh rebuild` neu erstellt, damit der Live-Hotfix nicht beim nächsten Recreate verschwindet.
+- `1953a5c` — `/api/applications/upcoming`: falsches Feld `parsed.meeting_passcode` → `parsed.passcode`. Vorher warf jeder erkannte Termin mit Passcode einen 500er, wodurch die Kalenderliste hängen blieb. Regressionstest in `tests/test_calendar_endpoint.py`.
+- `0f4d0d5` — `index.html`: `loadCalendarEvents()` war versehentlich innerhalb des offenen `loadDeletedEntries()`-Blocks gelandet. Dadurch wurde im Browser kein `/api/applications/upcoming`-Request ausgelöst und die UI blieb bei "Lade Termine …". Neuer Jest-Strukturtest `frontend/js/calendar-view-structure.test.js`.
+- `83a3d11` — jahreslose Termine wie `10.6. um 09:30` werden in Kalender/ICS nicht mehr gegen das aktuelle Datum aufgelöst, sondern gegen den Kontext der Quelle: Email-Timestamp oder `Application.applied_date`/`created_at`. Der BOCHUM-Eintrag `41dc1f5a-5643-46dd-b7a8-03eb1988c792` wurde dadurch von `2027-06-10` auf `2026-06-10` korrigiert.
+
+**Deploy-Status:** Erledigt. Produktion läuft auf Oracle VM mit allen 5 Bewerbungstracker-Containern auf `localhost/bewerbungen:83a3d11` (`app`, `worker`, `cron`, `email-service`, `imap-proxy`). `origin/master` ist auf `83a3d11` gepusht.
+
+**Verifikation:**
+- `venv/bin/pytest tests/test_calendar_parser.py tests/test_calendar_endpoint.py tests/test_calendar_ics.py -q` → 19 passed.
+- `npm test -- frontend/js/calendar-view-structure.test.js --runInBand` → 1 passed.
+- Prod-Smoke: `/api/applications/upcoming` → 200, 5 Termine.
+- Prod-Smoke BOCHUM: Kalenderliste und ICS liefern beide `2026-06-10T09:30:00+02:00`.
+- Public Health: `https://bewerbungen.wolfinisoftware.de/` → 200.
+
 ### 2026-06-26 — Feedback-Learning verbessert (durch Codex)
 
 - Adaptive Job-Score-Anpassung balanciert stark ungleiche `imported`/`dismissed`-Samples, damit viele Ablehnungen gute Import-Signale nicht vollständig überrollen.
