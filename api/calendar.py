@@ -103,7 +103,7 @@ def upcoming_events(user):
                 'start': parsed.start.isoformat() if parsed.start else None,
                 'end': parsed.end.isoformat() if parsed.end else None,
                 'meeting_url': parsed.meeting_url or None,
-                'meeting_passcode': parsed.meeting_passcode or None,
+                'meeting_passcode': parsed.passcode or None,
                 'has_ics': True,
             })
 

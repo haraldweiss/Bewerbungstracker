@@ -7,10 +7,13 @@ from database import db
 from models import Email
 
 
-def _create_app(client, auth_token, notes=None):
+def _create_app(client, auth_token, notes=None, status=None):
+    payload = {"company": "TKMS", "position": "System Security Engineer", "notes": notes or ""}
+    if status:
+        payload["status"] = status
     resp = client.post(
         "/api/applications",
-        json={"company": "TKMS", "position": "System Security Engineer", "notes": notes or ""},
+        json=payload,
         headers={"Authorization": f"Bearer {auth_token}"},
     )
     assert resp.status_code == 201
@@ -97,3 +100,26 @@ def test_calendar_export_prefers_email_body_over_notes(app, client, auth_headers
     assert dtstart.day == 27
     assert dtstart.hour == 13
     assert dtstart.minute == 0
+
+
+def test_calendar_upcoming_includes_passcode_without_500(client, auth_token):
+    app_id = _create_app(
+        client,
+        auth_token,
+        notes=(
+            "Einladung zum Vorstellungsgespraech am 03.07.2026 um 13:00 Uhr. "
+            "Teams: https://teams.microsoft.com/meet/123?p=abc "
+            "Passcode: KJ9wu6HU"
+        ),
+        status="interview",
+    )
+
+    resp = client.get(
+        "/api/applications/upcoming",
+        headers={"Authorization": f"Bearer {auth_token}"},
+    )
+
+    assert resp.status_code == 200
+    events = resp.get_json()
+    event = next(e for e in events if e["application_id"] == app_id)
+    assert event["meeting_passcode"] == "KJ9wu6HU"
