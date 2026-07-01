@@ -13,8 +13,8 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%234CAF50' width='180' height='180' rx='40'/><text x='90' y='90' font-size='100' fill='white' text-anchor='middle' dominant-baseline='middle'>📋</text></svg>">
     <link rel="stylesheet" href="/components/components.css">
     <title>📋 Bewerbungs-Tracker v4</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="/components/vendor/jspdf.umd.min.js"></script>
+    <script src="/components/vendor/jspdf.plugin.autotable.min.js"></script>
     <!-- PDF & DOCX Parsing Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -25,6 +25,7 @@
     <script src="/frontend/auth.js"></script>
     <!-- Task polling helper (must load before JdSourcesUI inline script) -->
     <script src="/frontend/js/task-poller.js"></script>
+    <script src="/frontend/js/source-progress.js?v=20260630b"></script>
     <style>
         :root {
             --primary: #4F46E5; --primary-light: #818CF8; --primary-dark: #3730A3;
@@ -63,6 +64,59 @@
         }
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+
+        .jd-source-progress {
+            margin-top: 0.45rem;
+            max-width: 24rem;
+            font-size: 0.78rem;
+        }
+        .jd-source-progress-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.75rem;
+            color: var(--text-muted);
+        }
+        .jd-source-progress-track {
+            height: 0.45rem;
+            margin: 0.2rem 0;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.22);
+        }
+        .jd-source-progress-fill {
+            height: 100%;
+            border-radius: inherit;
+            background: var(--primary);
+            transition: width 180ms ease;
+        }
+        .jd-source-progress-pending .jd-source-progress-fill { background: var(--warning, #f59e0b); }
+        .jd-source-progress-success .jd-source-progress-fill { background: var(--secondary, #10b981); }
+        .jd-source-progress-error .jd-source-progress-fill { background: var(--danger, #ef4444); }
+        .jd-source-progress-error .jd-source-progress-detail { color: var(--danger, #ef4444); }
+        .jd-source-progress-detail {
+            color: var(--text-muted);
+            overflow-wrap: anywhere;
+        }
+        .jd-source-operation-notice {
+            margin: 0.75rem 0;
+            padding: 0.65rem 0.75rem;
+            border: 1px solid rgba(59, 130, 246, 0.35);
+            border-radius: 6px;
+            background: rgba(59, 130, 246, 0.10);
+            color: var(--text);
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+        .jd-source-operation-notice strong {
+            color: var(--primary-light);
+        }
+        .jd-source-operation-notice-error {
+            border-color: rgba(239, 68, 68, 0.45);
+            background: rgba(239, 68, 68, 0.10);
+        }
+        .jd-source-operation-notice-error strong {
+            color: var(--danger);
+        }
 
         /* RESPONSIVE TYPOGRAPHY */
         h1 { font-size: 1.5rem; font-weight: 700; }
@@ -1296,6 +1350,9 @@
             <button class="btn btn-success btn-sm" onclick="JdSourcesUI.openCreate()">+ Eigene Quelle</button>
             <button class="btn btn-primary btn-sm" onclick="JdSourcesUI.importAll()" title="Alle aktiven Email-Quellen sequenziell importieren">📧 Alle importieren</button>
             <button class="btn btn-secondary btn-sm" onclick="JdSourcesUI.refresh()">🔄</button>
+        </div>
+        <div id="jdSourceOperationNotice" class="jd-source-operation-notice">
+            Bereit. Beim Import oder Lernen siehst du hier die aktuell verarbeitete Quelle; pro Quelle erscheint zusätzlich eine Progressbar in der Zeile.
         </div>
         <table id="jdSourcesTable" style="width:100%;font-size:0.88rem;border-collapse:collapse">
             <thead>
@@ -3652,6 +3709,78 @@ const JdSourcesUI = (() => {
     const _importQueue = [];
     let _importRunning = false;
     let _currentImportId = null;
+    const _sourceProgress = window.SourceProgress
+        ? window.SourceProgress.createSourceOperationState()
+        : null;
+
+    function _sourceProgressHtml(sourceId) {
+        if (!_sourceProgress || !window.SourceProgress) return '';
+        const view = window.SourceProgress.buildSourceProgressView(
+            _sourceProgress.get(sourceId),
+            Date.now()
+        );
+        if (!view || !view.visible) return '';
+        const tone = view.tone || 'active';
+        return `<div class="jd-source-progress jd-source-progress-${tone}" data-source-progress="${sourceId}">
+            <div class="jd-source-progress-head">
+                <span>${escapeHtml(view.operationLabel)} · ${escapeHtml(view.stateLabel)}</span>
+                <span>${view.progress}%</span>
+            </div>
+            <div class="jd-source-progress-track"><div class="jd-source-progress-fill" style="width:${view.progress}%"></div></div>
+            <div class="jd-source-progress-detail">${escapeHtml(view.detail || '')}</div>
+        </div>`;
+    }
+
+    function _refreshSourceProgress(sourceId) {
+        const slot = document.querySelector(`[data-source-progress-slot="${sourceId}"]`);
+        if (!slot) {
+            refresh();
+            return;
+        }
+        slot.innerHTML = _sourceProgressHtml(sourceId);
+        _refreshSourceOperationNotice();
+    }
+
+    function _clearSourceProgressLater(sourceId, delayMs = 12000) {
+        if (!_sourceProgress) return;
+        window.setTimeout(() => {
+            _sourceProgress.clear(sourceId);
+            _refreshSourceProgress(sourceId);
+        }, delayMs);
+    }
+
+    function _sourceName(sourceId) {
+        const src = (_sourcesCache || []).find(s => Number(s.id) === Number(sourceId));
+        return src ? (src.name || `Quelle #${sourceId}`) : `Quelle #${sourceId}`;
+    }
+
+    function _refreshSourceOperationNotice() {
+        const notice = $('jdSourceOperationNotice');
+        if (!notice) return;
+        if (!_sourceProgress || !window.SourceProgress) {
+            notice.classList.remove('jd-source-operation-notice-error');
+            notice.innerHTML = 'Bereit. Beim Import oder Lernen siehst du hier die aktuell verarbeitete Quelle; pro Quelle erscheint zusätzlich eine Progressbar in der Zeile.';
+            return;
+        }
+        const entries = Object.values(_sourceProgress.snapshot());
+        const active = entries
+            .map(entry => window.SourceProgress.buildSourceProgressView(entry, Date.now()))
+            .filter(Boolean)
+            .sort((a, b) => {
+                const rank = { active: 0, pending: 1, error: 2, success: 3 };
+                return (rank[a.tone] ?? 9) - (rank[b.tone] ?? 9);
+            });
+        if (active.length === 0) {
+            notice.classList.remove('jd-source-operation-notice-error');
+            notice.innerHTML = 'Bereit. Beim Import oder Lernen siehst du hier die aktuell verarbeitete Quelle; pro Quelle erscheint zusätzlich eine Progressbar in der Zeile.';
+            return;
+        }
+        const view = active[0];
+        const source = view.sourceLabel ? `${escapeHtml(view.sourceLabel)} · ` : '';
+        const suffix = active.length > 1 ? ` · ${active.length - 1} weitere Quelle(n) warten/laufen` : '';
+        notice.classList.toggle('jd-source-operation-notice-error', view.tone === 'error');
+        notice.innerHTML = `<strong>${escapeHtml(view.operationLabel)} · ${escapeHtml(view.stateLabel)}</strong>: ${source}${view.progress}%${view.detail ? ` · ${escapeHtml(view.detail)}` : ''}${suffix}`;
+    }
 
     async function refresh() {
         const tbody = $('jdSourcesTableBody');
@@ -3661,6 +3790,7 @@ const JdSourcesUI = (() => {
             const list = (r && r.sources) || [];
             _sourcesCache = list;
             await _loadDynamicPlatforms();
+            _refreshSourceOperationNotice();
             tbody.innerHTML = list.length === 0
                 ? `<tr><td colspan="4" style="padding:0.6rem;color:var(--text-muted)">Keine Quellen.</td></tr>`
                 : list.map(s => {
@@ -3679,6 +3809,7 @@ const JdSourcesUI = (() => {
                         <td style="padding:0.4rem">
                             ${escapeHtml(s.name)}<br>
                             <small style="color:var(--text-muted)">${ownership} · letzter Crawl: ${last}</small>
+                            <div data-source-progress-slot="${s.id}">${_sourceProgressHtml(s.id)}</div>
                         </td>
                         <td style="padding:0.4rem">${TYPE_LABELS[s.type] || s.type}</td>
                         <td style="padding:0.4rem">${status}</td>
@@ -3795,7 +3926,7 @@ const JdSourcesUI = (() => {
             const bulkFolderDefault = isGmail ? '[Google Mail]/Alle Nachrichten' : 'INBOX';
             const imapBannerHtml = imapHost
                 ? `<div style="padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.75rem;font-size:0.82rem;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);">✅ IMAP: <strong>${escapeHtml(imapUser)}</strong>&nbsp;@&nbsp;${escapeHtml(imapHost)}</div>`
-                : `<div style="padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.75rem;font-size:0.82rem;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);">⚠️ Kein IMAP-Konto konfiguriert. <a href="#" onclick="JdSourcesUI.closeCreate();showView('einstellungen');return false;" style="color:var(--warning,#F59E0B)">→ Einstellungen öffnen</a></div>`;
+                : `<div style="padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.75rem;font-size:0.82rem;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);">⚠️ Kein IMAP-Konto konfiguriert. <a href="#" onclick="JdSourcesUI.closeCreate();showView('settings');return false;" style="color:var(--warning,#F59E0B)">→ Einstellungen öffnen</a></div>`;
             c.innerHTML = `
                 ${imapBannerHtml}
                 <div style="background:var(--bg-card2);padding:0.75rem;border-radius:6px;margin-bottom:0.75rem">
@@ -3831,7 +3962,7 @@ const JdSourcesUI = (() => {
                     : 'background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);');
             banner.innerHTML = imapHost
                 ? `✅ IMAP: <strong>${escapeHtml(imapUser)}</strong>&nbsp;@&nbsp;${escapeHtml(imapHost)}`
-                : `⚠️ Kein IMAP-Konto konfiguriert. <a href="#" onclick="JdSourcesUI.closeCreate();showView('einstellungen');return false;" style="color:var(--warning,#F59E0B)">→ Einstellungen öffnen</a>`;
+                : `⚠️ Kein IMAP-Konto konfiguriert. <a href="#" onclick="JdSourcesUI.closeCreate();showView('settings');return false;" style="color:var(--warning,#F59E0B)">→ Einstellungen öffnen</a>`;
             c.appendChild(banner);
 
             const grp1 = document.createElement('div');
@@ -4022,6 +4153,10 @@ const JdSourcesUI = (() => {
         if (_importRunning) {
             if (!_importQueue.includes(id)) {
                 _importQueue.push(id);
+                if (_sourceProgress) {
+                    _sourceProgress.setWaiting(id, 'import', _importQueue.indexOf(id) + 1, _sourceName(id));
+                    _refreshSourceProgress(id);
+                }
                 const btn = document.querySelector(`button[onclick="JdSourcesUI.importFromEmail(${id})"]`);
                 if (btn) {
                     btn.disabled = true;
@@ -4067,11 +4202,19 @@ const JdSourcesUI = (() => {
                 body: requestBody,
             });
             if (!enqRes || !enqRes.task_id) throw new Error('Leere oder ungültige Antwort vom Server');
+            if (_sourceProgress) {
+                _sourceProgress.start(id, 'import', enqRes.task_id, _sourceName(id));
+                _refreshSourceProgress(id);
+            }
 
             if (btn) btn.textContent = '⏳ Verarbeite…';
 
             // Ergebnis hat dieselbe Form wie früher: imported, blocked, duplicates, …
             const r = await pollTask(enqRes.task_id, task => {
+                if (_sourceProgress) {
+                    _sourceProgress.updateFromTask(id, task);
+                    _refreshSourceProgress(id);
+                }
                 // Fortschritt im Button anzeigen, falls vorhanden
                 if (btn && task.progress != null) {
                     btn.textContent = '⏳ ' + task.progress + '%…';
@@ -4083,16 +4226,25 @@ const JdSourcesUI = (() => {
             const blocked = r.blocked || [];
             const dup = r.duplicates || 0;
             const total = r.total_emails || 0;
+            if (_sourceProgress) {
+                _sourceProgress.complete(
+                    id,
+                    `Fertig: ${total} Mails geprueft, ${imported} neu${dup ? `, ${dup} Duplikate` : ''}`
+                );
+                _refreshSourceProgress(id);
+            }
 
             // Kein Approval nötig → einfache Erfolgsmeldung
             if (blocked.length === 0) {
                 alert(`✅ Import abgeschlossen.\n\n${total} Email(s) geprüft\n${imported} neue(r) Job-Vorschlag(e) importiert${dup ? `\n${dup} Duplikat(e) übersprungen` : ''}.`);
                 refresh();
+                _clearSourceProgressLater(id);
                 return;
             }
 
             // Blocked Jobs → Approval-Dialog
             openImportApprovalDialog(id, r);
+            _clearSourceProgressLater(id, 20000);
         } catch (e) {
             let msg = (e && e.message) ? e.message : String(e);
             // Browser-JSON.parse-Fehler von HTML-Response (Server-Crash, Apache 5xx) abfangen.
@@ -4102,6 +4254,10 @@ const JdSourcesUI = (() => {
             if (isBrowserJsonParseError) {
                 msg = 'Server-Timeout oder -Crash (HTML-Antwort). '
                     + 'Bitte später nochmal versuchen.';
+            }
+            if (_sourceProgress) {
+                _sourceProgress.fail(id, msg);
+                _refreshSourceProgress(id);
             }
             alert(`❌ Import fehlgeschlagen: ${msg}`);
         } finally {
@@ -4122,6 +4278,12 @@ const JdSourcesUI = (() => {
         if (!confirm(emailSources.length + ' Email-Quellen nacheinander importieren?\n\n(sequenziell, kann mehrere Minuten dauern)')) {
             return;
         }
+        emailSources.forEach((source, index) => {
+            if (_sourceProgress) {
+                _sourceProgress.setWaiting(source.id, 'import', index + 1, source.name || `Quelle #${source.id}`);
+                _refreshSourceProgress(source.id);
+            }
+        });
         // forEach reicht — importFromEmail enqueued bei laufendem Import,
         // erster Call startet, alle weiteren landen in der Queue.
         emailSources.forEach(s => importFromEmail(s.id));
@@ -4150,24 +4312,43 @@ const JdSourcesUI = (() => {
                 method: 'POST', body: JSON.stringify({}),
             });
             if (!enqRes || !enqRes.task_id) throw new Error('Leere oder ungültige Antwort vom Server');
+            if (_sourceProgress) {
+                _sourceProgress.start(sourceId, 'learn', enqRes.task_id, _sourceName(sourceId));
+                _refreshSourceProgress(sourceId);
+            }
 
             // Ergebnis hat dieselbe Form wie früher: ok, hit_rate, sample_count, …
             const r = await pollTask(enqRes.task_id, task => {
-                if (task.progress != null) {
-                    showToast('🧠 ' + platform.toUpperCase() + ': ' + task.progress + '%…', 'info');
+                if (_sourceProgress) {
+                    _sourceProgress.updateFromTask(sourceId, task);
+                    _refreshSourceProgress(sourceId);
                 }
             });
             if (r && r.ok) {
                 const pct = Math.round((r.hit_rate || 0) * 100);
+                if (_sourceProgress) {
+                    _sourceProgress.complete(sourceId, 'Fertig: ' + pct + '% Hit-Rate');
+                    _refreshSourceProgress(sourceId);
+                    _clearSourceProgressLater(sourceId);
+                }
                 showToast('✅ ' + platform.toUpperCase() + ' Pattern gelernt: ' + pct + '% Hit-Rate auf ' + r.sample_count + ' Test-Mails', 'success');
                 refresh();
                 if (typeof loadLearnedPatterns === 'function') loadLearnedPatterns();
             } else if (r && r.error) {
                 const pct = r.hit_rate != null ? ' (' + Math.round(r.hit_rate*100) + '%)' : '';
+                if (_sourceProgress) {
+                    _sourceProgress.fail(sourceId, r.error);
+                    _refreshSourceProgress(sourceId);
+                }
                 alert('❌ Pattern-Train fehlgeschlagen' + pct + ':\n\n' + r.error);
             }
         } catch (e) {
-            alert('❌ ' + (e && e.message ? e.message : 'Fehler beim Pattern-Train'));
+            const msg = e && e.message ? e.message : 'Fehler beim Pattern-Train';
+            if (_sourceProgress) {
+                _sourceProgress.fail(sourceId, msg);
+                _refreshSourceProgress(sourceId);
+            }
+            alert('❌ ' + msg);
         }
     }
 
@@ -8366,9 +8547,9 @@ function exportPDF() {
             if (data.column.index === 0 && data.section === 'body') {
                 const item = sortedB[data.row.index];
                 if (item && item.link) {
-                    // Draw link text in blue and underlined
+                    // Draw link text in blue; textWithLink keeps the URL clickable.
                     doc.setTextColor(0, 0, 255);
-                    doc.setFont(undefined, 'underline');
+                    doc.setFont(undefined, 'normal');
                     doc.textWithLink(item.firma, data.cell.x + 2, data.cell.y + data.cell.height/2 + 1, { pageNumber: undefined, url: item.link });
                     doc.setTextColor(30,30,50);
                     doc.setFont(undefined, 'normal');
