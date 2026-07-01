@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import pytest
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from icalendar import Calendar
 from tests.fixtures.interview_emails import TKMS_BODY
 from database import db
-from models import Email
+from models import Application, Email
 
 
 def _create_app(client, auth_token, notes=None, status=None):
@@ -123,3 +124,28 @@ def test_calendar_upcoming_includes_passcode_without_500(client, auth_token):
     events = resp.get_json()
     event = next(e for e in events if e["application_id"] == app_id)
     assert event["meeting_passcode"] == "KJ9wu6HU"
+
+
+def test_calendar_upcoming_resolves_yearless_date_from_application_context(app, client, auth_token):
+    app_id = _create_app(
+        client,
+        auth_token,
+        notes="Termin zum Vorstellungsgespraech am 10.6. um 09:30 Uhr.",
+        status="interview",
+    )
+
+    with app.app_context():
+        app_obj = Application.query.get(app_id)
+        app_obj.created_at = datetime(2026, 5, 21, 11, 44, 36)
+        app_obj.applied_date = datetime(2026, 5, 21)
+        db.session.commit()
+
+    resp = client.get(
+        "/api/applications/upcoming",
+        headers={"Authorization": f"Bearer {auth_token}"},
+    )
+
+    assert resp.status_code == 200
+    events = resp.get_json()
+    event = next(e for e in events if e["application_id"] == app_id)
+    assert event["start"] == datetime(2026, 6, 10, 9, 30, tzinfo=ZoneInfo("Europe/Berlin")).isoformat()

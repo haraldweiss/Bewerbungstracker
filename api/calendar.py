@@ -7,6 +7,7 @@ Quelle: neueste verknüpfte Email mit Interview-Keyword, sonst Application.notes
 """
 
 import re
+from datetime import datetime, time
 from flask import Blueprint, jsonify, Response
 from api.auth import token_required
 from database import db
@@ -26,8 +27,8 @@ def export_calendar(user, app_id: str):
     if not app_obj:
         return jsonify({"error": "Bewerbung nicht gefunden"}), 404
 
-    text = _select_text(app_obj)
-    parsed = parse_interview_event(text)
+    selected = _select_text(app_obj)
+    parsed = parse_interview_event(selected.text, now=selected.reference_time)
     if parsed.start is None:
         return jsonify({"error": "Kein Termin im Notes/Email-Text gefunden"}), 400
 
@@ -64,7 +65,6 @@ def upcoming_events(user):
         "start", "end", "meeting_url", "has_ics": bool,
       }, ...]
     """
-    from datetime import datetime, timezone
     from models import Email
 
     results = []
@@ -90,10 +90,10 @@ def upcoming_events(user):
     ).order_by(Application.created_at.desc()).limit(100).all()
 
     for app_obj in apps:
-        text = _select_text(app_obj)
-        if not text:
+        selected = _select_text(app_obj)
+        if not selected.text:
             continue
-        parsed = parse_interview_event(text)
+        parsed = parse_interview_event(selected.text, now=selected.reference_time)
         if parsed and parsed.start:
             results.append({
                 'application_id': app_obj.id,
@@ -111,7 +111,13 @@ def upcoming_events(user):
     return jsonify(results), 200
 
 
-def _select_text(app_obj: Application) -> str:
+class _SelectedCalendarText:
+    def __init__(self, text: str, reference_time):
+        self.text = text
+        self.reference_time = reference_time
+
+
+def _select_text(app_obj: Application) -> _SelectedCalendarText:
     """Bevorzugt Body der neuesten Email mit Interview-Keyword, sonst notes."""
     candidates = sorted(
         (e for e in (app_obj.emails or []) if (e.body or e.subject) and _KEYWORDS.search((e.subject or "") + " " + (e.body or ""))),
@@ -119,5 +125,14 @@ def _select_text(app_obj: Application) -> str:
         reverse=True,
     )
     if candidates and candidates[0].body:
-        return candidates[0].body
-    return app_obj.notes or ""
+        return _SelectedCalendarText(candidates[0].body, candidates[0].timestamp or candidates[0].created_at)
+    reference_time = _application_reference_time(app_obj)
+    return _SelectedCalendarText(app_obj.notes or "", reference_time)
+
+
+def _application_reference_time(app_obj: Application):
+    if app_obj.applied_date:
+        if isinstance(app_obj.applied_date, datetime):
+            return app_obj.applied_date
+        return datetime.combine(app_obj.applied_date, time.min)
+    return app_obj.created_at
