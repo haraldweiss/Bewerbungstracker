@@ -524,15 +524,18 @@ def list_matches(user):
                 )
             )
 
-    total = query.count()
-    rows = (query.order_by(JobMatch.match_score.desc().nullslast(),
-                           JobMatch.created_at.desc())
-                 .offset(offset).limit(limit).all())
+    ordered_query = query.order_by(JobMatch.match_score.desc().nullslast(),
+                                   JobMatch.created_at.desc())
     if rejected_companies_normalized:
-        rows = [
-            row for row in rows
+        filtered_rows = [
+            row for row in ordered_query.all()
             if normalize_company(row[1].company) not in rejected_companies_normalized
         ]
+        total = len(filtered_rows)
+        rows = filtered_rows[offset:offset + limit]
+    else:
+        total = query.count()
+        rows = ordered_query.offset(offset).limit(limit).all()
 
     return jsonify({
         "matches": [_serialize_match(m, r, s) for (m, r, s) in rows],

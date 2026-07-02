@@ -1008,6 +1008,46 @@ def test_default_filter_includes_unbewertet(client, auth_header):
     assert titles == ['Pending', 'Scored']  # dismissed nicht dabei
 
 
+def test_list_matches_total_respects_normalized_reject_filter(client, auth_header):
+    """Filtered companies must not remain in the API total after Python post-filtering."""
+    headers, user = auth_header
+    db.session.add(Application(
+        user_id=user.id,
+        company="Signal Iduna",
+        position="Old role",
+        status="absage",
+    ))
+    src = JobSource(name="x", type="rss", config={"url": "x"})
+    db.session.add(src)
+    db.session.flush()
+
+    for i in range(3):
+        raw = RawJob(
+            source_id=src.id,
+            external_id=f"normalized-reject-{i}",
+            title=f"Hidden Job {i}",
+            company="Signal Iduna Group AG",
+            url=f"https://j/hidden-{i}",
+            crawl_status='matched',
+        )
+        db.session.add(raw)
+        db.session.flush()
+        db.session.add(JobMatch(
+            raw_job_id=raw.id,
+            user_id=user.id,
+            status='new',
+            prefilter_score=70,
+            match_score=80,
+        ))
+    db.session.commit()
+
+    r = client.get("/api/jobs/matches?status=new", headers=headers)
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["matches"] == []
+    assert body["total"] == 0
+
+
 # ---------------------------------------------------------------------------
 # PATCH /api/jobs/matches/<id> mit Feedback-Feldern (Adaptive Learning)
 # ---------------------------------------------------------------------------
