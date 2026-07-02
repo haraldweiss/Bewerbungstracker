@@ -1,9 +1,25 @@
-# Job-Discovery & Auto-Matching (Phase A: Backend)
+# Job-Discovery & Auto-Matching
 
 ## Konzept
 
 Automatische Stellensuche aus konfigurierbaren Quellen mit lokalem Pre-Filter
-und Claude-basiertem Matching gegen den hinterlegten Lebenslauf.
+und KI-basiertem Matching gegen den hinterlegten Lebenslauf.
+
+## Sichtbarkeit von Job-Vorschlägen
+
+`GET /api/jobs/matches` liefert die sichtbaren Job-Vorschläge inklusive `total`
+für Pagination und UI-Zähler. Der Zähler wird nach allen sichtbarkeitsrelevanten
+Filtern berechnet:
+
+- Statusfilter: echte DB-Statuses wie `new`, `imported`, `dismissed`; `unbewertet` ist ein Pseudo-Filter für `status='new' AND match_score IS NULL`.
+- Bereits übernommene Bewerbungen werden standardmäßig ausgeblendet; `include_applied=true` zeigt sie wieder.
+- Firmen-Reject-Filter: Bewerbungen mit Status `absage`, `rejected` oder `ghosting` blenden neue Vorschläge derselben normalisierten Firma innerhalb des User-Fensters aus.
+- Der Firmenvergleich nutzt `services.email_import_utils.normalize_company()`, damit Varianten wie `Signal Iduna` und `Signal Iduna Group AG` gleich behandelt werden.
+
+Wichtig für Änderungen an der Match-Liste: `total` muss immer die finale
+sichtbare Ergebnismenge widerspiegeln, nicht nur die SQL-Vorfilter. Sonst zeigt
+das Frontend offene Vorschläge an, obwohl nach dem Python-Nachfilter keine Karte
+mehr sichtbar ist.
 
 ## Setup
 
@@ -87,8 +103,8 @@ Konfiguration pro Quelle in `job_sources.config` (JSON, type-spezifisch).
 | `PATCH /api/jobs/sources/<id>` | Eigene Quelle editieren |
 | `DELETE /api/jobs/sources/<id>` | Eigene Quelle löschen |
 | `POST /api/jobs/sources/<id>/test-crawl` | Manueller Test-Crawl |
-| `GET /api/jobs/matches` | Match-Liste mit Filtern (min_score, status, source_id, q) |
-| `PATCH /api/jobs/matches/<id>` | Status ändern (seen/dismissed/new) |
+| `GET /api/jobs/matches` | Match-Liste mit Filtern (`min_score`, `status`, `source_id`, `q`, `include_applied`, `include_rejected`) |
+| `PATCH /api/jobs/matches/<id>` | Status/Feedback ändern (`new`, `unbewertet`, `dismissed`) |
 | `POST /api/jobs/matches/<id>/import` | Als Bewerbung übernehmen |
 
 ## Phase B (geplant)
