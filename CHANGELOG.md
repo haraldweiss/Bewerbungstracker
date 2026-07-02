@@ -2,6 +2,22 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-02 — Jobvorschlags-Zähler nach Reject-Filter korrigiert + Oracle-VM-Deploy (durch Codex)
+
+**Problem:** Die Jobvorschlagsliste konnte "3 offene" anzeigen, obwohl alle sichtbaren Vorschläge bearbeitet waren. Ursache war ein Zähler-/Listen-Drift in `GET /api/jobs/matches`: `total` wurde vor dem normalisierten Firmen-Reject-Postfilter berechnet. Vorschläge wie `Signal Iduna Group AG` wurden dadurch nachträglich aus `matches` entfernt, blieben aber im `total`.
+
+**Fix + Commit:**
+- `7aab588` — `api/jobs_user.py`: Wenn der normalisierte Reject-Filter aktiv ist, wird die finale gefilterte Ergebnismenge vor Count und Pagination gebildet. Regressionstest in `tests/api/test_jobs_user.py` für drei vollständig ausgefilterte Firmen-Suffix-Treffer.
+
+**Deploy-Status:** Erledigt. Produktion läuft auf Oracle VM mit allen 5 Bewerbungstracker-Containern auf `localhost/bewerbungen:7aab588` (`app`, `worker`, `cron`, `email-service`, `imap-proxy`). `origin/master` enthält den Fix-Commit.
+
+**Verifikation:**
+- `venv/bin/pytest tests/api/test_jobs_user.py -q` → 51 passed.
+- Oracle VM: alle 5 Container laufen mit Image `localhost/bewerbungen:7aab588`.
+- Worker-DB-URI: `sqlite:////app/data/bewerbungstracker.db`.
+- VM-App-Smoke: `http://127.0.0.1:5000/` → 200.
+- Public Health: `https://bewerbungen.wolfinisoftware.de/` → 200.
+
 ### 2026-07-01 — Kalenderansicht stabilisiert + Oracle-VM-Deploy (durch Codex)
 
 **Ausgangslage:** Die Kalenderansicht zeigte nur "Lade Termine …" bzw. einzelne Termine mit falschem Jahr. Der erste Parser-Fix war zwar als Live-Hotfix in App/Worker sichtbar, aber noch nicht als Image dauerhaft deployed.
