@@ -2,6 +2,26 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-03 — PDF-Export durch CSP repariert + Oracle-VM-Deploy (durch Codex)
+
+**Problem:** Der clientseitige PDF-Export der Bewerbungsübersicht funktionierte nach dem Security-Header-Commit vom 2026-06-26 nicht mehr. `index.html` lädt `jsPDF`, `jspdf-autotable`, `pdf.js` und `mammoth` von `cdnjs.cloudflare.com`, aber die produktive CSP erlaubte in `script-src` nur `'self'`. Dadurch wurden die Browser-Libraries blockiert, bevor `exportPDF()` arbeiten konnte. Der serverseitige Anschreiben-PDF-Renderer war nicht die Ursache: die letzten 10 gespeicherten Anschreiben ließen sich im Produktivcontainer ohne Inhaltsausgabe erfolgreich zu PDF-Bytes rendern.
+
+**Fix + Commit:**
+- `4c83c86` — `app.py`: CSP erlaubt jetzt `https://cdnjs.cloudflare.com` in `script-src`; `worker-src` erlaubt `'self' blob: https://cdnjs.cloudflare.com`, damit der `pdf.js` Worker ebenfalls funktioniert. Regressionstest in `tests/test_security_headers.py`.
+
+**Deploy-Status:** Erledigt. Produktion läuft auf Oracle VM mit allen 5 Bewerbungstracker-Containern auf `localhost/bewerbungen:4c83c86` (`app`, `worker`, `cron`, `email-service`, `imap-proxy`). `origin/master` enthält den Fix-Commit.
+
+**Verifikation:**
+- `venv/bin/pytest tests/test_security_headers.py tests/api/test_cover_letters.py::test_export_pdf_success tests/api/test_cover_letters.py::test_export_import_error_returns_503` → 3 passed.
+- Image auf Oracle VM gebaut: `localhost/bewerbungen:4c83c86`.
+- Alle 5 Container via `deploy/container/setup-oracle-vm.sh rebuild` neu erstellt.
+- Oracle VM: alle 5 Container laufen mit Image `localhost/bewerbungen:4c83c86`.
+- Worker-DB-URI: `sqlite:////app/data/bewerbungstracker.db`.
+- VM-App-Smoke: `http://127.0.0.1:5000/` → 200.
+- Public Health: `https://bewerbungen.wolfinisoftware.de/` → 200.
+- Public CSP enthält `https://cdnjs.cloudflare.com` und `worker-src 'self' blob: https://cdnjs.cloudflare.com`.
+- App-/Worker-Logs nach Start ohne Fehler.
+
 ### 2026-07-02 — Jobvorschlags-Zähler nach Reject-Filter korrigiert + Oracle-VM-Deploy (durch Codex)
 
 **Problem:** Die Jobvorschlagsliste konnte "3 offene" anzeigen, obwohl alle sichtbaren Vorschläge bearbeitet waren. Ursache war ein Zähler-/Listen-Drift in `GET /api/jobs/matches`: `total` wurde vor dem normalisierten Firmen-Reject-Postfilter berechnet. Vorschläge wie `Signal Iduna Group AG` wurden dadurch nachträglich aus `matches` entfernt, blieben aber im `total`.
