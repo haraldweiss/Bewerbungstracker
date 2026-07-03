@@ -176,6 +176,7 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 | API layer | `api/` — thin routing only |
 | Admin API | `api/admin.py` — Status-Übersicht, Health-Checks |
 | Calendar API | `api/calendar.py` — Interview-Erkennung + Kalender-Ansicht |
+| Calendar parser | `services/calendar_parser.py` — Datum-/Zeit-Extraktion aus Freitext |
 | Async tasks | `services/tasks/handlers/` |
 | Anthropic client | `services/job_matching/claude_utils.py::_get_anthropic_client` |
 | Email parsing | `services/email_import_utils.py` |
