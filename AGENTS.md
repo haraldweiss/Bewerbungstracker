@@ -67,6 +67,11 @@ If `user.email` is unset, empty, or fake — **stop, fix it, then proceed**. Pas
 - No telemetry, no external tracking, no analytics. Everything is local-or-on-the-user's-server.
 - CV file uploads + email bodies + applications are sensitive. Don't log raw content; redact in logs.
 
+### 3.4.1 Browser asset/CSP compatibility
+- `index.html` currently loads browser-only helper libraries from `cdnjs.cloudflare.com`: `jsPDF`, `jspdf-autotable`, `pdf.js` and `mammoth`. These power the Bewerbungsübersicht PDF export and CV PDF/DOCX text extraction.
+- If `app.py` security headers / Content-Security-Policy are changed, verify those browser paths explicitly. Minimum checks: public CSP still permits the required script source and `worker-src 'self' blob: https://cdnjs.cloudflare.com`, and `tests/test_security_headers.py` passes. Regression class: 2026-07-03 PDF export broke because CSP allowed only `'self'` in `script-src`.
+- Prefer vendoring browser libraries locally over adding new external CDN dependencies. If a new external browser source is unavoidable, document why and update CSP/tests in the same commit.
+
 ### 3.5 Async task queue
 - Long-running work goes through `services/tasks/handlers/`. Don't block the Flask request thread for >1s.
 - Cron tasks defined in `services/tasks/handlers/cron_*.py`.
