@@ -52,7 +52,16 @@ def create_app(config_class=None):
     @app.after_request
     def add_security_headers(response):
         # Content Security Policy
-        csp = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://bewerbungen.wolfinisoftware.de; frame-ancestors 'none';"
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self' https://bewerbungen.wolfinisoftware.de; "
+            "worker-src 'self' blob: https://cdnjs.cloudflare.com; "
+            "frame-ancestors 'none';"
+        )
         
         # HSTS (nur in HTTPS-Umgebung)
         if request.is_secure:
