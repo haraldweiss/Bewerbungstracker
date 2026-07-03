@@ -2,6 +2,30 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-03 (2) — Kalenderparser: Termine mit Firmenprefix werden jetzt erkannt (durch pi/opencode)
+
+**Problem:** Interview-Termine in Bewerbungs-Notizen wurden nicht erkannt, wenn vor dem Datum ein Firmenname stand (z.B. "Pfeifer & Langen IT-Solutions KG - Interview Termin am 26. Mai 2026 um 16:30") oder wenn die Uhrzeit ohne "Uhr"-Suffix notiert war ("26. Mai 2026 um 16:30").
+
+**Root Cause:** Zwei Regex-Bugs in `services/calendar_parser.py`:
+1. `_RE_DATE_GERMAN_MONTH` und `_RE_DATE_FLEX_TIME` erwarteten `\s*Uhr?` als erforderliches Ende → ohne "Uhr" kein Match
+2. Beide Patterns erlaubten keinen Prefix vor dem Datum → Firmennamen vor dem Datum blockierten den Match
+
+**Fix + Commit:**
+- `86d296f` — `services/calendar_parser.py`: 
+  - `_RE_DATE_GERMAN_MONTH`: `.*?` Prefix + `(?:\s*Uhr?)?` optionales Suffix
+  - `_RE_DATE_FLEX_TIME`: `.*?` Prefix + `(?:\s*Uhr?)?` optionales Suffix
+
+**Deploy-Status:** Erledigt. Produktion läuft auf Oracle VM mit allen 5 Bewerbungstracker-Containern auf `localhost/bewerbungen:20260703-084027`.
+
+**Verifikation:**
+- `venv/bin/pytest tests/test_calendar_parser.py tests/test_calendar_endpoint.py` → 16 passed (lokal)
+- Image auf Oracle VM gebaut: `localhost/bewerbungen:20260703-084027`.
+- Alle 5 Container via `deploy/container/setup-oracle-vm.sh rebuild` neu erstellt.
+- VM-App-Smoke: `http://127.0.0.1:5000/` → 200.
+- VM-Test: `parse_interview_event("Pfeifer & Langen IT-Solutions KG - Interview Termin am 26. Mai 2026 um 16:30")` → `2026-05-26 16:30:00+02:00` ✅
+- VM-Test: `parse_interview_event("26. Mai 2026 um 16:30")` → `2026-05-26 16:30:00+02:00` ✅
+- VM-Test: `parse_interview_event("2.6.2026 um 11:00")` → `2026-06-02 11:00:00+02:00` ✅
+
 ### 2026-07-03 — PDF-Export durch CSP repariert + Oracle-VM-Deploy (durch Codex)
 
 **Problem:** Der clientseitige PDF-Export der Bewerbungsübersicht funktionierte nach dem Security-Header-Commit vom 2026-06-26 nicht mehr. `index.html` lädt `jsPDF`, `jspdf-autotable`, `pdf.js` und `mammoth` von `cdnjs.cloudflare.com`, aber die produktive CSP erlaubte in `script-src` nur `'self'`. Dadurch wurden die Browser-Libraries blockiert, bevor `exportPDF()` arbeiten konnte. Der serverseitige Anschreiben-PDF-Renderer war nicht die Ursache: die letzten 10 gespeicherten Anschreiben ließen sich im Produktivcontainer ohne Inhaltsausgabe erfolgreich zu PDF-Bytes rendern.
