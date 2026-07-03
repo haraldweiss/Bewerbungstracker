@@ -28,13 +28,15 @@ _RE_DATE_NUM_NOYEAR = re.compile(
     re.IGNORECASE,
 )
 # Deutsche Monatsnamen: "3. Juli 2026 um 13:00 Uhr"
+# Akzeptiert beliebigen Prefixtext (z.B. Firmenname), macht "Uhr"-Suffix optional.
 _RE_DATE_GERMAN_MONTH = re.compile(
-    r"(\d{1,2})\.?\s+([a-zA-ZäöüÄÖÜ]+)\s+(\d{4})\s+um\s+(\d{1,2}):(\d{2})\s*Uhr?",
+    r".*?(\d{1,2})\.?\s+([a-zA-ZäöüÄÖÜ]+)\s+(\d{4})\s+um\s+(\d{1,2}):(\d{2})(?:\s*Uhr?)?",
     re.IGNORECASE,
 )
 # Flexible Zeit: "2.6.2026 um 11 Uhr" (ohne Minuten)
+# Akzeptiert beliebigen Prefixtext (z.B. Firmenname), macht "Uhr"-Suffix optional.
 _RE_DATE_FLEX_TIME = re.compile(
-    r"(\d{1,2})\.(\d{1,2})\.(\d{4})[,\s]+(?:um\s+)?(\d{1,2})(?::(\d{2}))?\s*Uhr?",
+    r".*?(\d{1,2})\.(\d{1,2})\.(\d{4})[,\s]+(?:um\s+)?(\d{1,2})(?::(\d{2}))?(?:\s*Uhr?)?",
     re.IGNORECASE,
 )
 _RE_DATE_ISO = re.compile(
