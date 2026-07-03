@@ -67,10 +67,14 @@ If `user.email` is unset, empty, or fake — **stop, fix it, then proceed**. Pas
 - No telemetry, no external tracking, no analytics. Everything is local-or-on-the-user's-server.
 - CV file uploads + email bodies + applications are sensitive. Don't log raw content; redact in logs.
 
-### 3.4.1 Browser asset/CSP compatibility
-- `index.html` currently loads browser-only helper libraries from `cdnjs.cloudflare.com`: `jsPDF`, `jspdf-autotable`, `pdf.js` and `mammoth`. These power the Bewerbungsübersicht PDF export and CV PDF/DOCX text extraction.
-- If `app.py` security headers / Content-Security-Policy are changed, verify those browser paths explicitly. Minimum checks: public CSP still permits the required script source and `worker-src 'self' blob: https://cdnjs.cloudflare.com`, and `tests/test_security_headers.py` passes. Regression class: 2026-07-03 PDF export broke because CSP allowed only `'self'` in `script-src`.
-- Prefer vendoring browser libraries locally over adding new external CDN dependencies. If a new external browser source is unavoidable, document why and update CSP/tests in the same commit.
+### 3.4.1 Browser assets — all vendored (no CDN)
+- **All browser JS libraries are vendored locally** in `components/vendor/`: `jspdf.umd.min.js`, `jspdf.plugin.autotable.min.js`, `pdf.min.js`, `pdf.worker.min.js`, `mammoth.browser.min.js`. No CDN dependencies for JS.
+- The CSP in `app.py` no longer lists any external CDN in `script-src` or `worker-src`. The only `worker-src` entry is `'self' blob:` (for the vendored pdf.worker).
+- **When adding a new browser library**, vendor it in `components/vendor/`, reference it via `/components/vendor/...` in `index.html`, and update CSP if it needs special permissions (img-src, worker-src, etc.).
+- **When changing CSP**, verify `tests/test_security_headers.py` still passes.
+- **Avoid adding new CDN dependencies** — always vendor first. If a CDN source is unavoidable (e.g., a library too large to vendor), update CSP + document in the commit + update this section.
+- **Known regression class:** 2026-07-03 (twice). First, CSP was too strict and blocked CDN sources. Second, the Service Worker cached CDN responses with wrong MIME type (`text/html`), causing all external scripts to be refused — even after CSP was fixed. The vendor approach eliminates both failure modes.
+- **Service Worker interaction:** The SW (`service-worker.js`) intercepts all `GET` requests including cross-origin ones matching static asset extensions (`.js`, `.css`, etc.). Vendored assets bypass the CDN layer entirely and avoid MIME-type mismatches from cached responses.
 
 ### 3.5 Async task queue
 - Long-running work goes through `services/tasks/handlers/`. Don't block the Flask request thread for >1s.

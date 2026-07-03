@@ -54,12 +54,12 @@ def create_app(config_class=None):
         # Content Security Policy
         csp = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "font-src 'self' data:; "
             "connect-src 'self' https://bewerbungen.wolfinisoftware.de; "
-            "worker-src 'self' blob: https://cdnjs.cloudflare.com; "
+            "worker-src 'self' blob:; "
             "frame-ancestors 'none';"
         )
         

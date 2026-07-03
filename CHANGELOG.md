@@ -2,6 +2,27 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-03 (3) — CDN JS-Libraries vendored, PDF-Export repariert (durch pi)
+
+**Problem:** Der PDF-Export über `exportPDF()` funktionierte trotz korrektem CSP-Fix (`4c83c86`) nicht. Der Service Worker (`service-worker.js`) interceptete alle GET-Requests, inkl. Cross-Origin-CDN-Anfragen, und cachete sie. Aufgrund eines MIME-Type-Konflikts (`text/html` statt `application/javascript`) blockierte der Browser alle vier CDNJS-Skripte (`jsPDF`, `jspdf-autotable`, `pdf.js`, `mammoth`).
+
+**Root Cause:** Der Service Worker (`service-worker.js`) hat einen `fetch`-EventListener, der GET-Requests für statische Assets (erkennbar an Endungen wie `.js`, `.css`, etc.) cache-first bedient. CDNJS lieferte korrektes `application/javascript` an curl, aber der Chromium-Browser erhielt `text/html` — vermutlich durch den SW-Cache-Mechanismus. Dadurch blockte der Browser alle externen Skripte.
+
+**Fix (dieser Commit):**
+- Alle CDNJS-Libraries lokal in `components/vendor/` hinterlegt (jsPDF, AutoTable, pdf.js, mammoth)
+- `index.html`: `<script src="https://cdnjs.cloudflare.com/...">` → `<script src="/components/vendor/...">`
+- `index.html`: `pdfjsLib.GlobalWorkerOptions.workerSrc` zeigt jetzt auf `/components/vendor/pdf.worker.min.js`
+- `app.py` CSP: `https://cdnjs.cloudflare.com` aus `script-src` und `worker-src` entfernt (wird nicht mehr benötigt)
+- `tests/test_security_headers.py`: Test angepasst
+
+**Verifikation:**
+- `venv/bin/pytest tests/test_security_headers.py` → PASSED
+- Playwright-Browser: `window.jspdf` ist nach Page-Load definiert ✅
+- PDF-Export-Button erzeugt PDF ohne Fehler
+
+**Dokumentation:**
+- AGENTS.md §3.4.1 aktualisiert: „Browser assets — all vendored (no CDN)"
+
 ### 2026-07-03 (2) — Kalenderparser: Termine mit Firmenprefix werden jetzt erkannt (durch pi/opencode)
 
 **Problem:** Interview-Termine in Bewerbungs-Notizen wurden nicht erkannt, wenn vor dem Datum ein Firmenname stand (z.B. "Pfeifer & Langen IT-Solutions KG - Interview Termin am 26. Mai 2026 um 16:30") oder wenn die Uhrzeit ohne "Uhr"-Suffix notiert war ("26. Mai 2026 um 16:30").

@@ -13,11 +13,11 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%234CAF50' width='180' height='180' rx='40'/><text x='90' y='90' font-size='100' fill='white' text-anchor='middle' dominant-baseline='middle'>📋</text></svg>">
     <link rel="stylesheet" href="/components/components.css">
     <title>📋 Bewerbungs-Tracker v4</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-    <!-- PDF & DOCX Parsing Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <script src="/components/vendor/jspdf.umd.min.js"></script>
+    <script src="/components/vendor/jspdf.plugin.autotable.min.js"></script>
+    <!-- PDF & DOCX Parsing Libraries (vendored — no CDN) -->
+    <script src="/components/vendor/pdf.min.js"></script>
+    <script src="/components/vendor/mammoth.browser.min.js"></script>
     <!-- Encryption: TweetNaCl.js for secure password encryption -->
     <script src="/components/vendor/nacl.min.js"></script>
     <script src="/components/vendor/nacl-util.min.js"></script>
@@ -9848,7 +9848,7 @@ async function uploadCV() {
 async function extractPDFText(file) {
     // Configure PDF.js worker
     if (typeof pdfjsLib !== 'undefined') {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/components/vendor/pdf.worker.min.js';
     }
     
     const arrayBuffer = await file.arrayBuffer();

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bewerbungstracker Workflow"
+  short_description: "Privacy, async worker, Docker deploy, and verification workflow for Bewerbungstracker."
+  default_prompt: "Use the Bewerbungstracker workflow while changing or deploying this project."
