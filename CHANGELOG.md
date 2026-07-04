@@ -2,6 +2,29 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-04 — Admin-Dashboard-Healthchecks repariert + Oracle-VM-Deploy (durch Codex)
+
+**Ausgangslage:** `4a3f1fe` enthielt bereits den IMAP-Proxy-Fix (`do_GET` für `/` und `/ping`) und wurde initial deployed. Danach war der Admin-Status-Overview beim IMAP-Proxy grün, meldete aber weiterhin `ai_provider` als Fehler, weil `api/admin.py` hart `http://ai-provider:8767/health` nutzte. Der laufende `ai-provider` ist auf der Oracle-VM zwar healthy, hängt aber nicht im `bewerbungen-net`; die produktive App nutzt stattdessen die konfigurierte `AI_PROVIDER_SERVICE_URL`.
+
+**Fix + Commits:**
+- `06e5460` — `imap_proxy.py`: `GET /` und `GET /ping` liefern Healthcheck-JSON statt HTTP 501.
+- `4a3f1fe` — Changelog-Dokumentation zum IMAP-Proxy-Fix.
+- `751e97c` — `api/admin.py`: Admin-Status-Overview nutzt für den AI-Provider `AI_PROVIDER_SERVICE_URL` + `/health`, mit Fallback auf den bisherigen Docker-DNS-Namen. Neuer Regressionstest in `tests/api/test_admin_status_overview.py`.
+
+**Deploy-Status:** Erledigt. Produktion läuft auf Oracle VM mit allen 5 Bewerbungstracker-Containern auf `localhost/bewerbungen:751e97c` (`app`, `worker`, `cron`, `email-service`, `imap-proxy`). `origin/master` enthält die Fix-Commits.
+
+**Verifikation:**
+- `venv/bin/pytest tests/api/test_admin_status_overview.py -q` → RED vor Fix, danach `1 passed`.
+- `venv/bin/pytest tests/test_admin_workflow.py tests/api/test_admin_url_cleanup.py tests/test_security_headers.py -q` → 35 passed.
+- Image auf Oracle VM gebaut: `localhost/bewerbungen:751e97c`.
+- Alle 5 Container via `deploy/container/setup-oracle-vm.sh rebuild` neu erstellt.
+- Oracle VM: alle 5 Container laufen mit Image `localhost/bewerbungen:751e97c`.
+- Worker-DB-URI-Check ohne Geheimnis-Ausgabe: erwarteter absoluter SQLite-Pfad bestätigt.
+- VM-App-Smoke: `http://127.0.0.1:5000/` → 200.
+- Public Health: `https://bewerbungen.wolfinisoftware.de/` → 200.
+- IMAP-Proxy: `http://127.0.0.1:8765/ping` → `status=ok`.
+- Admin Status-Overview im App-Container mit geladener `/app/.env`: `imap_proxy=ok`, `ai_provider=ok`.
+
 ### 2026-07-03 (3) — CDN JS-Libraries vendored, PDF-Export repariert (durch pi)
 
 **Problem:** Der PDF-Export über `exportPDF()` funktionierte trotz korrektem CSP-Fix (`4c83c86`) nicht. Der Service Worker (`service-worker.js`) interceptete alle GET-Requests, inkl. Cross-Origin-CDN-Anfragen, und cachete sie. Aufgrund eines MIME-Type-Konflikts (`text/html` statt `application/javascript`) blockierte der Browser alle vier CDNJS-Skripte (`jsPDF`, `jspdf-autotable`, `pdf.js`, `mammoth`).
