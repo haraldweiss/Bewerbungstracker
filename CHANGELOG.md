@@ -550,3 +550,26 @@ Alle Backlog-Items aus dem vorherigen Handoff wurden in dieser Session implement
 - **Kritisch:** File-Ownership `root:root` → `apache:apache` + `FS_METHOD=direct` → Auto-Updates repariert
 - **Empfohlen:** System-Cron eingerichtet (`*/15 * * * * curl -s https://wolfinisoftware.de/wp-cron.php`) → verspätete Cron-Events behoben
 - **Empfohlen:** Stale WP-Super-Cache-Config aus `wp-config.php` entfernt (Plugin nicht mehr installiert, Redis-Cache läuft als Object Cache)
+
+### 2026-07-04 — Fix: IMAP proxy server missing do_GET method
+
+**Problem:** Admin dashboard IMAP-Proxy status section showed HTTP Error 501: Unsupported method ('GET')
+
+**Root Cause:** The IMAP proxy server in imap_proxy.py was missing the do_GET method in the ProxyHandler class. The admin dashboard makes GET requests to check proxy status, but the server only supported POST (for IMAP/POP3 operations) and OPTIONS (for CORS preflight).
+
+**Fix:** Added do_GET method to ProxyHandler class that includes:
+- Same IP validation as do_POST method for security
+- /ping endpoint for health checks (same as existing POST handling)
+- Status endpoint providing proxy information and available endpoints
+- CORS headers support for frontend requests
+- Proper error handling for invalid paths/ips
+
+**Impact:**
+- Admin dashboard now shows IMAP-Proxy as HEALTHY instead of erroring
+- Proxy status endpoint returns detailed information including version and supported endpoints
+- Health monitoring via /ping endpoint operational
+- All existing IMAP/POP3 functionality preserved via POST requests
+
+**Verification:** Admin dashboard IMAP-Proxy status now shows healthy status instead of 501 error.
+
+---
