@@ -487,6 +487,37 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self._set_cors_headers()
         self.end_headers()
 
+
+    def do_GET(self):
+        # Defence-in-depth: reject non-localhost even though we bind to 127.0.0.1
+        allowed = {'127.0.0.1', '::1'}
+        if os.getenv('BIND_HOST', '127.0.0.1') != '127.0.0.1':
+            allowed.add(self.client_address[0])  # allow container-internal traffic
+        if self.client_address[0] not in allowed:
+            self._json({'error': 'Nur lokaler Zugriff erlaubt'}, 403)
+            return
+
+        # Allowed paths only
+        if self.path not in ('/', '/ping'):
+            self._json({'error': 'Pfad nicht gefunden'}, 404)
+            return
+
+        # Health-check ping
+        if self.path == '/ping':
+            self._json({'status': 'ok', 'message': 'Proxy läuft'})
+            return
+
+        # For root path or general status check - return proxy status
+        self._json({
+            'status': 'ok',
+            'message': 'Bewerbungs-Tracker IMAP/POP3 Proxy läuft',
+            'version': '1.0',
+            'endpoints': {
+                'GET /ping': 'Health check',
+                'POST /': 'IMAP/POP3 email operations',
+                'POST /folder': 'List IMAP folders'
+            }
+        })
     def do_POST(self):
         # Defence-in-depth: reject non-localhost even though we bind to 127.0.0.1
         allowed = {'127.0.0.1', '::1'}
