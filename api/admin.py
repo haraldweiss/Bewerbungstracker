@@ -847,9 +847,17 @@ def status_overview(user):
     # IMAP-Proxy (schnell, keine Auth)
     import urllib.request as _ur
     health = {}
+    ai_provider_base_url = (
+        current_app.config.get('AI_PROVIDER_SERVICE_URL') or ''
+    ).rstrip('/')
+    ai_provider_health_url = (
+        f'{ai_provider_base_url}/health'
+        if ai_provider_base_url
+        else 'http://ai-provider:8767/health'
+    )
     for name, url in [
         ('imap_proxy', 'http://bewerbungen-imap-proxy:8765/'),
-        ('ai_provider', 'http://ai-provider:8767/health'),
+        ('ai_provider', ai_provider_health_url),
     ]:
         try:
             req = _ur.Request(url, method='GET')
