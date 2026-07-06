@@ -18,6 +18,14 @@ def test_frontend_uses_shared_model_tier_helper():
     assert "freeModelsSet.has(model)" in html
 
 
+def test_frontend_lists_openrouter_as_system_provider():
+    html = _index_html()
+
+    assert "{ id: 'openrouter', name: 'OpenRouter', system: true }" in html
+    assert "openrouter: 'OpenRouter'" in html
+    assert "provider === 'openrouter'" in html
+
+
 def test_frontend_does_not_select_hidden_paid_defaults():
     html = _index_html()
 

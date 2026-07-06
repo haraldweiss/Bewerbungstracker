@@ -301,7 +301,7 @@ def update_job_discovery_filters(user):
 import json as _profile_json
 
 VALID_FEATURES = {'match', 'cover_letter', 'email_analyse', 'cv_summarize'}
-VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom', 'opencode'}
+VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom', 'opencode', 'openrouter'}
 
 
 @profile_bp.get('/profile/feature-models')

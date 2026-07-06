@@ -10584,6 +10584,7 @@ const ALL_PROVIDERS = [
     { id: 'mammouth', name: 'Mammouth', system: false },
     { id: 'custom', name: 'Custom Endpoint (OpenAI-kompatibel)', system: false },
     { id: 'opencode', name: 'opencode.ai (Zen)', system: false },
+    { id: 'openrouter', name: 'OpenRouter', system: true },
     { id: 'zai', name: 'z.ai (GLM)', system: true }
 ];
 
@@ -10658,6 +10659,7 @@ const PROVIDER_DISPLAY = {
     ollama: 'Ollama',
     mammouth: 'Mammouth',
     custom: 'Custom',
+    openrouter: 'OpenRouter',
 };
 
 function providerDisplayName(id) {
@@ -11595,6 +11597,8 @@ async function onProviderChange() {
         info.textContent = 'ℹ️ Eigener OpenAI-kompatibler Endpoint';
     } else if (provider === 'opencode') {
         info.textContent = '✓ opencode Free-Modus verfügbar — eigener API-Key schaltet Paid-Modelle frei';
+    } else if (provider === 'openrouter') {
+        info.textContent = '✓ OpenRouter ist zentral konfiguriert — Free-Modelle werden ohne Guthaben bevorzugt';
     }
 
     // Zeige Config-Form für User-Provider. Bei claude: nur wenn der User

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 providers_bp = Blueprint('providers', __name__, url_prefix='/api/providers')
 
-VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom', 'opencode', 'zai'}
+VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom', 'opencode', 'openrouter', 'zai'}
 # Provider die User-spezifisch konfiguriert werden können (eigener API-Key etc).
 # Claude ist hier drin, weil neue User (außer dem Server-Key-Allowlist-Owner)
 # einen eigenen Anthropic-Key hinterlegen müssen, um Claude nutzen zu können.
