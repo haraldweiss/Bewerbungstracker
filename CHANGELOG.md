@@ -2,6 +2,32 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-06 (2) — OpenRouter-Modellauswahl repariert + Oracle-VM-Deploy (durch Codex)
+
+**Ausgangslage:** Die Backup-KI-Auswahl zeigte `OpenRouter`, aber das Modell-Dropdown blieb bei `⚠️ Models nicht verfügbar`. Der zentrale `ai-provider-service` meldete OpenRouter bereits als `configured=True` und lieferte 27 Modelle; der Bewerbungstracker-Proxy blockte aber `/api/providers/openrouter/models`, weil `openrouter` lokal noch nicht in den Provider-Allowlists stand.
+
+**Fix + Commit:**
+- `4468d7b` — `api/providers.py`: `openrouter` als gültiger Provider für Models, Primary und Backup zugelassen.
+- `4468d7b` — `api/profile.py`: Pro-Task-Modell-Overrides akzeptieren `openrouter`.
+- `4468d7b` — `index.html`: OpenRouter in der Hauptprovider-Liste und Anzeigenamensmap ergänzt.
+- `4468d7b` — `tests/api/test_openrouter_provider.py`, `tests/test_frontend_model_selection.py`: Regressionstests für Models-Proxy, Backup-Settings, Pro-Task-Override und Frontend-Aufnahme.
+
+**Deploy-Status:** Erledigt. Produktion läuft auf Oracle VM mit allen 5 Bewerbungstracker-Containern auf `localhost/bewerbungen:4468d7b` (`app`, `worker`, `cron`, `email-service`, `imap-proxy`). `origin/master` enthält den Fix-Commit.
+
+**Verifikation:**
+- Lokal: `venv/bin/pytest tests/api/test_openrouter_provider.py` → RED vor Fix (3x 400), danach GREEN.
+- Lokal: `venv/bin/pytest tests/api/test_openrouter_provider.py tests/api/test_model_validation.py tests/api/test_feature_models.py tests/test_frontend_model_selection.py` → 23 passed.
+- Lokal: Inline-Script-Syntaxcheck für `index.html` → `inline scripts ok: 3`.
+- Vor Deploy auf Produktion bestätigt: `ai-provider-service` liefert für `openrouter` 27 Modelle und meldet `configured=True`, `system=True`.
+- Image auf Oracle VM gebaut: `localhost/bewerbungen:4468d7b`.
+- Alle 5 Container via `IMAGE_TAG=4468d7b deploy/container/setup-oracle-vm.sh rebuild` neu erstellt.
+- Oracle VM: alle 5 Container laufen mit Image `localhost/bewerbungen:4468d7b`.
+- VM-App-Smoke: `http://127.0.0.1:5000/` → 200.
+- Public Smoke: `https://bewerbungen.wolfinisoftware.de/` → 200.
+- IMAP-Proxy: `http://127.0.0.1:8765/ping` → 200.
+- Email-Service: `http://127.0.0.1:8766/api/status` → 200.
+- Ursprünglicher Fehlerpfad: `GET /api/providers/openrouter/models` über die Bewerbungstracker-App → HTTP 200, `model_count=27`, `free_count=27`, Default `cognitivecomputations/dolphin-mistral-24b-venice-edition:free`.
+
 ### 2026-07-06 — Free/Paid-Modellauswahl konsolidiert + Oracle-VM-Deploy (durch Codex)
 
 **Ausgangslage:** Die AI-Provider-UI zeigte opencode-Free-Modelle bereits an, behandelte Free/Paid aber an mehreren Stellen leicht unterschiedlich. Die Pro-Task-Dropdown-Logik hatte zusätzlich einen JS-Namensfehler (`currentOv` gesetzt, danach `current` gelesen), wodurch einzelne Override-Dropdowns beim Nachladen stolpern konnten.
