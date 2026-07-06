@@ -2,6 +2,28 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-06 — Free/Paid-Modellauswahl konsolidiert + Oracle-VM-Deploy (durch Codex)
+
+**Ausgangslage:** Die AI-Provider-UI zeigte opencode-Free-Modelle bereits an, behandelte Free/Paid aber an mehreren Stellen leicht unterschiedlich. Die Pro-Task-Dropdown-Logik hatte zusätzlich einen JS-Namensfehler (`currentOv` gesetzt, danach `current` gelesen), wodurch einzelne Override-Dropdowns beim Nachladen stolpern konnten.
+
+**Fix + Commit:**
+- `db833e2` — `index.html`: gemeinsamer Free/Paid-Helfer für Standard-Modell, Backup-KI und Pro-Task-Dropdowns; `free_models` aus der API wird genutzt, `-free` bleibt Fallback; opencode-Paid-Modelle werden ohne eigenen Key ausgeblendet; sichtbare Defaults werden robust ausgewählt; `currentOv/current`-Bug behoben. Neuer Regressionstest in `tests/test_frontend_model_selection.py`.
+
+**Deploy-Status:** Erledigt. Produktion läuft auf Oracle VM mit allen 5 Bewerbungstracker-Containern auf `localhost/bewerbungen:db833e2` (`app`, `worker`, `cron`, `email-service`, `imap-proxy`). `origin/master` enthält den Fix-Commit.
+
+**Verifikation:**
+- Lokal: `venv/bin/pytest tests/test_frontend_model_selection.py tests/services/test_ai_provider_client.py::test_get_models_raw_returns_full_response_with_free_models tests/services/test_ai_provider_client.py::test_get_models_still_returns_only_list tests/api/test_model_validation.py` → 11 passed.
+- Lokal: Inline-Script-Syntaxcheck für `index.html` → `inline scripts ok: 3`.
+- Image auf Oracle VM gebaut: `localhost/bewerbungen:db833e2`.
+- Alle 5 Container via `IMAGE_TAG=db833e2 deploy/container/setup-oracle-vm.sh rebuild` neu erstellt.
+- Oracle VM: alle 5 Container laufen mit Image `localhost/bewerbungen:db833e2`.
+- VM-App-Smoke: `http://127.0.0.1:5000/` → 200.
+- Public Smoke: `https://bewerbungen.wolfinisoftware.de/` → 200.
+- IMAP-Proxy: `http://127.0.0.1:8765/ping` → 200.
+- Email-Service: `http://127.0.0.1:8766/api/status` → 200 (`/health` existiert dort nicht und liefert erwartbar 404).
+- App + Worker DB-URI: beide `sqlite:////app/data/bewerbungstracker.db`.
+- Laufender App-Container enthält den neuen Frontend-Code (`modelTierBuckets`, opencode-Free-Modus-Hinweis); App-Logs zeigen nur normale Starts/GETs.
+
 ### 2026-07-04 — Admin-Dashboard-Healthchecks repariert + Oracle-VM-Deploy (durch Codex)
 
 **Ausgangslage:** `4a3f1fe` enthielt bereits den IMAP-Proxy-Fix (`do_GET` für `/` und `/ping`) und wurde initial deployed. Danach war der Admin-Status-Overview beim IMAP-Proxy grün, meldete aber weiterhin `ai_provider` als Fehler, weil `api/admin.py` hart `http://ai-provider:8767/health` nutzte. Der laufende `ai-provider` ist auf der Oracle-VM zwar healthy, hängt aber nicht im `bewerbungen-net`; die produktive App nutzt stattdessen die konfigurierte `AI_PROVIDER_SERVICE_URL`.
