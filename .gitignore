@@ -10,6 +10,9 @@ config.json
 __pycache__/
 *.pyc
 .claude/
+.codex/
+.playwright/
+.playwright-mcp/
 
 # IDE
 .vscode/
