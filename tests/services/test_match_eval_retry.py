@@ -40,7 +40,7 @@ def test_content_failure_detection():
 
 def test_constants_defaults():
     assert MATCH_MAX_EVAL_ATTEMPTS == 5
-    assert MATCH_OLLAMA_FALLBACK_MODEL == "gemma4:12b"
+    assert MATCH_OLLAMA_FALLBACK_MODEL == "mistral-nemo-cc:latest"
 
 
 # ----- Task 4: Ollama-Fallback-Kette + Failure-Handling -----
@@ -57,9 +57,11 @@ class _FakeClient:
     def __init__(self, by_provider):
         self.by_provider = by_provider
         self.calls = []
+        self.request_models = []
 
     def chat(self, *, user_id, provider, model, messages, max_tokens, **kw):
         self.calls.append(provider)
+        self.request_models.append((provider, model, kw))
         r = self.by_provider[provider]
         if isinstance(r, Exception):
             raise r
@@ -94,6 +96,7 @@ def test_ollama_fallback_succeeds_on_opencode_prose(app, db_session, user_factor
     assert m.match_score == 73
     assert m.eval_attempts == 0
     assert 'ollama' in fake.calls
+    assert ("ollama", "mistral-nemo-cc:latest", {}) in fake.request_models
 
 
 def test_content_failure_increments_attempts_when_ollama_also_prose(app, db_session, user_factory):

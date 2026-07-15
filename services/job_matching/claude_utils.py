@@ -42,7 +42,9 @@ AI_CONFIRM_BUDGET = 50
 # Technische-Fehler-Retry (siehe docs/superpowers/specs/2026-06-12-technical-failure-reeval-design.md)
 MATCH_MAX_EVAL_ATTEMPTS = int(os.getenv("MATCH_MAX_EVAL_ATTEMPTS", "5"))
 MATCH_FALLBACK_ENABLED = os.getenv("MATCH_FALLBACK_ENABLED", "true").lower() in ("1", "true", "yes")
-MATCH_OLLAMA_FALLBACK_MODEL = os.getenv("MATCH_OLLAMA_FALLBACK_MODEL", "gemma4:12b")
+# The default must be installed on the shared Ollama service.  Keep the env
+# override for deployments that use a different local model.
+MATCH_OLLAMA_FALLBACK_MODEL = os.getenv("MATCH_OLLAMA_FALLBACK_MODEL", "mistral-nemo-cc:latest")
 PERMANENT_FAIL_REASONING = "Technisch nicht bewertbar – bitte manuell prüfen."
 
 # Hinweis, wenn ein Match nicht bewertet werden kann, weil der User noch keinen

@@ -114,6 +114,7 @@ def test_get_client_passes_timeout_override():
     with patch('services.ai_provider_client.Config') as mock_config:
         mock_config.AI_PROVIDER_SERVICE_URL = "http://test"
         mock_config.AI_PROVIDER_SERVICE_TOKEN = "tok"
+        mock_config.AI_TIMEOUT_SECONDS = 180
 
         default_client = get_client()
         assert default_client is not None

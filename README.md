@@ -53,6 +53,10 @@ export CLAUDE_DEFAULT_MODEL=claude-haiku-4-5-20251001
 # Wenn gesetzt, werden alle KI-Calls dorthin delegiert.
 export AI_PROVIDER_SERVICE_URL=http://127.0.0.1:8767
 export AI_PROVIDER_SERVICE_TOKEN=<service-token>
+# Optional: fallback for job matching if the selected provider is unavailable.
+# Set this to a model that is installed on the connected Ollama service.
+export MATCH_FALLBACK_ENABLED=true
+export MATCH_OLLAMA_FALLBACK_MODEL=mistral-nemo-cc:latest
 
 # Cron einrichten (entweder system-cron oder cron-job.org)
 # 5 Endpoints: /api/jobs/{crawl-source,prefilter,claude-match,notify,cleanup}
@@ -165,6 +169,9 @@ export CLAUDE_DEFAULT_MODEL=claude-haiku-4-5-20251001
 # When set, all AI calls are delegated there.
 export AI_PROVIDER_SERVICE_URL=http://127.0.0.1:8767
 export AI_PROVIDER_SERVICE_TOKEN=<service-token>
+# Optional: job-matching fallback; the model must exist on the Ollama service.
+export MATCH_FALLBACK_ENABLED=true
+export MATCH_OLLAMA_FALLBACK_MODEL=mistral-nemo-cc:latest
 
 # Cron setup (system cron or cron-job.org)
 # 5 endpoints: /api/jobs/{crawl-source,prefilter,claude-match,notify,cleanup}
