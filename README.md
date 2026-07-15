@@ -58,6 +58,10 @@ export AI_PROVIDER_SERVICE_TOKEN=<service-token>
 # 5 Endpoints: /api/jobs/{crawl-source,prefilter,claude-match,notify,cleanup}
 ```
 
+**Docker-Deployment:** Der Cron-Container muss `APP_INTERNAL_URL=http://bewerbungen-app:5000`
+aus derselben `/etc/bewerbungen/bewerbungen.env` wie die App erhalten. Keine
+flüchtige Docker-IP (z. B. `172.17.x.x`) verwenden; sie ändert sich beim Recreate.
+
 **Optional: ai-provider-service** — separates Repo, läuft als systemd-Unit auf
 Port 8767 und kapselt alle Provider hinter einer einheitlichen REST-API.
 Vorteile: zentrale API-Key-Verwaltung, automatischer Fallback, Queue-Persistenz
@@ -165,6 +169,11 @@ export AI_PROVIDER_SERVICE_TOKEN=<service-token>
 # Cron setup (system cron or cron-job.org)
 # 5 endpoints: /api/jobs/{crawl-source,prefilter,claude-match,notify,cleanup}
 ```
+
+**Docker deployment:** The cron container must receive
+`APP_INTERNAL_URL=http://bewerbungen-app:5000` from the same
+`/etc/bewerbungen/bewerbungen.env` as the app. Do not use an ephemeral Docker IP
+(for example `172.17.x.x`), because it changes when containers are recreated.
 
 **Optional: ai-provider-service** — separate repo, runs as systemd unit on
 port 8767 and wraps all providers behind a unified REST API. Benefits:

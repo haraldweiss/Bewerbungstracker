@@ -2,6 +2,35 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-15 — Job-Discovery-Cron wiederhergestellt (durch Codex)
+
+**Problem:** Alle Nicht-E-Mail-Quellen standen seit dem 12. Juni beim letzten Crawl. Der
+laufende Cron-Container führte die Jobs zwar stündlich aus, erreichte die App aber nicht:
+`APP_INTERNAL_URL` zeigte noch auf die alte, flüchtige Docker-IP `172.17.0.1:5000`.
+Nach Korrektur auf den Docker-Service-Namen wurde außerdem der zweite Fehler sichtbar:
+Alle Cron-`curl`-Aufrufe übergaben `X-Cron-Token` ohne den für HTTP nötigen Doppelpunkt,
+wodurch die App sie mit 403 ablehnte.
+
+**Fix:**
+- Produktion: `/etc/bewerbungen/bewerbungen.env` auf
+  `APP_INTERNAL_URL=http://bewerbungen-app:5000` korrigiert und alle fünf Container über
+  `IMAGE_TAG=37b357a deploy/container/setup-oracle-vm.sh rebuild` neu erstellt.
+- `deploy/container/crontab`: Alle Pipeline-Aufrufe senden jetzt den gültigen Header
+  `X-Cron-Token: ${JOB_CRON_TOKEN}`.
+- `tests/test_crontab.py`: Regressionstest verhindert künftig Cron-Zeilen mit einem
+  ungültigen Authentifizierungsheader.
+- `README.md`: Docker-Hinweis zur stabilen internen App-Adresse ergänzt.
+
+**Lokale Verifikation:** RED: `venv/bin/pytest tests/test_crontab.py -q` → erwarteter
+Fehlschlag vor dem Fix. GREEN:
+`venv/bin/pytest tests/test_crontab.py tests/services/test_cron_auth.py tests/api/test_jobs_cron.py -q`
+→ 25 passed.
+
+**Produktion vor Code-Deploy:** Die fünf Container wurden mit unverändertem Image
+`localhost/bewerbungen:37b357a` neu erstellt; `bewerbungen-app` ist vom Cron-Container
+über `http://bewerbungen-app:5000` mit HTTP 200 erreichbar. Der Header-Fix selbst wird
+mit dem nachfolgenden Image-Deploy aktiv.
+
 ### 2026-07-06 (2) — OpenRouter-Modellauswahl repariert + Oracle-VM-Deploy (durch Codex)
 
 **Ausgangslage:** Die Backup-KI-Auswahl zeigte `OpenRouter`, aber das Modell-Dropdown blieb bei `⚠️ Models nicht verfügbar`. Der zentrale `ai-provider-service` meldete OpenRouter bereits als `configured=True` und lieferte 27 Modelle; der Bewerbungstracker-Proxy blockte aber `/api/providers/openrouter/models`, weil `openrouter` lokal noch nicht in den Provider-Allowlists stand.
