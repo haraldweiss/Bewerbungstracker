@@ -2,6 +2,47 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-15 — Bewertungs-Fallback nach OpenRouter-Freikontingent repariert (durch Codex)
+
+**Problem:** Job-Bewertungen schlugen mit HTTP 500 fehl, obwohl die Provider-Auswahl
+Modelle anzeigte. OpenRouter war erreichbar, hatte aber sein Tageslimit für Free-Modelle
+erreicht (HTTP 429). Der automatische Matching-Fallback probierte danach Ollama mit dem
+veralteten Modell `gemma4:12b`; auf keinem der konfigurierten Ollama-Endpunkte war dieses
+Modell installiert. Dadurch konnte der Provider-Service keinen Fallback ausführen.
+
+**Fix + Commit:**
+- `6652141` — `services/job_matching/claude_utils.py`: Default für
+  `MATCH_OLLAMA_FALLBACK_MODEL` auf das installierte
+  `mistral-nemo-cc:latest` geändert.
+- `deploy/container/setup-oracle-vm.sh`, `deploy/container/setup-vps.sh` und
+  `README.md`: Fallback-Konfiguration als explizite, überschreibbare Umgebungsvariablen
+  dokumentiert.
+- `tests/services/test_match_eval_retry.py`: Regressionstest prüft den tatsächlich an
+  Ollama übergebenen Modellnamen. `tests/services/test_ai_provider_client.py` setzt die
+  vollständige Timeout-Konfiguration im gemockten Client.
+
+**Deploy-Status: ERLEDIGT.** `/etc/bewerbungen/bewerbungen.env` enthält nun
+`MATCH_FALLBACK_ENABLED=true` und
+`MATCH_OLLAMA_FALLBACK_MODEL=mistral-nemo-cc:latest`. Image
+`localhost/bewerbungen:6652141` wurde auf der Oracle-VM mit
+`deploy/container/build.sh 6652141` gebaut und alle fünf Bewerbungstracker-Container
+über `IMAGE_TAG=6652141 deploy/container/setup-oracle-vm.sh rebuild` neu erstellt.
+
+**Verifikation:**
+- RED: `venv/bin/pytest tests/services/test_match_eval_retry.py::test_constants_defaults -q`
+  schlug vor der Änderung erwartungsgemäß wegen `gemma4:12b` fehl.
+- GREEN: relevanter Provider-/Bewertungsbereich
+  `venv/bin/pytest tests/services/test_match_eval_retry.py tests/services/test_ai_provider_client.py tests/api/test_openrouter_provider.py tests/api/test_model_validation.py tests/api/test_jobs_user.py -q`
+  → **87 passed**.
+- Produktion: Alle fünf Container laufen auf `localhost/bewerbungen:6652141`; interne
+  und öffentliche App-Smokes liefern HTTP 200. App und Worker haben den AI-Provider-Service
+  im Prozess-Environment. Ein nicht personenbezogener direkter Ollama-Test mit
+  `mistral-nemo-cc:latest` lieferte eine Antwort über `via=ollama`.
+- Die vollständige Suite war nicht grün: ein unabhängiger RSS-Fixture-Test
+  (`tests/services/test_job_sources_rss.py::test_rss_adapter_parses_two_jobs`) scheitert,
+  weil `example.com` in dieser Umgebung auf eine von der SSRF-Sperre abgelehnte Adresse
+  aufgelöst wird. Der Provider-spezifische Bereich ist grün.
+
 ### 2026-07-15 — Job-Discovery-Cron wiederhergestellt (durch Codex)
 
 **Problem:** Alle Nicht-E-Mail-Quellen standen seit dem 12. Juni beim letzten Crawl. Der
