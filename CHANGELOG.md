@@ -26,10 +26,12 @@ Fehlschlag vor dem Fix. GREEN:
 `venv/bin/pytest tests/test_crontab.py tests/services/test_cron_auth.py tests/api/test_jobs_cron.py -q`
 → 25 passed.
 
-**Produktion vor Code-Deploy:** Die fünf Container wurden mit unverändertem Image
-`localhost/bewerbungen:37b357a` neu erstellt; `bewerbungen-app` ist vom Cron-Container
-über `http://bewerbungen-app:5000` mit HTTP 200 erreichbar. Der Header-Fix selbst wird
-mit dem nachfolgenden Image-Deploy aktiv.
+**Deploy-Status: ERLEDIGT.** Image `localhost/bewerbungen:16537d0` wurde auf der
+Oracle-VM gebaut und alle fünf Container über `setup-oracle-vm.sh rebuild` neu erstellt.
+Alle laufen auf diesem Tag; interne Cron→App- und öffentliche HTTP-Smokes liefern 200.
+Ein manuell über den normalen Cron-Pfad gestarteter Crawl-Task wurde `done`
+(`source_id=14`, 9 neue Jobs, 27 Matches, keine Fehler). Die überfälligen Quellen werden
+ab jetzt wieder round-robin im regulären Stundenrhythmus abgearbeitet.
 
 ### 2026-07-06 (2) — OpenRouter-Modellauswahl repariert + Oracle-VM-Deploy (durch Codex)
 
