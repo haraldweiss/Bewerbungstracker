@@ -44,6 +44,7 @@ def rebuild_for_user(user):
     for m in matches:
         try:
             update_centroid_for_feedback(user, m)
+            db.session.commit()
             done += 1
         except Exception as e:
             print(f'  fail match_id={m.id}: {e}')
