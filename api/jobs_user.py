@@ -570,7 +570,6 @@ def update_match(user, match_id: int):
             return jsonify({"error": str(exc)}), 400
         m.status = 'dismissed'
         m.feedback_text = FEEDBACK_TEXT_BY_ACTION[quick_action]
-        db.session.commit()
 
         from services.job_matching.learner import update_centroid_for_feedback
         try:
@@ -578,6 +577,7 @@ def update_match(user, match_id: int):
         except Exception as e:
             current_app.logger.warning('Centroid update failed: %s', e)
 
+        db.session.commit()
         return jsonify({"id": m.id, "status": m.status}), 200
 
     new_status = data.get("status")
@@ -606,9 +606,7 @@ def update_match(user, match_id: int):
             return jsonify({"error": f"feedback_text max {MAX_FEEDBACK_TEXT_CHARS} Zeichen"}), 400
         m.feedback_text = text.strip() or None
 
-    db.session.commit()
-
-    # Adaptive Learning: Centroid update nach commit
+    # Adaptive Learning: Centroid update (vor dem gemeinsamen commit).
     if new_status in ('dismissed', 'imported'):
         from services.job_matching.learner import update_centroid_for_feedback
         try:
@@ -616,6 +614,7 @@ def update_match(user, match_id: int):
         except Exception as e:
             current_app.logger.warning('Centroid update failed: %s', e)
 
+    db.session.commit()
     return jsonify({"id": m.id, "status": m.status}), 200
 
 
@@ -699,16 +698,15 @@ def import_match(user, match_id: int):
 
     m.status = 'imported'
     m.imported_application_id = application.id
-    db.session.commit()
 
-    # Adaptive Learning: Centroid update nach commit (analog zum PATCH-Endpoint).
-    # Lässt den Lern-Mechanismus auch beim regulären Import-Flow greifen.
+    # Adaptive Learning: Centroid update vor dem gemeinsamen commit.
     from services.job_matching.learner import update_centroid_for_feedback
     try:
         update_centroid_for_feedback(user, m)
     except Exception as e:
         current_app.logger.warning('Centroid update failed: %s', e)
 
+    db.session.commit()
     return jsonify({"application_id": application.id}), 201
 
 
