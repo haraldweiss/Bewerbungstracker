@@ -2,6 +2,37 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-16 — Verwerfen/Import warf HTTP 500 (doppelter DB-Commit im Learner)
+
+**Problem:** `update_centroid_for_feedback` (services/job_matching/learner.py)
+machte ein **eigenes** `db.session.commit()`, während alle Aufrufer
+(API-Routen in api/jobs_user.py, feedback_bridge.py) danach **noch ein
+zweites** `commit()` ausführten. Der doppelte Commit führte im
+Produktions-Request zu einer `InvalidRequestError`/abgebrochenen
+Transaction → **HTTP 500 beim Verwerfen (Single, Bulk, Quick-Action) und
+beim Importieren**.
+
+**Fix + Commits (master):**
+- `4c20d2a` — learner.py: `commit()` → `flush()` (kein eigenes Commit
+  mehr; der Aufrufer ist für das Persistieren zuständig).
+- `7e63eea` — api/jobs_user.py: Learner-Aufruf jeweils **vor** das eine
+  `db.session.commit()` geschoben (quick_action-, normaler PATCH- und
+  import-Pfad), sonst wird das UserLearnProfile nicht mehr persistiert.
+- `c85e180` — scripts/rebuild_user_centroids.py: eigenes `commit()` pro
+  Match ergänzt (war zuvor auf das Commit im Learner angewiesen).
+
+**Verifiziert gegen echte Produktions-DB (SQLite, Container
+localhost/bewerbungen:c85e180):** PATCH /api/jobs/matches/<id> (status
+dismissed, quick_action company_rejected) → 200; PATCH
+/api/jobs/matches/bulk (status dismissed) → 200. Keine Errors/Exceptions in
+den App-Logs. `pytest tests/api tests/integration` lokal: 258 passed.
+
+**Deploy-Status: ERLEDIGT.** Image `localhost/bewerbungen:c85e180` auf
+Oracle-VM gebaut (aus /home/opc/bewerbungstracker), alle fünf
+Bewerbungstracker-Container via
+`IMAGE_TAG=c85e180 deploy/container/setup-oracle-vm.sh rebuild` neu erstellt
+(Volume bewerbungen_data erhalten).
+
 ### 2026-07-15 — Bewertungs-Fallback nach OpenRouter-Freikontingent repariert (durch Codex)
 
 **Problem:** Job-Bewertungen schlugen mit HTTP 500 fehl, obwohl die Provider-Auswahl
