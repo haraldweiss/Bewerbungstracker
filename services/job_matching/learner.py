@@ -148,7 +148,10 @@ def update_centroid_for_feedback(user, match) -> None:
         except (ValueError, TypeError):
             pass
 
-    db.session.commit()
+    # Kein eigenes commit(): der aufrufende Code (API-Route, Script) ist
+    # fuer das commit zustaendig. Ein doppeltes commit() (Learner + Aufrufer)
+    # fuehrt bei Postgres zu InvalidRequestError -> 500 beim Verwerfen/Importieren.
+    db.session.flush()
 
 
 def compute_score_adjustment(user, raw_job_id: int, base_score: float) -> float:
