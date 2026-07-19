@@ -55,6 +55,18 @@ gegreppt (`was_dismissed` in /app/api/jobs_user.py, `rollback()` in
 gefixten stats-Pfad, read-only), Gunicorn-Log fehlerfrei.
 Rollback bei Problemen: `IMAGE_TAG=c85e180 deploy/container/setup-oracle-vm.sh rebuild`.
 
+**Lern-Profil-Rebuild (gleiche Session):** `scripts/rebuild_user_centroids.py`
+im Worker-Container ausgeführt (vorher konsistentes Online-Backup via
+`sqlite3.backup()` → `/app/data/bewerbungstracker-pre-rebuild-20260719.db`
+im Volume, 34,8 MB). 3112 Matches über 3 User, 0 Fehler. Effekt beim
+Haupt-User: `samples_imported` 85 → **33** (Inflation durch
+feedback_bridge-Doppelzählung entfernt; 33 < 75 Imports, da nicht jeder
+Match ein Embedding hat), `samples_dismissed` 1365 → **1315**,
+reason_counts bereinigt (z.B. `positive_signal_interview` 23 → 7,
+`missing_skills` 155 → 120). App-Log während des Laufs fehlerfrei, keine
+SQLite-Locks. Die beiden anderen User haben weiterhin kein Profil, weil
+ihre Matches keine Embeddings besitzen (unverändert, erwartetes Verhalten).
+
 ### 2026-07-16 — Verwerfen/Import warf HTTP 500 (doppelter DB-Commit im Learner)
 
 **Problem:** `update_centroid_for_feedback` (services/job_matching/learner.py)
