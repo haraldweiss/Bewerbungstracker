@@ -137,6 +137,30 @@ def test_compute_score_adjustment_dismissed_imbalance_is_bounded():
     assert adjusted <= 65.0
 
 
+def test_get_learn_profile_stats_tolerates_non_int_reason_counts(app, user_factory):
+    """Malformed reason_counts (z.B. String-Werte aus Legacy-Daten) duerfen
+    GET /api/jobs/learn-profile nicht mit TypeError crashen."""
+    import json
+    from database import db
+    from models import UserLearnProfile
+
+    user = user_factory()
+    db.session.add(UserLearnProfile(
+        user_id=user.id,
+        samples_imported=5,
+        samples_dismissed=5,
+        reason_counts=json.dumps({"wrong_seniority": "viel", "salary_too_low": 4}),
+    ))
+    db.session.commit()
+
+    stats = get_learn_profile_stats(user)
+
+    assert stats['samples_imported'] == 5
+    assert stats['top_reasons'] == [
+        {'reason': 'salary_too_low', 'label': 'Gehalt zu niedrig', 'count': 4}
+    ]
+
+
 def test_compute_score_adjustment_penalizes_repeated_wrong_seniority(app, user_factory):
     import json
     from database import db

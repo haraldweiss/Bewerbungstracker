@@ -164,7 +164,7 @@ def compute_score_adjustment(user, raw_job_id: int, base_score: float) -> float:
         return base_score
 
     min_samples = user.job_learn_min_samples or 3
-    if profile.samples_imported < min_samples or profile.samples_dismissed < min_samples:
+    if (profile.samples_imported or 0) < min_samples or (profile.samples_dismissed or 0) < min_samples:
         return base_score
 
     if profile.imported_centroid is None or profile.dismissed_centroid is None:
@@ -207,16 +207,13 @@ def get_learn_profile_stats(user) -> dict:
     min_samples = user.job_learn_min_samples or 3
     active = (
         bool(user.job_learn_enabled)
-        and profile.samples_imported >= min_samples
-        and profile.samples_dismissed >= min_samples
+        and (profile.samples_imported or 0) >= min_samples
+        and (profile.samples_dismissed or 0) >= min_samples
     )
 
-    counts = {}
-    if profile.reason_counts:
-        try:
-            counts = json.loads(profile.reason_counts)
-        except (ValueError, TypeError):
-            counts = {}
+    # _load_reason_counts filtert nicht-int Werte — ein direktes json.loads
+    # wuerde bei malformed Daten (z.B. String-Werte) im sorted() unten crashen.
+    counts = _load_reason_counts(profile)
 
     top = sorted(counts.items(), key=lambda x: -x[1])[:5]
     top_reasons = [
