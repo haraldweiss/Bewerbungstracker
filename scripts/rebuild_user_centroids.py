@@ -47,6 +47,12 @@ def rebuild_for_user(user):
             db.session.commit()
             done += 1
         except Exception as e:
+            # Ohne rollback() bleibt die Session in einer abgebrochenen
+            # Transaktion (Postgres) bzw. mit dirty State haengen — jeder
+            # folgende commit() wuerde dann ebenfalls fehlschlagen oder
+            # halb geschriebene Daten des fehlgeschlagenen Matches
+            # mitpersistieren.
+            db.session.rollback()
             print(f'  fail match_id={m.id}: {e}')
     print(f'  -> {done} aggregiert')
 
