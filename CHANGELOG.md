@@ -39,8 +39,21 @@ JobMatch (Schema-Änderung) oder einen Delta-Pfad nur für Reasons.
 **Verifiziert:** 6 neue Regressionstests, alle vorher RED gegen den alten
 Code bestätigt, mit Fix GREEN. Volle Suite lokal:
 `pytest tests/ -q` → **855 passed, 2 skipped, 1 xfailed**.
-Nicht deployed, nur lokale SQLite-Tests (Postgres-Verhalten per Review
-abgesichert, nicht live getestet).
+Postgres-Verhalten per Review abgesichert, nicht live getestet.
+
+**Deploy-Status: ERLEDIGT (2026-07-19, Fallback-Disziplin nach AGENTS.md §2).**
+Code via rsync nach `/home/opc/bewerbungstracker` (kein Git-Checkout dort,
+Tag daher explizit), Image `localhost/bewerbungen:7b42ea4` via
+`deploy/container/build.sh 7b42ea4` gebaut, alle fünf Container via
+`IMAGE_TAG=7b42ea4 deploy/container/setup-oracle-vm.sh rebuild` neu erstellt
+(Volume `bewerbungen_data` erhalten, ai-provider NICHT angefasst → kein
+Token-Sync nötig). Verifikation auf der VM: Worker-DB-URI =
+`sqlite:////app/data/bewerbungstracker.db` (§3.5 ✅), Fix im Image
+gegreppt (`was_dismissed` in /app/api/jobs_user.py, `rollback()` in
+/app/scripts/rebuild_user_centroids.py), `GET /` → 200,
+`GET /api/jobs/learn-profile` mit frischem JWT → **200** (übt genau den
+gefixten stats-Pfad, read-only), Gunicorn-Log fehlerfrei.
+Rollback bei Problemen: `IMAGE_TAG=c85e180 deploy/container/setup-oracle-vm.sh rebuild`.
 
 ### 2026-07-16 — Verwerfen/Import warf HTTP 500 (doppelter DB-Commit im Learner)
 
