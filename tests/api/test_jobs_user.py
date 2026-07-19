@@ -825,6 +825,78 @@ def test_bulk_dismiss_updates_learning_profile(client, app, user_factory, auth_h
     assert profile.samples_dismissed == 1
 
 
+def _make_match_with_embedding(user, *, source_name, external_id):
+    from services.job_matching.embedder import vector_pack
+    src = JobSource(name=source_name, type="rss", config={"url": "x"})
+    db.session.add(src)
+    db.session.flush()
+    raw = RawJob(source_id=src.id, external_id=external_id, title="Security Engineer",
+                 url="https://example.test/job", crawl_status="matched")
+    db.session.add(raw)
+    db.session.flush()
+    match = JobMatch(raw_job_id=raw.id, user_id=user.id, status="new", match_score=70)
+    db.session.add(match)
+    db.session.flush()
+    from models import JobEmbedding
+    db.session.add(JobEmbedding(raw_job_id=raw.id, vector=vector_pack([1.0] + [0.0] * 767)))
+    db.session.commit()
+    return match
+
+
+def test_redismiss_does_not_double_count_learning(client, app, user_factory, auth_header):
+    """Erneutes Dismissen (Doppelklick / Re-PATCH) darf Samples + Centroid nicht
+    doppelt zaehlen — der Learner laeuft nur beim echten Status-Uebergang."""
+    from models import UserLearnProfile
+
+    headers, user = auth_header
+    match = _make_match_with_embedding(user, source_name="redismiss", external_id="rd-1")
+
+    for _ in range(2):
+        r = client.patch(f"/api/jobs/matches/{match.id}",
+                         json={"status": "dismissed"}, headers=headers)
+        assert r.status_code == 200
+
+    profile = UserLearnProfile.query.filter_by(user_id=user.id).first()
+    assert profile is not None
+    assert profile.samples_dismissed == 1
+
+
+def test_redismiss_with_quick_action_does_not_double_count_learning(
+        client, app, user_factory, auth_header):
+    """Quick-Action auf ein bereits dismissed Match zaehlt den Learner nicht erneut."""
+    from models import UserLearnProfile
+
+    headers, user = auth_header
+    match = _make_match_with_embedding(user, source_name="qa-redismiss", external_id="qa-1")
+
+    for _ in range(2):
+        r = client.patch(f"/api/jobs/matches/{match.id}",
+                         json={"quick_action": "job_unavailable"}, headers=headers)
+        assert r.status_code == 200
+
+    profile = UserLearnProfile.query.filter_by(user_id=user.id).first()
+    assert profile is not None
+    assert profile.samples_dismissed == 1
+
+
+def test_bulk_redismiss_does_not_double_count_learning(client, app, user_factory, auth_header):
+    """Zweimal Bulk-Dismiss derselben IDs zaehlt den Learner nur einmal."""
+    from models import UserLearnProfile
+
+    headers, user = auth_header
+    match = _make_match_with_embedding(user, source_name="bulk-redismiss", external_id="brd-1")
+
+    for _ in range(2):
+        r = client.patch("/api/jobs/matches/bulk",
+                         json={"match_ids": [match.id], "status": "dismissed"},
+                         headers=headers)
+        assert r.status_code == 200
+
+    profile = UserLearnProfile.query.filter_by(user_id=user.id).first()
+    assert profile is not None
+    assert profile.samples_dismissed == 1
+
+
 def test_bulk_status_update_skips_other_users_matches(client, app, user_factory, auth_header):
     headers, user = auth_header
     other = user_factory(email="other@example.com")

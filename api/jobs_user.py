@@ -568,14 +568,18 @@ def update_match(user, match_id: int):
             )
         except QuickActionError as exc:
             return jsonify({"error": str(exc)}), 400
+        # Re-Dismiss (Doppelklick, erneutes Verwerfen aus der Dismissed-Ansicht)
+        # darf den Learner nicht doppelt zaehlen — nur bei echtem Status-Uebergang.
+        was_dismissed = m.status == 'dismissed'
         m.status = 'dismissed'
         m.feedback_text = FEEDBACK_TEXT_BY_ACTION[quick_action]
 
-        from services.job_matching.learner import update_centroid_for_feedback
-        try:
-            update_centroid_for_feedback(user, m)
-        except Exception as e:
-            current_app.logger.warning('Centroid update failed: %s', e)
+        if not was_dismissed:
+            from services.job_matching.learner import update_centroid_for_feedback
+            try:
+                update_centroid_for_feedback(user, m)
+            except Exception as e:
+                current_app.logger.warning('Centroid update failed: %s', e)
 
         db.session.commit()
         return jsonify({"id": m.id, "status": m.status}), 200
@@ -583,6 +587,7 @@ def update_match(user, match_id: int):
     new_status = data.get("status")
     if new_status not in ('unbewertet', 'dismissed', 'new'):
         return jsonify({"error": "status muss 'unbewertet'|'dismissed'|'new' sein"}), 400
+    old_status = m.status
     m.status = new_status
 
     # Feedback-Felder (optional) — Adaptive Learning
@@ -607,7 +612,10 @@ def update_match(user, match_id: int):
         m.feedback_text = text.strip() or None
 
     # Adaptive Learning: Centroid update (vor dem gemeinsamen commit).
-    if new_status in ('dismissed', 'imported'):
+    # Nur bei echtem Status-Uebergang — ein Re-Dismiss (z.B. Doppelklick,
+    # Frontend sendet status bei jedem PATCH mit) darf Samples/Centroid
+    # nicht doppelt zaehlen.
+    if new_status in ('dismissed', 'imported') and old_status != new_status:
         from services.job_matching.learner import update_centroid_for_feedback
         try:
             update_centroid_for_feedback(user, m)
@@ -832,10 +840,12 @@ def update_match_bulk(user):
         if m.user_id != user.id:
             forbidden.append(m.id)
             continue
+        already_in_status = m.status == new_status
         m.status = new_status
         updated += 1
 
-        if new_status == 'dismissed':
+        # Re-Dismiss nicht erneut lernen (sonst Samples/Centroid-Doppelzaehlung).
+        if new_status == 'dismissed' and not already_in_status:
             from services.job_matching.learner import update_centroid_for_feedback
             try:
                 update_centroid_for_feedback(user, m)
