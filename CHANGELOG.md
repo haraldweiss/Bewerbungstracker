@@ -2,6 +2,46 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-19 — Code-Review: Lern-Integrität + Session-Rollback (Nacharbeit zum Dismiss-500-Fix)
+
+**Anlass:** Code-Review der Commits `4c20d2a`/`7e63eea`/`c85e180`
+(Learner-flush-Umstellung) und ihrer Aufrufer.
+
+**Gefundene + gefixte Fehler:**
+1. **Re-Dismiss-Doppelzählung (Lern-Integrität):** `update_match` rief den
+   Learner in allen drei Pfaden (quick_action, PATCH, Bulk) bei **jedem**
+   Request mit `status='dismissed'` auf — auch wenn das Match längst
+   dismissed war (Doppelklick, erneutes Verwerfen aus der Dismissed-Ansicht;
+   das Frontend sendet `status` bei jedem PATCH mit). Jedes Mal wurde
+   `samples_dismissed += 1` gezählt und der Centroid driftete erneut
+   Richtung desselben Job-Vektors. Fix: Learner nur bei echtem
+   Status-Übergang (`old_status != new_status`).
+2. **`scripts/rebuild_user_centroids.py`:** fehlendes
+   `db.session.rollback()` im Fehlerfall — nach dem ersten fehlgeschlagenen
+   Match blieb die Session in einer abgebrochenen Transaktion (Postgres:
+   PendingRollbackError-Kaskade für alle Folge-Matches) bzw. wurde dirty
+   State vom nächsten `commit()` mitpersistiert.
+3. **`learner.py` `get_learn_profile_stats`:** direktes `json.loads` ohne
+   Typfilter → TypeError-Crash in `sorted(-x[1])` bei malformed
+   `reason_counts` (z.B. String-Werte aus Legacy-Daten) → 500 auf
+   `GET /api/jobs/learn-profile`. Fix: `_load_reason_counts()`
+   wiederverwendet (filtert nicht-int Werte); zusätzlich
+   `(or 0)`-Defensive für `samples_*` in `compute_score_adjustment` und
+   `get_learn_profile_stats`, konsistent zum Rest der Datei.
+
+**Bekannt, NICHT gefixt (braucht Design-Entscheidung/Schema):**
+`feedback_bridge.maybe_bridge_to_feedback` triggert den Learner bei jeder
+Notes-Änderung erneut auf ein bereits 'imported' Match → `samples_imported`-
+und `reason_counts`-Inflation (die ganze Reason-Liste wird pro Lauf erneut
+hochgezählt). Saubere Lösung bräuchte ein "bereits gelernt"-Tracking am
+JobMatch (Schema-Änderung) oder einen Delta-Pfad nur für Reasons.
+
+**Verifiziert:** 6 neue Regressionstests, alle vorher RED gegen den alten
+Code bestätigt, mit Fix GREEN. Volle Suite lokal:
+`pytest tests/ -q` → **855 passed, 2 skipped, 1 xfailed**.
+Nicht deployed, nur lokale SQLite-Tests (Postgres-Verhalten per Review
+abgesichert, nicht live getestet).
+
 ### 2026-07-16 — Verwerfen/Import warf HTTP 500 (doppelter DB-Commit im Learner)
 
 **Problem:** `update_centroid_for_feedback` (services/job_matching/learner.py)
