@@ -66,6 +66,11 @@ export MATCH_OLLAMA_FALLBACK_MODEL=mistral-nemo-cc:latest
 aus derselben `/etc/bewerbungen/bewerbungen.env` wie die App erhalten. Keine
 flüchtige Docker-IP (z. B. `172.17.x.x`) verwenden; sie ändert sich beim Recreate.
 
+**Lokale Entwicklung:** `python app.py` startet seit 2026-07-22 **ohne** Debug-Mode
+(Security-Härtung, Commit `b631d01`). Für Debug/Auto-Reload:
+`FLASK_DEBUG=1 python app.py` (optional `PORT=<port>`, Default 8080).
+Produktion läuft via `wsgi.py`/gunicorn und ist davon nicht betroffen.
+
 **Optional: ai-provider-service** — separates Repo, läuft als systemd-Unit auf
 Port 8767 und kapselt alle Provider hinter einer einheitlichen REST-API.
 Vorteile: zentrale API-Key-Verwaltung, automatischer Fallback, Queue-Persistenz
@@ -181,6 +186,11 @@ export MATCH_OLLAMA_FALLBACK_MODEL=mistral-nemo-cc:latest
 `APP_INTERNAL_URL=http://bewerbungen-app:5000` from the same
 `/etc/bewerbungen/bewerbungen.env` as the app. Do not use an ephemeral Docker IP
 (for example `172.17.x.x`), because it changes when containers are recreated.
+
+**Local development:** Since 2026-07-22, `python app.py` starts **without**
+debug mode (security hardening, commit `b631d01`). For debug/auto-reload:
+`FLASK_DEBUG=1 python app.py` (optional `PORT=<port>`, default 8080).
+Production runs via `wsgi.py`/gunicorn and is unaffected.
 
 **Optional: ai-provider-service** — separate repo, runs as systemd unit on
 port 8767 and wraps all providers behind a unified REST API. Benefits:
