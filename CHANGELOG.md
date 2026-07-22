@@ -38,6 +38,18 @@ Injection, Upload/Pfad-Handling, Error-Handling).
 **Verifiziert:** `pytest tests/` — 855 passed, 2 skipped, 1 xfailed
 (lokal, keine IMAP-/Anthropic-Pfade mit echten Credentials getestet).
 
+**Deploy-Status: ERLEDIGT (2026-07-22).** Commit `b631d01` gepusht, Code
+via rsync nach `/home/opc/bewerbungstracker`, Image
+`localhost/bewerbungen:b631d01` via `deploy/container/build.sh b631d01`
+gebaut, alle fünf Container via `IMAGE_TAG=b631d01
+deploy/container/setup-oracle-vm.sh rebuild` neu erstellt (Volume
+`bewerbungen_data` erhalten, ai-provider NICHT angefasst → kein
+Token-Sync nötig, §3.9). Verifikation auf der VM: Worker-DB-URI =
+`sqlite:////app/data/bewerbungstracker.db` (§3.5 ✅), Fixes im Image
+gegreppt, `GET /` → 200, `GET /api/providers/benchmarks` ohne Token →
+**401** (vorher öffentlich), Gunicorn-Log fehlerfrei.
+Rollback bei Problemen: `IMAGE_TAG=7b42ea4 deploy/container/setup-oracle-vm.sh rebuild`.
+
 ### 2026-07-19 — Code-Review: Lern-Integrität + Session-Rollback (Nacharbeit zum Dismiss-500-Fix)
 
 **Anlass:** Code-Review der Commits `4c20d2a`/`7e63eea`/`c85e180`
