@@ -29,8 +29,15 @@ Injection, Upload/Pfad-Handling, Error-Handling).
 4. `api/providers.py`: doppelte Imports (`json`, `logging`) aufgeräumt.
 
 **Empfehlung (nicht angefasst):**
-- 5 alte Git-Worktrees unter `.claude/worktrees/` (z.T. mit eigenen
-  Branches) — bei Bedarf aufräumen: `git worktree remove`.
+- ~~5 alte Git-Worktrees unter `.claude/worktrees/`~~ — **ERLEDIGT
+  (2026-07-22, Commit `95cf3ca`):** Alle 5 geprüft — 2 komplett merged
+  (0 ahead), 2 inhaltlich vollständig in master (CI-Härtung via PR #25,
+  Embedder-Feature identisch übernommen), 1 verwaister Docs-Commit
+  (`55c0ca5`, Handoff Prompt-Leak-Fix/Deploy `35e4215`) → ins CHANGELOG
+  gerettet (siehe Eintrag 2026-06-12). Worktrees + lokale Branches
+  gelöscht, dazu 4 zugehörige Remote-Branches (`chore/ci-and-deploy-hardening`,
+  `claude/hungry-euclid-56f7fd`, `claude/naughty-turing-5e5603`,
+  `claude/quick-reasons-ui-phase1`).
 - `str(e)`-Pattern existiert noch in `api/providers.py` (502er),
   `api/cover_letters.py`, `api/admin.py` — dort bewusst belassen, da
   Admin-/Debug-Kontext und Frontend teils auf die Meldungen reagiert.
