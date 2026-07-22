@@ -2,6 +2,42 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-07-22 — Security-Review: Debug-Mode, unauthentifizierter Endpoint, Error-Leaks
+
+**Anlass:** Code-Review mit Fokus Security (Auth-Abdeckung, Secrets,
+Injection, Upload/Pfad-Handling, Error-Handling).
+
+**Positivbefund (kein Handlungsbedarf):**
+- Alle API-Routen bis auf die bewusst öffentlichen (`/api/auth/login`,
+  `/register`, `/confirm-email`, `/refresh`) sind per `token_required`
+  geschützt; Cron-Endpoints via `require_cron_token`.
+- Envelope-Encryption (DEK/KEK, PBKDF2 600k Iterationen) sauber.
+- Kein SQL-String-Concat mit User-Input (die drei f-string-Stellen nutzen
+  nur statische Fragmente), kein `shell=True`/`eval`/`pickle` im App-Code.
+- Rate-Limiting auf Auth-Endpoints, CSP/Security-Headers vorhanden,
+  `send_from_directory` für generische JS-Auslieferung.
+
+**Gefixt:**
+1. `app.py`: `app.run(debug=True)` hardcodiert → jetzt nur via
+   `FLASK_DEBUG=1` aktivierbar (Produktion läuft ohnehin via wsgi/gunicorn).
+2. `api/providers.py`: `GET /api/providers/benchmarks` war der einzige
+   unauthentifizierte Provider-Endpoint → `@token_required` ergänzt;
+   zusätzlich File-Handle-Leak (`json.load(open(...))`) behoben.
+3. `api/backup.py` + `api/auth.py`: 6× `{'error': str(e)}` an Clients
+   (leakt interne Details wie Pfade/DB-Fehler) → generische Meldungen,
+   Details nur noch serverseitig via `logger.exception`.
+4. `api/providers.py`: doppelte Imports (`json`, `logging`) aufgeräumt.
+
+**Empfehlung (nicht angefasst):**
+- 5 alte Git-Worktrees unter `.claude/worktrees/` (z.T. mit eigenen
+  Branches) — bei Bedarf aufräumen: `git worktree remove`.
+- `str(e)`-Pattern existiert noch in `api/providers.py` (502er),
+  `api/cover_letters.py`, `api/admin.py` — dort bewusst belassen, da
+  Admin-/Debug-Kontext und Frontend teils auf die Meldungen reagiert.
+
+**Verifiziert:** `pytest tests/` — 855 passed, 2 skipped, 1 xfailed
+(lokal, keine IMAP-/Anthropic-Pfade mit echten Credentials getestet).
+
 ### 2026-07-19 — Code-Review: Lern-Integrität + Session-Rollback (Nacharbeit zum Dismiss-500-Fix)
 
 **Anlass:** Code-Review der Commits `4c20d2a`/`7e63eea`/`c85e180`

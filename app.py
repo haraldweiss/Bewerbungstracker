@@ -203,4 +203,9 @@ def create_app(config_class=None):
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True, port=8080)
+    # Security: Debug-Mode niemals hardcoden — nur explizit per FLASK_DEBUG=1.
+    # Produktion laeuft ohnehin ueber wsgi.py/gunicorn (debug=False).
+    app.run(
+        debug=os.getenv('FLASK_DEBUG', '0') == '1',
+        port=int(os.getenv('PORT', '8080')),
+    )

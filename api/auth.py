@@ -3,6 +3,7 @@
 from flask import Blueprint, request, jsonify
 from functools import wraps
 import jwt
+import logging
 import secrets
 from datetime import datetime, timedelta
 from config import Config
@@ -148,9 +149,10 @@ def register():
             'email': user.email,
             'message': 'Registration successful! Please confirm your email to activate your account.'
         }, 201
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return {'error': str(e)}, 400
+        logging.getLogger(__name__).exception('Registrierung fehlgeschlagen')
+        return {'error': 'Registrierung fehlgeschlagen'}, 400
 
 
 @auth_bp.route('/confirm-email', methods=['GET'])

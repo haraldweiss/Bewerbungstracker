@@ -18,8 +18,6 @@ from models import User
 from database import db
 from services import ai_provider_client
 from services.ai_provider_client import AIProviderQueuedError
-import json
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -359,15 +357,18 @@ _BENCHMARK_FILE = '/tmp/model_benchmarks.json'
 
 
 @providers_bp.route('/benchmarks', methods=['GET'])
-def get_model_benchmarks():
+@token_required
+def get_model_benchmarks(user):
     """Gibt gespeicherte Benchmark-Ergebnisse für alle getesteten Modelle zurück."""
     if not os.path.exists(_BENCHMARK_FILE):
         return jsonify({'models': {}, 'tests': []})
     try:
-        data = json.load(open(_BENCHMARK_FILE))
+        with open(_BENCHMARK_FILE) as f:
+            data = json.load(f)
         return jsonify(data)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        logger.exception('Benchmark-Datei konnte nicht gelesen werden')
+        return jsonify({'error': 'Benchmarks konnten nicht gelesen werden'}), 500
 
 
 @providers_bp.route('/chat', methods=['POST'])

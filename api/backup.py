@@ -10,8 +10,11 @@ from services.backup_service import BackupService, BackupKeyUnavailable
 from services.encryption_service import EncryptionService
 import json
 import csv
+import logging
 from io import StringIO
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 backup_bp = Blueprint('backup', __name__, url_prefix='/api/backup')
 
@@ -39,8 +42,9 @@ def list_backups(user):
                 for backup in backups
             ]
         }, 200
-    except Exception as e:
-        return {'error': str(e)}, 500
+    except Exception:
+        logger.exception('Backup-Liste konnte nicht geladen werden')
+        return {'error': 'Backup-Liste konnte nicht geladen werden'}, 500
 
 
 @backup_bp.route('/export', methods=['GET'])
@@ -132,8 +136,9 @@ def export_backup(user):
             response.headers['Content-Disposition'] = 'attachment; filename=backup_export.csv'
             return response
 
-    except Exception as e:
-        return {'error': str(e)}, 500
+    except Exception:
+        logger.exception('Backup-Export fehlgeschlagen')
+        return {'error': 'Backup-Export fehlgeschlagen'}, 500
 
 
 @backup_bp.route('/<int:version>', methods=['GET'])
@@ -183,8 +188,9 @@ def get_backup(user, version):
                 'format': backup.format
             }, 200
 
-    except Exception as e:
-        return {'error': str(e)}, 500
+    except Exception:
+        logger.exception('Backup-Download fehlgeschlagen')
+        return {'error': 'Backup konnte nicht geladen werden'}, 500
 
 
 @backup_bp.route('/<int:version>/restore', methods=['POST'])
@@ -288,9 +294,10 @@ def restore_backup(user, version):
             'warning': 'Restore successful. A new backup was created as a precaution.'
         }, 200
 
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return {'error': str(e)}, 500
+        logger.exception('Backup-Restore fehlgeschlagen')
+        return {'error': 'Backup-Restore fehlgeschlagen'}, 500
 
 
 @backup_bp.route('/import', methods=['POST'])
@@ -384,6 +391,7 @@ def import_backup(user):
             'backup_version': new_backup.version
         }, 201
 
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return {'error': str(e)}, 500
+        logger.exception('Backup-Import fehlgeschlagen')
+        return {'error': 'Backup-Import fehlgeschlagen'}, 500
