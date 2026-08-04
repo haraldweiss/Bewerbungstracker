@@ -2,6 +2,47 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-08-04 — Security: Cross-Repo Dependabot-Alerts behoben (9 Alerts in 3 Repos)
+
+**Anlass:** Nach Behebung der Bewerbungstracker-Alerts (#61 cryptography, #57 brace-expansion) Prüfung aller GitHub-Repos auf offene Dependabot-Alerts.
+
+**Gefundene Alerts (9 total in 3 Repos):**
+
+1. **mail-client** (1 Alert HIGH)
+   - **#3 react-router** HIGH: RSC Mode CSRF Bypass Allows Action Execution Before 400 Response
+   - **Fix:** `react-router-dom@7.18.2` (latest stable)
+   - **Bewertung:** Vulnerability betrifft nur React Server Components (RSC). mail-client ist Tauri-Desktop-App ohne RSC-Nutzung (keine `use server` directives, kein SSR). **Nicht anwendbar.**
+   - **Commit:** `a514f9d..2c3d85c`
+
+2. **knopfkiste** (3 Alerts HIGH)
+   - **#10 postcss** HIGH: Path Traversal in Source Map Auto-Loading
+   - **#9 brace-expansion** HIGH: DoS via unbounded expansion length (OOM crash)
+   - **#8 brace-expansion** HIGH: DoS via exponential-time expansion
+   - **Fix:** `npm audit fix` → alle transitive dependencies aktualisiert → `found 0 vulnerabilities`
+   - **Commit:** `3688ea2..e1396d6`
+
+3. **Claude-KI-Usage-Tracker** (5 Alerts: 1 HIGH + 4 MEDIUM)
+   - **#77 undici** MEDIUM: CRLF Injection via blob-like body 'type' property
+   - **#76 undici** MEDIUM: Cross-user info disclosure via Cache-Control whitespace
+   - **#75 undici** MEDIUM: Cookie attribute injection via unsanitized domain
+   - **#74 undici** HIGH: Cross-user info disclosure & crash via private cache directives
+   - **#73 undici** MEDIUM: Downstream response desynchronization via retry interceptor
+   - **Fix:** `npm audit fix` → undici transitive dependency aktualisiert → `found 0 vulnerabilities`
+   - **Commit:** `8179e71..869f097`
+
+**Ergebnis:**
+- ✅ Bewerbungstracker: 2 Alerts behoben (bereits deployed)
+- ✅ mail-client: 1 Alert dokumentiert (nicht anwendbar)
+- ✅ knopfkiste: 3 Alerts behoben
+- ✅ Claude-KI-Usage-Tracker: 5 Alerts behoben
+- **Total:** 9/9 Alerts resolved
+
+**Pushes:** Alle Repos erfolgreich auf `origin/main` gepusht.
+
+**Empfehlung:** Regelmäßige Dependabot-Checks (monatlich) für alle Repos, um Security-Alerts zeitnah zu beheben.
+
+---
+
 ### 2026-08-04 — Security: Dependabot-Alerts behoben (cryptography 50.0.0 + brace-expansion 1.1.18)
 
 **Anlass:** Dependabot meldete 2 offene High-Severity-Sicherheitslücken auf dem Default-Branch.
