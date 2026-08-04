@@ -2,6 +2,41 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-08-04 — Fix: Bundesagentur-Jobsuche-API auf v6 migriert + Adzuna reaktiviert; Rebase + Deploy
+
+**Anlass:** Admin-Sektion zeigte alle Bundesagentur-Quellen als `HTTPError: 404 Client Error`
+auf `.../pc/v4/jobs`, und „Adzuna — Tech Remote DE" war nach 5× Fehler (HTTP 503) automatisch
+deaktiviert (`enabled=False`, errs=5).
+
+**Root Cause — Bundesagentur:** Listing-Endpoint wurde von `/pc/v4/jobs` auf **`/pc/v6/jobs`**
+gehoben (v4 → 404). Detail-Endpoint `/pc/v4/jobdetails/{base64(refnr)}` gilt unverändert.
+
+**Fix (Commit `38194ef`):** `services/job_sources/bundesagentur.py` auf v6 migriert:
+`ergebnisliste` (war `stellenangebote`); Feld-Renames `referenznummer`, `stellenangebotsTitel`,
+`hauptberuf`, `firma`, `externeURL`, `stellenlokationen[].adresse`, `datumErsteVeroeffentlichung`;
+`arbeitszeit`-Filterwerte auf v6-Codes `vz/tz/snw/ho/mj` (semikolon-trennbar, Legacy-Formen werden
+übersetzt, `ho`=remote). `umkreis` funktioniert unverändert. Tests auf v6-Fixture angepasst (5/5 grün),
+Full-Suite `857 passed`. Live-Smoke gegen echte API ok.
+
+**Root Cause — Adzuna:** 503er waren transient (API erreichbar; exakte Query liefert 200/20). Quelle
+war nach `AUTO_DISABLE_FAILURE_COUNT=5` wie designed auto-deaktiviert.
+
+**Rebase, abgeschlossen:** `source-progress-merge` auf `ad11041` vollständig (10 Picks; HEAD `1aabade`).
+Der Git-Sequencer blieb nach Konflikt-Auflösung hängen (`--continue` verweigerte trotz sauber
+gestagedem State) → letzte 3 Picks manuell per `cherry-pick` appliziert + `git rebase --quit`.
+Zwei Konflikt-Auflösungen: (1) `index.html` — CDN-Umstellung aus `32516bd` abgelehnt, **vendored-Assets
+gemäß §3.4.1 beibehalten** (bekannte CDN-Regressionsklasse); (2) `CHANGELOG.md` — beide Einträge
+(07-04 + 06-30) behalten.
+
+**Deploy:** `38194ef` per rsync auf Oracle VM (`/home/opc/bewerbungstracker`), Image
+`localhost/bewerbungen:38194ef` (+ `:latest`), alle 5 Container via `IMAGE_TAG=38194ef setup-oracle-vm.sh rebuild`.
+
+**Verifikation (Produktion):** App `HTTP 200`; Crawls per `/api/jobs/crawl-source` getriggert —
+alle **9 Bundesagentur-Quellen `errs=0`, `last_error` leer**, alle 3 Adzuna `errs=0`
+(Quelle 15 „Tech Remote DE" reaktiviert, `enabled=True`).
+
+---
+
 ### 2026-07-22 — Security-Review: Debug-Mode, unauthentifizierter Endpoint, Error-Leaks
 
 **Anlass:** Code-Review mit Fokus Security (Auth-Abdeckung, Secrets,
