@@ -186,6 +186,21 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 | Email parsing | `services/email_import_utils.py` |
 | Cost tracking | `services/cost_tracker.py` |
 | Cron handlers | `services/tasks/handlers/cron_*.py` |
+| Backup-Service | `services/backup_service.py` — Auto-Backups auf Bewerbungs-Mutationen |
+| Datei-Backups | `scripts/backup_db.py` im Cron-Container (täglich 03:00 UTC) → `/app/data/backups/` |
+
+### 6.1 Backups (Stand 2026-08-04)
+
+- **App-Versionen (`backup_history`):** feuern bei Bewerbungs-Mutationen (CRUD) und brauchen den
+  DEK. Beim Login wird der DEK serverseitig mit `ENCRYPTION_KEY` gesiegelt
+  (`users.server_encrypted_dek`); `BackupService._get_dek()` fällt darauf zurück. **Nach jedem
+  Deploy/Neustart einmal neu einloggen**, damit die Siegelung (re-)gesetzt wird — sonst stille
+  Backup-Lücken bis zum Login.
+- **Datei-DR (`backup_db.py`):** benötigt `DB_PATHS` + `BACKUP_DIR` in der `.env` (Default-Pfade
+  gelten nur für die Native-Installation unter `/var/www/bewerbungen`). Cron-Container mountet das
+  `bewerbungen_data`-Volume (siehe `setup-oracle-vm.sh start_cron`).
+- **`GUNICORN_WORKERS=1`** (Prod-Env): der DEK-KeyCache ist pro Prozess — Multi-Worker ohne
+  geteilten Cache erzeugt stille Backup-Ausfälle (Regression 2026-08-04).
 
 ---
 

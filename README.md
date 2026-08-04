@@ -66,6 +66,14 @@ export MATCH_OLLAMA_FALLBACK_MODEL=mistral-nemo-cc:latest
 aus derselben `/etc/bewerbungen/bewerbungen.env` wie die App erhalten. Keine
 flüchtige Docker-IP (z. B. `172.17.x.x`) verwenden; sie ändert sich beim Recreate.
 
+**Backups (Docker):** Der Cron-Container führt täglich 03:00 UTC `scripts/backup_db.py` aus.
+Dafür sind in der `.env` gesetzt: `DB_PATHS=/app/data/bewerbungstracker.db,/app/data/email_config.db`
+und `BACKUP_DIR=/app/data/backups` (persistiert im `bewerbungen_data`-Volume). Die automatischen
+App-Backups (Admin → Backup-Versionen) benötigen den serverseitig gesiegelten DEK
+(`users.server_encrypted_dek`) — er wird beim ersten Login nach dem Deploy gesetzt; danach laufen
+sie auch über Neustarts hinweg zuverlässig. `GUNICORN_WORKERS=1` entspricht dem Single-Worker-Design
+des DEK-KeyCache.
+
 **Lokale Entwicklung:** `python app.py` startet seit 2026-07-22 **ohne** Debug-Mode
 (Security-Härtung, Commit `b631d01`). Für Debug/Auto-Reload:
 `FLASK_DEBUG=1 python app.py` (optional `PORT=<port>`, Default 8080).

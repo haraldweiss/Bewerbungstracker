@@ -2,6 +2,50 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-08-04 — Fix: automatische Backups zuverlässig gemacht (Server-gesiegelter DEK) + Datei-Backup repariert
+
+**Anlass:** Backup-Verlauf (Admin) stoppte am **09.07.2026 20:50** (Version 40). Die App-Bewerbungen
+wuchsen danach weiter (165 → 193), aber keine neuen Backup-Versionen. Analyse: **beide Backup-Ebenen
+waren in Produktion defekt.**
+
+**Root Cause — App-Backups (`backup_history`, die sichtbaren „Versionen"):** Automatische Backups
+feuern bei Bewerbungs-Mutationen, brauchen aber den **DEK aus dem In-Memory-KeyCache**, der nur beim
+**Passwort-Login** befüllt wird. Die App lief mit **4 gunicorn-Workern** (`GUNICORN_WORKERS:-4`), der
+Cache ist **pro Prozess** → ~75 % der Mutationen trafen Worker ohne DEK und wurden **still** übersprungen
+(`BackupKeyUnavailable` → nur Log-Warning). Zusätzlich: DEK-TTL **7 Tage** + jeder Deploy/Neustart leert
+den Cache; der Token-Refresh (`/refresh`, 30 Tage) befüllt ihn **nicht** (nur echter Login). Wer nicht im
+7-Tage-Fenster neu einloggt, bekam wochenlang stille Backup-Lücken.
+
+**Fix (Commits `71a0361`, `206cd73`):** Beim Login wird der DEK zusätzlich **serverseitig mit
+`ENCRYPTION_KEY`** (derselbe Key wie für IMAP-Credentials) gesiegelt und am User persistiert
+(`users.server_encrypted_dek`, idempotente ALTER-Migration in `create_app`/`init_db`).
+`BackupService._get_dek()` fällt auf diese Kopie zurück und re-cached sie → Auto-Backups überleben
+Neustart, Worker-Wechsel und Token-Refresh ohne frischen Login. **Tradeoff dokumentiert:** Server kann
+Backups damit mit dem Master-Key entschlüsseln — praktisch keine Verschlechterung, da die SQLite-DB
+(die eigentlichen Daten) im Container ohnehin in Klartext liegt. 4 neue Tests, Full-Suite `861 passed`.
+
+**Root Cause — Datei-Backup (`backup_db.py`, täglich 03:00 UTC im Cron-Container):** Die Kommandos
+waren da, aber es wurde **nie etwas gesichert**: `DB_PATHS`-Default (`/var/www/bewerbungen/...`) existiert
+im Container nicht (→ alle DBs `[skip]`), und der Cron-Container hatte **kein Volume** für `BACKUP_DIR`.
+Fix: `setup-oracle-vm.sh` mountet jetzt `bewerbungen_data` in den Cron-Container; Prod-Env setzt
+`DB_PATHS=/app/data/bewerbungstracker.db,/app/data/email_config.db`, `BACKUP_DIR=/app/data/backups`.
+
+**Prod-Env zusätzlich:** `GUNICORN_WORKERS=1` (entspricht dem Single-Worker-Design des KeyCache;
+reduziert Cache-Varianz zusätzlich).
+
+**Deploy:** `206cd73` per rsync → `localhost/bewerbungen:206cd73`, `setup-oracle-vm.sh rebuild`
+(alle 5 Container, Volume bleibt).
+
+**Verifikation (Produktion):** Migration `users.server_encrypted_dek` 💚; `--workers 1` 💚; App HTTP 200;
+Datei-Backup manuell getriggert → **2 `.db.gz` (15 MB) in `/app/data/backups`** (persistent im Volume) 💚;
+Server-DEK-Fallback durch Unit-Tests abgedeckt 💚.
+
+**⏳ Einmaliger manueller Schritt:** Der User muss sich **einmal neu einloggen**, damit der
+`server_encrypted_dek` für sein Konto gesetzt wird. Danach laufen automatische Backups dauerhaft
+zuverlässig (auch nach Deploys/Neustarts, ohne erneutes Login).
+
+---
+
 ### 2026-08-04 — Fix: Bundesagentur-Jobsuche-API auf v6 migriert + Adzuna reaktiviert; Rebase + Deploy
 
 **Anlass:** Admin-Sektion zeigte alle Bundesagentur-Quellen als `HTTPError: 404 Client Error`
