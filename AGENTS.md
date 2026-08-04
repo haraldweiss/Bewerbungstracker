@@ -128,6 +128,50 @@ Erlaubt ist ein Hotfix **nur** zum sofortigen Service-Retten in einem Incident �
 4. Test: `POST /api/jobs/matches/<id>/score` muss 200 liefern
 
 **Vorbeugung:** Nach jedem `docker build` des ai-provider-service das Token-Update in die Deploy-Checkliste aufnehmen. Das Setup-Skript (`setup-oracle-vm.sh`) müsste idealerweise den Token automatisch synchronisieren.
+
+---
+
+### 3.10 Dependabot-Alerts — regelmäßige Prüfung (monatlich)
+
+**Ziel:** Sicherheitslücken in Dependencies zeitnah erkennen und beheben, bevor sie ausgenutzt werden.
+
+**Workflow (monatlich oder bei Benachrichtigung):**
+
+1. **Alle Repos prüfen:**
+   ```bash
+   # GitHub API: Liste aller Repos
+   gh repo list haraldweiss --json name --limit 30
+   
+   # Für jedes Repo: offene Alerts abrufen
+   gh api repos/haraldweiss/<repo>/dependabot/alerts --jq '.[] | select(.state == "open")'
+   ```
+
+2. **Priorisierung:**
+   - **HIGH/CRITICAL:** Sofort beheben (innerhalb 48h)
+   - **MEDIUM:** Innerhalb 1 Woche beheben
+   - **LOW:** Beim nächsten regulären Update berücksichtigen
+
+3. **Behebungsstrategie:**
+   - **Python (requirements.txt):** `pip install <package>==<patched-version>`, dann `pip freeze > requirements-prod.txt`
+   - **Node.js (package.json):** `npm audit fix` (oder `--force` bei Breaking Changes)
+   - **Transitive Dependencies:** `npm audit fix` aktualisiert automatisch
+   - **Nicht anwendbare Vulnerabilities:** Dokumentieren (z.B. "betrifft nur SSR, App nutzt nur Client-Side React")
+
+4. **Verifikation:**
+   - Tests laufen lassen (`pytest` / `npm test`)
+   - Bei Production-Code: Deploy + Smoke-Test
+   - Commit mit klarer Message: `security(deps): fix <vulnerability> via <method>`
+
+5. **Dokumentation:**
+   - CHANGELOG.md: Neuer Eintrag mit behobenen Alerts
+   - Bei mehreren Repos: Cross-Repo-Zusammenfassung
+
+**Bisherige Fixes:**
+- 2026-08-04: Bewerbungstracker (cryptography 50.0.0, brace-expansion 1.1.18)
+- 2026-08-04: mail-client (react-router-dom 7.18.2, RSC-Vuln nicht anwendbar)
+- 2026-08-04: knopfkiste (postcss, brace-expansion via npm audit fix)
+- 2026-08-04: Claude-KI-Usage-Tracker (5x undici via npm audit fix)
+
 ---
 
 ## 4. Verification standards
