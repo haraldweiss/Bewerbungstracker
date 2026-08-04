@@ -4,11 +4,26 @@
 
 Doku: https://jobsuche.api.bund.dev/
 
+## API-Stand (2026-08-04)
+
+Der Listing-Endpoint wurde von `/pc/v4/jobs` auf `/pc/v6/jobs` gehoben (v4 →
+404, siehe Admin: "HTTPError: 404 Client Error ... v4/jobs"). Detail-Endpoint
+`/pc/v4/jobdetails/{base64(refnr)}` gilt weiterhin. Schema-Umbenennungen:
+
+- Response-Key: `stellenangebote` -> `ergebnisliste`
+- `refnr` -> `referenznummer`, `titel` -> `stellenangebotsTitel`, `beruf` -> `hauptberuf`
+- `arbeitgeber` -> `firma`, `externeUrl` -> `externeURL`
+- `arbeitsort{plz,ort,region}` -> `stellenlokationen[].adresse`
+- `aktuelleVeroeffentlichungsdatum` -> `datumErsteVeroeffentlichung`
+- `arbeitszeit`-Filterwerte: `vollzeit` -> `vz`, `teilzeit` -> `tz`, … (siehe
+  `ARBEITSZEIT_CODES`); Semikolon-separierte Mehrfachwerte möglich (`vz;tz`).
+- `umkreis` funktioniert unverändert (filtert nach Entfernung, Feld `entfernung`).
+
 ## Detail-Fetch-Strategie
 
-Das Listing-Endpoint `/v4/jobs` liefert NUR Header-Metadaten (titel, beruf,
-arbeitsort, refnr) — KEINE Beschreibung. Der Pre-Filter wäre ohne Description
-quasi blind (nur Titel-Match).
+Das Listing-Endpoint `/v6/jobs` liefert NUR Header-Metadaten (stellenangebotsTitel,
+stellenlokationen, referenznummer) — KEINE Beschreibung. Der Pre-Filter wäre ohne
+Description quasi blind (nur Titel-Match).
 
 Lösung: Detail-Endpoint `/v4/jobdetails/<base64-refnr>` pro Job nachladen.
 Bei 50 Jobs sequenziell ~50s — sprengt das Cron-Tick-Time-Budget. Daher
@@ -28,9 +43,31 @@ import requests
 from services.job_sources.base import JobSourceAdapter, FetchedJob
 
 
-URL_LISTING = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs"
+URL_LISTING = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs"
 URL_DETAILS = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobdetails"
 HEADERS = {"X-API-Key": "jobboerse-jobsuche"}
+
+ARBEITSZEIT_CODES = {
+    # v6-Kennungen (offiziell, siehe openapi.yaml): semikolon-separierbar.
+    "vz": "vz", "tz": "tz", "snw": "snw", "ho": "ho", "mj": "mj",
+    # Legacy-Formen (v4/passthrough) -> v6-Code.
+    "vollzeit": "vz", "teilzeit": "tz", "schichtnachtwochenende": "snw",
+    "schicht": "snw", "remote": "ho", "homeoffice": "ho", "heim": "ho",
+    "minijob": "mj", "minijobber": "mj",
+}
+
+
+def _translate_arbeitszeit(value: str) -> str:
+    """Übersetzt einen `arbeitszeit`-Config-Wert in v6-Kennungen. Mehrfachwerte
+    werden semikolon-separiert ("vollzeit;teilzeit" -> "vz;tz"). Unbekannte
+    Codes werden unangetastet durchgereicht (robust gegen künftige Enums).
+    """
+    parts = [p.strip() for p in str(value).split(";") if p.strip()]
+    codes = []
+    for p in parts:
+        key = p.strip().lower()
+        codes.append(ARBEITSZEIT_CODES.get(key, p.strip()))
+    return ";".join(codes)
 
 
 def _fetch_detail(refnr: str, session: requests.Session) -> dict | None:
@@ -70,6 +107,23 @@ def _employment_tags(detail: dict) -> list[str]:
     return tags
 
 
+def _location_from_listing(item: dict) -> str:
+    """Ort aus dem Listing extrahieren. v6 liefert `stellenlokationen`
+    (Liste von {adresse:{plz,ort,region}}), anders als das alte `arbeitsort`.
+    """
+    locs = item.get("stellenlokationen") or []
+    parts = []
+    for loc in locs:
+        adr = loc.get("adresse") or {}
+        piece = ", ".join(filter(None, [adr.get("plz"), adr.get("ort"), adr.get("region")]))
+        if piece:
+            parts.append(piece)
+    if parts:
+        return " | ".join(parts)
+    ort = item.get("arbeitsort") or {}
+    return ", ".join(filter(None, [ort.get("plz"), ort.get("ort"), ort.get("region")]))
+
+
 def _location_from_detail(detail: dict, fallback_listing: dict) -> str:
     """Bei mehreren Standorten alle joinen — wichtig fürs Region-Matching
     (Pre-Filter sucht nach PLZ-Präfixen im Location-String).
@@ -84,9 +138,8 @@ def _location_from_detail(detail: dict, fallback_listing: dict) -> str:
                 parts.append(piece)
         if parts:
             return " | ".join(parts)
-    # Fallback: arbeitsort aus Listing
-    ort = fallback_listing.get("arbeitsort") or {}
-    return ", ".join(filter(None, [ort.get("plz"), ort.get("ort"), ort.get("region")]))
+    # Fallback: Ort aus dem Listing (v6: stellenlokationen)
+    return _location_from_listing(fallback_listing)
 
 
 class BundesagenturAdapter(JobSourceAdapter):
@@ -110,11 +163,12 @@ class BundesagenturAdapter(JobSourceAdapter):
             "size": 50,
         }
         if self.config.get("arbeitszeit"):
-            params["arbeitszeit"] = self.config["arbeitszeit"]
+            params["arbeitszeit"] = _translate_arbeitszeit(self.config["arbeitszeit"])
 
         r = requests.get(self.URL, params=params, headers=self.HEADERS, timeout=15)
         r.raise_for_status()
-        listing = r.json().get("stellenangebote", [])
+        # v6 liefert die Resultate unter `ergebnisliste` (war `stellenangebote`).
+        listing = r.json().get("ergebnisliste") or []
 
         max_details = int(self.config.get("max_details", self.DEFAULT_MAX_DETAILS))
         listing_to_enrich = listing[:max_details]
@@ -126,7 +180,7 @@ class BundesagenturAdapter(JobSourceAdapter):
             with requests.Session() as session, \
                  ThreadPoolExecutor(max_workers=self.DETAIL_PARALLELISM) as executor:
                 future_to_ref = {
-                    executor.submit(_fetch_detail, item["refnr"], session): item["refnr"]
+                    executor.submit(_fetch_detail, item["referenznummer"], session): item["referenznummer"]
                     for item in listing_to_enrich
                 }
                 for future in as_completed(future_to_ref):
@@ -137,25 +191,25 @@ class BundesagenturAdapter(JobSourceAdapter):
 
         jobs = []
         for item in listing_to_enrich:
-            refnr = item["refnr"]
+            refnr = item["referenznummer"]
             detail = details_by_refnr.get(refnr)
 
             posted = None
-            date_str = item.get("aktuelleVeroeffentlichungsdatum")
+            date_str = item.get("datumErsteVeroeffentlichung")
             if date_str:
                 try:
                     posted = datetime.fromisoformat(date_str)
                 except Exception:
                     pass
 
-            external_url = item.get("externeUrl") or \
+            external_url = item.get("externeURL") or \
                 f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{refnr}"
 
             if detail:
                 title = (
                     detail.get("stellenangebotsTitel")
-                    or item.get("titel")
-                    or item.get("beruf", "")
+                    or item.get("stellenangebotsTitel")
+                    or item.get("hauptberuf", "")
                 )
                 description = detail.get("stellenangebotsBeschreibung")
                 location = _location_from_detail(detail, item)
@@ -167,17 +221,16 @@ class BundesagenturAdapter(JobSourceAdapter):
                     description = (description or "") + "\n\n[Anstellungsart: " + ", ".join(tags) + "]"
                 raw = {**item, "_detail": detail}
             else:
-                title = item.get("titel") or item.get("beruf", "")
+                title = item.get("stellenangebotsTitel") or item.get("hauptberuf", "")
                 description = None
-                ort = item.get("arbeitsort") or {}
-                location = ", ".join(filter(None, [ort.get("plz"), ort.get("ort"), ort.get("region")]))
+                location = _location_from_listing(item)
                 raw = item
 
             jobs.append(FetchedJob(
                 external_id=refnr,
                 title=title,
                 url=external_url,
-                company=item.get("arbeitgeber"),
+                company=item.get("firma") or item.get("arbeitgeber"),
                 location=location,
                 description=description,
                 posted_at=posted,

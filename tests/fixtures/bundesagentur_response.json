@@ -1,13 +1,17 @@
 {
-  "stellenangebote": [
+  "ergebnisliste": [
     {
-      "refnr": "10000-1234567890-S",
-      "beruf": "Frontend Entwickler/in",
-      "titel": "Frontend Entwickler React",
-      "arbeitgeber": "Tech Solutions GmbH",
-      "arbeitsort": {"plz": "10115", "ort": "Berlin", "region": "Berlin"},
-      "aktuelleVeroeffentlichungsdatum": "2026-04-28",
-      "externeUrl": null
+      "stellenangebotsTitel": "Frontend Entwickler React",
+      "hauptberuf": "Frontend Entwickler/in",
+      "firma": "Tech Solutions GmbH",
+      "referenznummer": "10000-1234567890-S",
+      "stellenlokationen": [
+        {"adresse": {"plz": "10115", "ort": "Berlin", "region": "BERLIN", "land": "DEUTSCHLAND"}}
+      ],
+      "datumErsteVeroeffentlichung": "2026-04-28",
+      "externeURL": null,
+      "arbeitszeitVollzeit": true,
+      "vertragsdauer": "UNBEFRISTET"
     }
   ],
   "maxErgebnisse": 1
