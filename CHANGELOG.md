@@ -2,6 +2,35 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-08-04 — Security: Dependabot-Alerts behoben (cryptography 50.0.0 + brace-expansion 1.1.18)
+
+**Anlass:** Dependabot meldete 2 offene High-Severity-Sicherheitslücken auf dem Default-Branch.
+
+**Behobene Schwachstellen:**
+
+1. **`cryptography` 48.0.1 → 50.0.0** (Alert #61, High Severity)
+   - **Vulnerability:** PKCS#7 EnvelopedData decryption exposes a Bleichenbacher oracle through distinguishable errors and timing
+   - **Risiko:** Angreifer könnten durch adaptive Queries den Content-Encryption-Key wiederherstellen (betrifft S/MIME-Gateways/Mail-Filter mit auto-decrypt)
+   - **Fix in 50.0.0:** Per RFC 3218 wird der Content-Encryption-Algorithmus vor der Private-Key-Nutzung aufgelöst; bei falscher Schlüssellänge wird ein zufälliger Key substituiert → alle Fehler melden identisch
+   - **Bewerbungstracker-Impact:** Niedrig (App nutzt Fernet/symmetrisch, nicht PKCS#7 EnvelopedData), aber Update empfohlen
+
+2. **`brace-expansion` 1.1.15 → 1.1.18** (Alert #57, High Severity)
+   - **Vulnerability:** DoS via exponential-time expansion of consecutive non-expanding `{}` groups (O(2ⁿ))
+   - **Risiko:** Angreifer könnten durch kurze Strings mit vielen `{}`-Gruppen CPU-Hangs auslösen (betrifft Apps, die untrusted Input an `brace-expansion.expand()` oder `minimatch`/`glob` übergeben)
+   - **Fix in 1.1.18:** Defers computing `post` bis nach early-return branches → O(n²) statt O(2ⁿ)
+   - **Bewerbungstracker-Impact:** Niedrig (nur Dev-Dependency via Jest/glob, nicht in Production-Code)
+
+**Änderungen:**
+- `requirements.txt`: `cryptography>=48.0.1` → `>=50.0.0`
+- `requirements-prod.txt`: `cryptography==48.0.1` → `==50.0.0`
+- `package-lock.json`: `brace-expansion` 1.1.15 → 1.1.18 (via `npm audit fix`)
+
+**Tests:** 861 passed (lokal, inkl. crypto/backup-Tests)
+
+**Deploy:** Docker-Image neu gebaut, Container restarted, `cryptography 50.0.0` in Produktion verifiziert
+
+---
+
 ### 2026-08-04 — Fix: Site-Ausfall durch hängenden AI-Scoring-Call + GUNICORN_WORKERS auf 2 erhöht
 
 **Anlass:** bewerbungen.wolfinisoftware.de war nicht erreichbar (HTTP 502). App antwortete nicht auf `127.0.0.1:5000`.
