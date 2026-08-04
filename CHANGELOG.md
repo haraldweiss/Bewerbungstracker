@@ -35,6 +35,9 @@ gemäß §3.4.1 beibehalten** (bekannte CDN-Regressionsklasse); (2) `CHANGELOG.m
 alle **9 Bundesagentur-Quellen `errs=0`, `last_error` leer**, alle 3 Adzuna `errs=0`
 (Quelle 15 „Tech Remote DE" reaktiviert, `enabled=True`).
 
+**Merge (abgeschlossen):** `source-progress-merge` nach `master` als Fast-Forward (`master=fe73715`, Divergenz 0/12 — keinerlei Konflikte). Geprüft: `455e2d3` (Dependabot-Security, 30 Alerts, `requirements-prod.txt`) ist nicht Vorfahr, aber der Dateiinhalt ist bei beiden identisch → Security-Stand bereits vollständig über die Master-Linie enthalten. Dockerfile installiert aus `requirements.txt` (Fixes: cryptography>=48.0.1, gunicorn>=23.0, Flask>=3.1.3, PyJWT==2.13.0). Pushed `441c690..fe73715  master -> origin/master`. Lokaler Branch `source-progress-merge` entfernt. Full-Testsuite `857 passed` auf dem Merge-Ergebnis (zuvor lokal verifiziert).
+GitHub-Dependabot: 1 neue hohe Vuln auf default branch (dependabot/#57) — separat zu klären.
+
 ---
 
 ### 2026-07-22 — Security-Review: Debug-Mode, unauthentifizierter Endpoint, Error-Leaks
