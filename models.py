@@ -29,6 +29,12 @@ class User(db.Model):
     encryption_salt = db.Column(db.LargeBinary(16))
     encrypted_data_key = db.Column(db.Text)
 
+    # Server-gesiegelte DEK-Kopie (Fernet mit ENCRYPTION_KEY), damit automatische
+    # Backups ohne frischen Passwort-Login funktionieren (überlebt Neustarts,
+    # Worker-Wechsel und Token-Refresh). Wird beim Login gesetzt; nullable, da
+    # bestehende User erst beim nächsten Login eine Kopie bekommen.
+    server_encrypted_dek = db.Column(db.Text, nullable=True)
+
     # User-Profil: Settings (Filter, Notification-Prefs, Apps-Script-URL etc.)
     # und CV-Daten (Lebenslauf-Editor + cvComparisons). Beides als JSON-Strings,
     # damit das Frontend frei strukturieren kann ohne neue Migrations.

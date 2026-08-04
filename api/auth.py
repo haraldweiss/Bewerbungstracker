@@ -237,6 +237,19 @@ def login():
                 data['password'], user.encryption_salt, user.encrypted_data_key
             )
             get_key_cache().put(user.id, dek)
+            # Server-Siegelung persistieren, damit automatische Backups auch
+            # nach Neustart/Worker-Wechsel/Token-Refresh funktionieren. Fehler
+            # hier brechen den Login NICHT ab – der In-Memory-Cache reicht für
+            # die Session; nur die Auto-Backup-Zuverlässigkeit leidet.
+            try:
+                user.server_encrypted_dek = (
+                    EncryptionService.wrap_dek_with_server_key(dek)
+                )
+                db.session.commit()
+            except Exception as se:
+                logging.getLogger(__name__).warning(
+                    'Server-Siegelung des DEK fehlgeschlagen: %s', se
+                )
         except Exception:
             # Crypto-Fehler hier wäre ein DB-Korruptions-Indikator – Login lässt
             # sich nicht fortsetzen, ohne Backups unbrauchbar zu machen.

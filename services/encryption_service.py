@@ -120,3 +120,33 @@ class EncryptionService:
         new_kek = EncryptionService.derive_kek(new_password, new_salt)
         new_encrypted_dek = EncryptionService.wrap_dek(dek, new_kek)
         return new_salt, new_encrypted_dek
+
+    # ── Server-Siegelung (für zuverlässige automatische Backups) ───────────
+    #
+    # Der DEK liegt standardmäßig nur im In-Memory-KeyCache (pro Worker, beim
+    # Login befüllt). Damit automatische Backups Neustarts/Worker-Wechsel
+    # überleben, wird beim Login zusätzlich eine Kopie des DEK mit dem
+    # serverseitigen Fernet-Key (ENCRYPTION_KEY, derselbe Key wie für IMAP-
+    # Credentials) gesiegelt und am User persistiert. Der Server kann damit
+    # automatische Backups entschlüsseln – praktisch keine Verschlechterung
+    # gegenüber dem Status quo, da die SQLite-DB (Kern der Daten) im Container
+    # ohnehin in Klartext liegt. Export/Restore im UI funktionieren dadurch
+    # auch ohne frischen Re-Login.
+
+    @staticmethod
+    def wrap_dek_with_server_key(dek: bytes) -> str:
+        """Siegelt den DEK mit dem serverseitigen ENCRYPTION_KEY."""
+        key = os.getenv('ENCRYPTION_KEY')
+        if not key:
+            raise ValueError("ENCRYPTION_KEY environment variable not set")
+        cipher = Fernet(key.encode())
+        return cipher.encrypt(dek).decode('utf-8')
+
+    @staticmethod
+    def unwrap_dek_with_server_key(wrapped_dek: str) -> bytes:
+        """Entsiegelt einen server-gesiegelten DEK mit dem ENCRYPTION_KEY."""
+        key = os.getenv('ENCRYPTION_KEY')
+        if not key:
+            raise ValueError("ENCRYPTION_KEY environment variable not set")
+        cipher = Fernet(key.encode())
+        return cipher.decrypt(wrapped_dek.encode('utf-8'))

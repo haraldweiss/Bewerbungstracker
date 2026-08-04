@@ -49,6 +49,29 @@ def init_db(app):
 
     with app.app_context():
         db.create_all()
+        _migrate_columns()
+
+
+def _migrate_columns():
+    """Idempotente Spalten-Migrationen für bestehende DBs.
+
+    db.create_all() legt neue Tabellen an, verändert aber KEINE bestehenden –
+    neue Spalten müssen per ALTER TABLE nachgezogen werden. Jede Migration
+    prüft per PRAGMA table_info, ob die Spalte fehlt, und ist damit
+    wiederholbar.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(db.engine)
+    if 'users' not in inspector.get_table_names():
+        return
+
+    existing = {col['name'] for col in inspector.get_columns('users')}
+    if 'server_encrypted_dek' not in existing:
+        with db.engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN server_encrypted_dek TEXT"
+            ))
 
 
 def reset_db(app):

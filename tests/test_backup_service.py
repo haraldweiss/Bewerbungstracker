@@ -199,3 +199,63 @@ def test_manual_backup_type(app, user_with_data):
         user = db.session.get(User, user_with_data)
         backup = BackupService.create_backup(user, backup_type='manual')
         assert backup.backup_type == 'manual'
+
+
+def test_create_backup_via_server_wrapped_dek(app, user_with_data, monkeypatch):
+    """Auto-Backup funktioniert auch OHNE KeyCache-Eintrag, wenn der DEK
+    serverseitig gesiegelt am User liegt (überlebt Restart/Worker-Wechsel/
+    Token-Refresh ohne frischen Login)."""
+    key = EncryptionService.generate_dek().decode('utf-8')  # gültiger Fernet-Key
+    monkeypatch.setenv('ENCRYPTION_KEY', key)
+
+    with app.app_context():
+        user = db.session.get(User, user_with_data)
+        # Cache leeren → simuliert Container-Neustart/Worker-Wechsel.
+        get_key_cache().clear()
+        # DEK via "Login-Passwort" entsperren und serverseitig siegeln.
+        dek = EncryptionService.unlock_dek(
+            "testpw", user.encryption_salt, user.encrypted_data_key
+        )
+        user.server_encrypted_dek = EncryptionService.wrap_dek_with_server_key(dek)
+        db.session.commit()
+
+        # Cache bleibt leer → _get_dek muss auf server_encrypted_dek zurückfallen.
+        backup = BackupService.create_backup(user, backup_type='automatic')
+        assert backup is not None
+
+        # Entschlüsselt wird mit demselben DEK → 2 Applications im Snapshot.
+        decrypted = BackupService.get_backup_decrypted(backup, user)
+        assert len(decrypted['applications']) == 2
+        assert len(decrypted['emails']) == 2
+
+
+def test_backup_key_unavailable_without_dek_source(app, user_with_data):
+    """Ohne KeyCache UND ohne server_encrypted_dek muss BackupKeyUnavailable
+    geworfen werden (kein stilles Scheitern)."""
+    with app.app_context():
+        user = db.session.get(User, user_with_data)
+        get_key_cache().clear()
+        user.server_encrypted_dek = None
+        db.session.commit()
+
+        with pytest.raises(BackupKeyUnavailable):
+            BackupService._get_dek(user)
+
+
+def test_server_wrapped_dek_roundtrip(monkeypatch):
+    """wrap/unwrap mit ENCRYPTION_KEY liefert denselben DEK zurück."""
+    key = EncryptionService.generate_dek().decode('utf-8')
+    monkeypatch.setenv('ENCRYPTION_KEY', key)
+    dek = EncryptionService.generate_dek()
+
+    wrapped = EncryptionService.wrap_dek_with_server_key(dek)
+    assert EncryptionService.unwrap_dek_with_server_key(wrapped) == dek
+
+
+def test_server_wrapped_dek_requires_env_key(monkeypatch):
+    """Ohne ENCRYPTION_KEY muss ein klarer Fehler kommen, kein stummer Skip."""
+    monkeypatch.delenv('ENCRYPTION_KEY', raising=False)
+    with pytest.raises(ValueError, match="ENCRYPTION_KEY"):
+        EncryptionService.wrap_dek_with_server_key(
+            EncryptionService.generate_dek()
+        )

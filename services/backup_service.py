@@ -29,14 +29,34 @@ class BackupService:
 
     @staticmethod
     def _get_dek(user: User) -> bytes:
-        """Holt den DEK aus dem KeyCache. Wirft BackupKeyUnavailable bei Miss."""
+        """Holt den DEK – zuerst aus dem KeyCache, dann aus der serverseitigen
+        Siegelung (server_encrypted_dek, beim Login persistiert).
+
+        Der Server-Fallback macht automatische Backups zuverlässig: sie
+        funktionieren auch nach App-Neustart, Worker-Wechsel und
+        Token-Refresh ohne frischen Passwort-Login. Erst wenn beides fehlt,
+        wird BackupKeyUnavailable geworfen.
+        """
         dek = get_key_cache().get(user.id)
-        if dek is None:
-            raise BackupKeyUnavailable(
-                "DEK nicht im Cache – User muss sich erneut anmelden, um Backups "
-                "zu verschlüsseln/entschlüsseln."
-            )
-        return dek
+        if dek is not None:
+            return dek
+
+        if user.server_encrypted_dek:
+            try:
+                dek = EncryptionService.unwrap_dek_with_server_key(
+                    user.server_encrypted_dek
+                )
+                # Wieder in den Cache legen – erneuter Login nicht nötig.
+                get_key_cache().put(user.id, dek)
+                return dek
+            except Exception:
+                # Kaputte Siegelung: nicht blockieren, unten regulär werfen.
+                pass
+
+        raise BackupKeyUnavailable(
+            "DEK nicht verfügbar – User muss sich erneut anmelden, um Backups "
+            "zu verschlüsseln/entschlüsseln."
+        )
 
     @staticmethod
     def create_backup(user: User, backup_type: str = 'automatic') -> BackupHistory:
