@@ -197,6 +197,11 @@ def create_app(config_class=None):
     # Create tables on startup
     with app.app_context():
         db.create_all()
+        # Idempotente Spalten-Migrationen (z. B. users.server_encrypted_dek) —
+        # create_all legt nur neue Tabellen an, bestehende Spalten müssen per
+        # ALTER TABLE nachgezogen werden. Siehe database._migrate_columns.
+        from database import _migrate_columns
+        _migrate_columns()
 
     return app
 
