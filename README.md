@@ -71,8 +71,7 @@ Dafür sind in der `.env` gesetzt: `DB_PATHS=/app/data/bewerbungstracker.db,/app
 und `BACKUP_DIR=/app/data/backups` (persistiert im `bewerbungen_data`-Volume). Die automatischen
 App-Backups (Admin → Backup-Versionen) benötigen den serverseitig gesiegelten DEK
 (`users.server_encrypted_dek`) — er wird beim ersten Login nach dem Deploy gesetzt; danach laufen
-sie auch über Neustarts hinweg zuverlässig. `GUNICORN_WORKERS=1` entspricht dem Single-Worker-Design
-des DEK-KeyCache.
+sie auch über Neustarts hinweg zuverlässig. `GUNICORN_WORKERS=2` ermöglicht Multi-Worker dank des server-wrapped DEK (persistent in DB gespeichert, wird beim Login in Cache geladen).
 
 **Lokale Entwicklung:** `python app.py` startet seit 2026-07-22 **ohne** Debug-Mode
 (Security-Härtung, Commit `b631d01`). Für Debug/Auto-Reload:

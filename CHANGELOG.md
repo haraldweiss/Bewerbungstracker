@@ -2,6 +2,20 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-08-04 — Fix: Site-Ausfall durch hängenden AI-Scoring-Call + GUNICORN_WORKERS auf 2 erhöht
+
+**Anlass:** bewerbungen.wolfinisoftware.de war nicht erreichbar (HTTP 502). App antwortete nicht auf `127.0.0.1:5000`.
+
+**Root Cause:** Mit `GUNICORN_WORKERS=1` blockierte ein hängender AI-Scoring-Request (`POST /api/jobs/matches/6379/score`) den einzigen Worker für 180s (urllib3 timeout). Währenddessen konnte die App keine anderen Requests verarbeiten → Apache-Reverse-Proxy Timeout → Browser meldete „Error reading from remote server".
+
+**Fix:** `GUNICORN_WORKERS` von 1 auf **2** erhöht. Mit 2 Workern kann ein Worker einen langen AI-Call verarbeiten, während der andere Worker normale Requests bedient. Die Site bleibt erreichbar.
+
+**Tradeoff dokumentiert:** Der DEK-KeyCache ist weiterhin pro Prozess (in-memory). Mit `server_encrypted_dek` (server-wrapped DEK) ist der DEK aber persistent in der DB gespeichert und wird beim ersten Login in den Cache geladen. Daher funktioniert das Backup-System jetzt auch mit Multi-Worker zuverlässig — die alte Single-Worker-Einschränkung (stille Backup-Ausfälle bei 4 Workern) ist durch die Server-Siegelung behoben.
+
+**Verifikation:** App HTTP 200, Site HTTP 200, 2 Worker aktiv (bestätigt via `docker exec`).
+
+---
+
 ### 2026-08-04 — Fix: automatische Backups zuverlässig gemacht (Server-gesiegelter DEK) + Datei-Backup repariert
 
 **Anlass:** Backup-Verlauf (Admin) stoppte am **09.07.2026 20:50** (Version 40). Die App-Bewerbungen

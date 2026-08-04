@@ -199,8 +199,7 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 - **Datei-DR (`backup_db.py`):** benötigt `DB_PATHS` + `BACKUP_DIR` in der `.env` (Default-Pfade
   gelten nur für die Native-Installation unter `/var/www/bewerbungen`). Cron-Container mountet das
   `bewerbungen_data`-Volume (siehe `setup-oracle-vm.sh start_cron`).
-- **`GUNICORN_WORKERS=1`** (Prod-Env): der DEK-KeyCache ist pro Prozess — Multi-Worker ohne
-  geteilten Cache erzeugt stille Backup-Ausfälle (Regression 2026-08-04).
+- **`GUNICORN_WORKERS=2`** (Prod-Env): Mit `server_encrypted_dek` (server-wrapped DEK) funktioniert das Backup-System auch mit Multi-Worker zuverlässig. Der DEK wird beim ersten Login persistent in der DB gespeichert und in den prozesslokalen Cache geladen. 2 Worker gewährleisten, dass die Site bei hängenden AI-Calls erreichbar bleibt (Fix 2026-08-04).
 
 ---
 
