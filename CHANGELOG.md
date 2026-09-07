@@ -2,6 +2,22 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-09-08 — Security: browserslist 4.28.4 → 4.28.9 (Dependabot PR #47)
+
+**Anlass:** Dependabot meldete 2 offene High-Severity-Alerts für `browserslist` (dev dependency).
+
+**Behobene Schwachstellen:**
+- **GHSA-c83g-rgw3-j3cx** HIGH: Unbounded memory growth (no cache eviction) via distinct query results, leading to eventual OOM
+- **GHSA-73wf-gq98-2v4g** HIGH: Uncaught crash / prototype write via untrusted browserslist-stats.json custom stats (normalizeStats)
+
+**Fix:** `browserslist` 4.28.4 → 4.28.9 (patch update, dev dependency)
+
+**Bewertung:** Dev dependency — kein Produktionsrisiko, aber Alert bereinigt.
+
+**PR:** #47 (merged, CI passed: test + docker-smoke)
+
+---
+
 ### 2026-08-04 — Security: Cross-Repo Dependabot-Alerts behoben (9 Alerts in 3 Repos)
 
 **Anlass:** Nach Behebung der Bewerbungstracker-Alerts (#61 cryptography, #57 brace-expansion) Prüfung aller GitHub-Repos auf offene Dependabot-Alerts.
