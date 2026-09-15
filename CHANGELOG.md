@@ -2,6 +2,21 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-09-15 — Security: js-yaml 4.3.1 → 4.3.2 (Dependabot PR #48)
+
+**Anlass:** Dependabot meldete 1 offenen High-Severity-Alert für `js-yaml` (transitive dev dependency).
+
+**Behobene Schwachstellen:**
+- **GHSA-2883-xcg3-v3hh / CVE-2026-84375** HIGH (CVSS 7.5): `maxTotalMergeKeys` zählt leere Mappings nicht — Angreifer kann mit kleinem YAML-Dokument über Merge-Key-Ketten (`O(N*K)`) massive CPU-Last erzeugen (DoS trotz Default-Limit)
+
+**Fix:** `js-yaml` 4.3.1 → 4.3.2 (patch update, transitive dev dependency)
+
+**Bewertung:** Dev dependency (transitiv via package-lock.json) — kein Produktionsrisiko, aber Alert bereinigt.
+
+**PR:** #48 (merged, CI passed: test + docker-smoke)
+
+---
+
 ### 2026-09-08 — Security: browserslist 4.28.4 → 4.28.9 (Dependabot PR #47)
 
 **Anlass:** Dependabot meldete 2 offene High-Severity-Alerts für `browserslist` (dev dependency).
