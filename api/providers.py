@@ -430,4 +430,10 @@ def chat_with_user_provider(user):
         }, 202
     except Exception as e:
         logger.error(f'Chat Error: {e}')
-        return {'error': str(e), 'provider': provider}, 502
+        # 401-Klassifizierung (Fix 2026-09-17): Service-Token-Fehler (503,
+        # Admin-Aktion) vs. Provider-Key-Fehler (400, User-Aktion) trennen,
+        # statt rohes "401: ..." als 502 durchzureichen.
+        message, code, status = ai_provider_client.friendly_chat_error(
+            provider, str(e)
+        )
+        return {'error': message, 'provider': provider, 'code': code}, status
