@@ -2,6 +2,22 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-09-17 — Root Cause 401: totes Modell hy3-free → auf Ollama umgestellt + stale_model-Mapping deployed
+
+**Wurzelursache (live auf Prod belegt):** Das konfigurierte Modell `hy3-free` existiert nicht mehr auf opencode.ai (nicht im `/models`-Katalog; 7 andere Free-Modelle aktiv). opencode.ai antwortet auf Chat mit totem Modell mit **HTTP 401** `ModelError "Model hy3-free is not supported"` — daher der 401 trotz gültigem Service-Token UND gültigem System-Key (beide verifiziert: Token-Hash MATCH, System-Key-Probe → 400 Model-unavailable = Auth ok). Zusätzlich ist das opencode-Free-Tier derzeit praktisch down (deepseek → 400 unavailable, muse-spark → 500, mimo/ling/nemotron → 403 Cloudflare-1010).
+
+**Sofortfix (User-Konto, Prod-DB, reversibel — alter Wert: opencode/hy3-free):** `ai_provider='ollama'`, `ai_provider_model='mistral-nemo-cc:latest'` (User-Entscheid). E2E verifiziert via Service-`/chat` mit Test-Prompt → 200 `via: ollama`, kein Fallback. Hinweis: Backup-Feld steht noch auf `ollama/qwen3.8:latest` (nicht auf dem Pool — greift nur falls Primary fällt; bei Bedarf in den Einstellungen korrigieren).
+
+**Codefix (deployed als `3f79fb8`):** `friendly_chat_error` erkennt tote Modelle (`_STALE_MODEL_HINTS`: "not supported", "ModelError", "unknown/no such model" + 4xx-Status) VOR der 401-Klassifizierung → Code `stale_model`, 400, Anweisung ein aktuelles Modell zu wählen. 2 neue Tests (7 total in `test_providers_chat_errors.py`).
+
+**CI:** Run `35212911628` — `test` ✅ + `docker-smoke` ✅. **Deploy:** rsync → build `3f79fb8` → `IMAGE_TAG=3f79fb8 rebuild` (Volume erhalten, ai-provider NICHT angefasst). Verifikation: alle Container `3f79fb8`, `GET /` → 200, Fix gegreppt, Gunicorn 0 Errors, User-Setting nach Rebuild bestätigt. Rollback: `IMAGE_TAG=d8aa7f8 ... rebuild` (Code) bzw. DB zurück auf opencode/hy3-free (löst nichts — Modell tot).
+
+**Follow-ups (andere Repos, nicht angefasst):**
+- ai-provider-service: `_MODEL_UNAVAILABLE_HINTS` um "is not supported" erweitern + opencode-401-ModelError als `ProviderModelUnavailableError` werten (fiele dann aufs Fallback statt roh 401). Kein Hotfix im Container (§3.8) — als Issue/PR im Service-Repo.
+- Überlegung: opencode-Modellauswahl im Settings-UI warnen, wenn gespeichertes Modell nicht mehr in der Live-Liste ist.
+
+---
+
 ### 2026-09-17 — Fix: CV-KI-Analyse 401 wird klassifiziert (Service-Token vs. Provider-Key)
 
 **Anlass:** Button „🚀 Direkt mit konfiguriertem Provider analysieren" (CV-Vergleich → `POST /api/providers/chat` → ai-provider-service `POST /chat`) zeigte nur `❌ Fehler: 401: ...`.
