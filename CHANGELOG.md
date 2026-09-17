@@ -16,9 +16,15 @@ Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 we
 - `api/providers.py`: `except`-Block nutzt den Helper, Response um `code`-Feld erweitert
 - `tests/api/test_providers_chat_errors.py`: 5 neue Tests (Mocks only)
 
-**Verified:** `pytest tests/api` (265 passed), davor gezielt `test_providers_chat_errors` (5/5) + Provider/AI-Client-Suiten (84 passed). Nur Mocks — kein echter ai-provider-service, keine echten Credentials. NICHT deployed.
+**Verified (lokal):** `pytest tests/api` (265 passed), davor gezielt `test_providers_chat_errors` (5/5) + Provider/AI-Client-Suiten (84 passed). Nur Mocks — kein echter ai-provider-service, keine echten Credentials.
 
-**Offen / Hinweis an Prod-Admin:** Falls der 401 auf der Oracle-VM auftritt, zuerst Service-Token prüfen (§3.9-Schnelldiagnose: `docker exec -i bewerbungen-worker python -` → `create_app().config['SQLALCHEMY_DATABASE_URI']` muss `sqlite:////app/data/...` zeigen; `SERVICE_TOKEN` aus `docker inspect ai-provider` mit `AI_PROVIDER_SERVICE_TOKEN` in `/etc/bewerbungen/bewerbungen.env` abgleichen, dann `docker restart bewerbungen-app bewerbungen-worker`). Falls dort alles stimmt, ist der Provider-Key des Users faul → in den Einstellungen erneuern oder Provider wechseln.
+**CI:** Run `35210855783` auf `master` (Push `badb274..d8aa7f8`) — `test` ✅ + `docker-smoke` (Build+Boot+Healthcheck) ✅.
+
+**Deploy (2026-09-17, ERLEDIGT):** rsync → `/home/opc/bewerbungstracker`, Image `localhost/bewerbungen:d8aa7f8` via `build.sh d8aa7f8`, alle 5 Container via `IMAGE_TAG=d8aa7f8 setup-oracle-vm.sh rebuild` (Volume `bewerbungen_data` erhalten, ai-provider NICHT angefasst). Rollback-Referenz: `IMAGE_TAG=206cd73 ... rebuild`.
+
+**Verifikation (Produktion):** alle Container `d8aa7f8` ✅; `GET /` → 200 ✅; Fix im Image gegreppt ✅; Worker-DB-URI `sqlite:////app/data/bewerbungstracker.db` (§3.5 ✅); Token-Hashvergleich `AI_PROVIDER_SERVICE_TOKEN` vs `SERVICE_TOKEN` → **MATCH** (§3.9 ✅ — kein Sync nötig); Service-Auth read-only-Probe `GET /providers` mit Env-Token → **200** ✅; Gunicorn-Log 0 Errors ✅.
+
+**Echte 401-Ursache (Prod-Befund):** Service-Token ist synchron und Service-Auth funktioniert → der gemeldete 401 kam **nicht** vom Token-Sync, sondern (mit hoher Wahrscheinlichkeit) vom **User-API-Key des konfigurierten Providers** (Downstream-401). Der deployed Fix mappt genau diesen Fall jetzt auf 400 + handlungsfähige Meldung (Key erneuern oder z. B. opencode Free-Tier wählen). E2E mit echtem User-JWT nicht getestet (würde echtes AI-Budget verbrauchen) — bitte einmal „🚀 Direkt mit konfiguriertem Provider analysieren" klicken und melden, welche Meldung kommt.
 
 ---
 
