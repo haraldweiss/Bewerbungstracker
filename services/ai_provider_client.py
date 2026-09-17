@@ -295,6 +295,15 @@ ALLOW_BACKUP_FEATURES = {'match', 'cover_letter', 'email_parse',
 _SERVICE_AUTH_HINTS = ('bearer', 'service_token', 'service token')
 _PROVIDER_AUTH_HINTS = ('api_key', 'api-key', 'x-api-key', 'invalid key',
                         'incorrect api', 'authentication_error', 'invalid_api_key')
+# Hinweis-Fragmente für "stale model": Das konfigurierte Modell existiert
+# (nicht mehr) beim Provider. opencode.ai antwortet dafür mit HTTP 401
+# ("Model X is not supported", Fix 2026-09-17: hy3-free) — daher muss dieser
+# Check VOR der 401-Klassifizierung laufen, sonst landet es fälschlich bei
+# service_auth/provider_auth.
+_STALE_MODEL_HINTS = ('is not supported', 'not supported', 'modelerror',
+                      'unknown model', 'model_not_found', 'invalid model',
+                      'does not exist', 'no such model')
+_STALE_MODEL_STATUS = ('400', '401', '403', '404', '422')
 
 
 def friendly_chat_error(provider: str, raw_error: str) -> tuple:
@@ -306,6 +315,8 @@ def friendly_chat_error(provider: str, raw_error: str) -> tuple:
     §3.9) oder der User-API-Key des konfigurierten Providers faul ist.
 
     Returns (message, code, http_status):
+      - 'stale_model' → 400 (User-Aktion: aktuelles Modell wählen —
+        opencode meldet tote Free-Modelle als 401 "not supported")
       - 'service_auth' → 503 (Admin-Aktion: Token-Sync in bewerbungen.env)
       - 'provider_auth' → 400 (User-Aktion: Key erneuern / Provider wechseln)
       - 'provider' → 502 (sonstige Service-/Provider-Fehler, Raw angehängt)
@@ -317,6 +328,18 @@ def friendly_chat_error(provider: str, raw_error: str) -> tuple:
     is_401 = '401' in low or 'unauthorized' in low
     looks_service = any(h in low for h in _SERVICE_AUTH_HINTS)
     looks_provider = any(h in low for h in _PROVIDER_AUTH_HINTS)
+    looks_stale_model = (
+        any(h in low for h in _STALE_MODEL_HINTS)
+        and any(s in low for s in _STALE_MODEL_STATUS)
+    )
+    if looks_stale_model:
+        return (
+            f"Das konfigurierte Modell wird von Provider '{provider}' nicht "
+            f'mehr angeboten. Free-Modelle rotieren häufig — bitte unter '
+            f'Einstellungen → AI Provider ein aktuelles Modell wählen (die '
+            f'Liste wird live vom Provider geladen). Details: {raw_error}',
+            'stale_model', 400,
+        )
     if is_401 and looks_service and not looks_provider:
         return (
             'KI-Service-Auth fehlgeschlagen (401): Das Service-Token zwischen '

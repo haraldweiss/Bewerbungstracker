@@ -123,6 +123,44 @@ def test_chat_generic_error_stays_502_backward_compat(client, auth_header):
     assert 'overloaded' in body['error']
 
 
+def test_chat_stale_model_opencode_401(client, auth_header):
+    """opencode meldet totes Free-Modell als 401 'not supported' → stale_model/400."""
+    headers, _ = auth_header
+    is_enabled, get_client, _ = _mock_service(
+        chat_side_effect=AIProviderServiceError(
+            '401: Provider opencode rejected the request (HTTP 401)'
+            ' {"type":"ModelError","message":"Model hy3-free is not supported"}'
+        )
+    )
+    with is_enabled, get_client:
+        r = client.post(
+            '/api/providers/chat',
+            json={'prompt': 'Analysiere mein CV', 'max_tokens': 100},
+            headers=headers,
+        )
+    assert r.status_code == 400
+    body = r.get_json()
+    assert body['code'] == 'stale_model'
+    assert 'nicht mehr angeboten' in body['error']
+
+
+def test_chat_stale_model_404(client, auth_header):
+    headers, _ = auth_header
+    is_enabled, get_client, _ = _mock_service(
+        chat_side_effect=AIProviderServiceError(
+            "404: {'error': 'No such model: xyz'}"
+        )
+    )
+    with is_enabled, get_client:
+        r = client.post(
+            '/api/providers/chat',
+            json={'prompt': 'Analysiere mein CV', 'max_tokens': 100},
+            headers=headers,
+        )
+    assert r.status_code == 400
+    assert r.get_json()['code'] == 'stale_model'
+
+
 def test_chat_success_path_unchanged(client, auth_header):
     """Erfolgspfad: 200 mit response/via/usage wie bisher."""
     headers, _ = auth_header
