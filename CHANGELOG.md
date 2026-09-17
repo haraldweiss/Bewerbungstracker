@@ -2,6 +2,26 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-09-17 — Fix: CV-KI-Analyse 401 wird klassifiziert (Service-Token vs. Provider-Key)
+
+**Anlass:** Button „🚀 Direkt mit konfiguriertem Provider analysieren" (CV-Vergleich → `POST /api/providers/chat` → ai-provider-service `POST /chat`) zeigte nur `❌ Fehler: 401: ...`.
+
+**Ursache:** `chat_with_user_provider` (`api/providers.py`) reichte jede Service-Exception roh als `{'error': '401: ...'}` mit HTTP 502 durch — nicht erkennbar, ob (a) das Service-Token App ↔ ai-provider-service ungültig ist (klassisch nach Service-Rebuild, AGENTS.md §3.9) oder (b) der User-API-Key des konfigurierten Providers abgelaufen ist.
+
+**Fix (opencode, 4 Commits auf master, rebase auf origin/master badb274):**
+- `services/ai_provider_client.py`: neuer Helper `friendly_chat_error(provider, raw_error)` (Business-Logik in `services/` per AGENTS.md §3.1) — klassifiziert anhand von Bearer-/API-Key-Hinweisen:
+  - `service_auth` → 503 + Admin-Anweisung (Token-Sync `AI_PROVIDER_SERVICE_TOKEN` in `bewerbungen.env`, App+Worker restart)
+  - `provider_auth` → 400 + User-Anweisung (Key unter Einstellungen → AI Provider erneuern oder z. B. opencode Free-Tier wählen)
+  - unklarer 401 → 502 nennt beide Prüfpunkte; Nicht-401 unverändert roh + 502 (backward-compat, Frontend zeigt `data.error` wie bisher)
+- `api/providers.py`: `except`-Block nutzt den Helper, Response um `code`-Feld erweitert
+- `tests/api/test_providers_chat_errors.py`: 5 neue Tests (Mocks only)
+
+**Verified:** `pytest tests/api` (265 passed), davor gezielt `test_providers_chat_errors` (5/5) + Provider/AI-Client-Suiten (84 passed). Nur Mocks — kein echter ai-provider-service, keine echten Credentials. NICHT deployed.
+
+**Offen / Hinweis an Prod-Admin:** Falls der 401 auf der Oracle-VM auftritt, zuerst Service-Token prüfen (§3.9-Schnelldiagnose: `docker exec -i bewerbungen-worker python -` → `create_app().config['SQLALCHEMY_DATABASE_URI']` muss `sqlite:////app/data/...` zeigen; `SERVICE_TOKEN` aus `docker inspect ai-provider` mit `AI_PROVIDER_SERVICE_TOKEN` in `/etc/bewerbungen/bewerbungen.env` abgleichen, dann `docker restart bewerbungen-app bewerbungen-worker`). Falls dort alles stimmt, ist der Provider-Key des Users faul → in den Einstellungen erneuern oder Provider wechseln.
+
+---
+
 ### 2026-09-15 — Security: js-yaml 4.3.1 → 4.3.2 (Dependabot PR #48)
 
 **Anlass:** Dependabot meldete 1 offenen High-Severity-Alert für `js-yaml` (transitive dev dependency).
