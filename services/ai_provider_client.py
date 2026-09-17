@@ -288,6 +288,66 @@ ALLOW_BACKUP_FEATURES = {'match', 'cover_letter', 'email_parse',
                          'cv_summarize', 'pattern_learn', 'chat'}
 
 
+# Hinweis-Fragmente zur 401-Klassifizierung (CV-Analyse / /api/providers/chat,
+# Fix 2026-09-17: rohe "401: ..."-Fehler waren nicht handlungsfähig).
+# Nur der Service nutzt Bearer-Auth mit SERVICE_TOKEN; Provider-Keys laufen
+# als api_key/x-api-key/Downstream-Auth-Fehler durch den Service.
+_SERVICE_AUTH_HINTS = ('bearer', 'service_token', 'service token')
+_PROVIDER_AUTH_HINTS = ('api_key', 'api-key', 'x-api-key', 'invalid key',
+                        'incorrect api', 'authentication_error', 'invalid_api_key')
+
+
+def friendly_chat_error(provider: str, raw_error: str) -> tuple:
+    """Mappt rohe ai-provider-service Fehler auf handlungsfähige Meldungen.
+
+    Der CV-Vergleich ("Direkt mit konfiguriertem Provider analysieren")
+    zeigte nur "401: ..." — ohne zu sagen, ob das Service-Token
+    (App ↔ ai-provider-service, typisch nach Service-Rebuild, AGENTS.md
+    §3.9) oder der User-API-Key des konfigurierten Providers faul ist.
+
+    Returns (message, code, http_status):
+      - 'service_auth' → 503 (Admin-Aktion: Token-Sync in bewerbungen.env)
+      - 'provider_auth' → 400 (User-Aktion: Key erneuern / Provider wechseln)
+      - 'provider' → 502 (sonstige Service-/Provider-Fehler, Raw angehängt)
+
+    Niemals Tokens/Secrets loggen oder zurückgeben — nur die bereits
+    redigierte Exception-Message klassifizieren.
+    """
+    low = (raw_error or '').lower()
+    is_401 = '401' in low or 'unauthorized' in low
+    looks_service = any(h in low for h in _SERVICE_AUTH_HINTS)
+    looks_provider = any(h in low for h in _PROVIDER_AUTH_HINTS)
+    if is_401 and looks_service and not looks_provider:
+        return (
+            'KI-Service-Auth fehlgeschlagen (401): Das Service-Token zwischen '
+            'App und ai-provider-service ist ungültig — typisch nach einem '
+            'Service-Rebuild. Admin-Aktion nötig (AGENTS.md §3.9): '
+            'AI_PROVIDER_SERVICE_TOKEN in bewerbungen.env mit dem '
+            'SERVICE_TOKEN des ai-provider-Containers abgleichen, dann '
+            'App + Worker neu starten.',
+            'service_auth', 503,
+        )
+    if is_401 and looks_provider:
+        return (
+            f"Provider '{provider}' meldet 401: Der hinterlegte API-Key ist "
+            f"ungültig oder abgelaufen. Bitte unter Einstellungen → AI "
+            f"Provider den Key für '{provider}' erneuern — oder temporär "
+            'einen anderen Provider wählen (z. B. opencode Free-Tier, kein '
+            'eigener Key nötig).',
+            'provider_auth', 400,
+        )
+    if is_401:
+        return (
+            f'KI-Anfrage fehlgeschlagen (401, Provider {provider!r}): Entweder '
+            'ist das Service-Token ungültig (Admin: Token-Sync nach '
+            'Service-Rebuild prüfen, AGENTS.md §3.9) oder der Provider-Key ist '
+            'abgelaufen (Einstellungen → AI Provider). Details: '
+            f'{raw_error}',
+            'auth', 502,
+        )
+    return (f'{raw_error}', 'provider', 502)
+
+
 def _lookup_user_budget_cents(user_id: str) -> int:
     """Liest user.job_daily_budget_cents oder default 500. Isoliert, damit
     Tests mocken koennen ohne DB."""
