@@ -174,6 +174,14 @@ Erlaubt ist ein Hotfix **nur** zum sofortigen Service-Retten in einem Incident â
 
 ---
 
+### 3.11 Application mutations and document exports
+
+- Validate application JSON in `services/application_service.py` before changing ORM fields. Required company/position must be non-empty strings; optional text accepts strings/null; status must be an existing `ApplicationStatus`; dates must parse as ISO. Preserve the existing German and English status values.
+- Company/position duplicate checks must be user-scoped, exclude the edited record, and apply the same database normalization to both operands. Check conflicts before restoring trash entries; keep them in trash on HTTP 409.
+- ReportLab `Paragraph` accepts markup. Escape every plain-text input, including applicant names, addresses, job titles, body and signature; only then turn preserved newlines into controlled `<br/>`. DOCX must preserve the same explicit HTML line breaks.
+
+---
+
 ## 4. Verification standards
 
 ```

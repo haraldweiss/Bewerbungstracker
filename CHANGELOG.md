@@ -1,5 +1,21 @@
 # Changelog — Bewerbungstracker
 
+### 2026-10-07 — Review: Bewerbungsdaten und Anschreiben-Export
+
+**Behoben:** Ungültige Datums-/Status-/Feldwerte verursachten Fehler oder konnten unbrauchbare Bewerbungsdaten speichern. Gemeinsame Service-Validierung prüft den gesamten POST/PATCH vor einer Mutation, erhält alle zehn bestehenden Statuswerte und liefert HTTP 400. Firma/Position werden getrimmt; benutzerbezogene Duplikate werden bei Erstellung, Änderung und Wiederherstellung mit HTTP 409 abgefangen. Wiederherstellungskonflikte lassen den Papierkorb unverändert.
+
+PDF-Export reichte entschlüsselten Klartext an ReportLab-Markup weiter: Namen/Titel mit Winkelklammern konnten Fehler auslösen, entity-encodiertes Markup wurde erneut interpretiert. Alle Klartextfelder werden jetzt vor dem PDF-Rendering escaped. Explizite `<br>`-Zeilenumbrüche bleiben in PDF und DOCX erhalten.
+
+**Verifikation:** 50 fokussierte Tests einschließlich echtem ReportLab/PDF-Textroundtrip und DOCX-Inhaltsprüfung bestehen; zusätzliche Eigentümer-, Kompatibilitäts- und Wiederherstellungstests. Vollständige pytest-Suite: **904 bestanden, 1 xfailed** mit DNS-Zugriff (bestehende RSS-/URL-Tests benötigen echte DNS-Auflösung). Unabhängiger Python-Review ohne offene Befunde. Keine echten IMAP-/KI-Credentials, keine produktiven Bewerbungsdaten, keine Migration; Deploy-Ergebnis siehe unten. Branch: `codex/application-data-and-export-safety`.
+
+**Deploy (2026-10-07, erledigt):** PR #51 (noch offen) ist als Image `localhost/bewerbungen:bf15059` deployed. Unveränderter Git-Archive-Stand über `/home/opc/bewerbungstracker-release-bf15059`; Build via `deploy/container/build.sh bf15059`, Recreate aller fünf Rollen via `IMAGE_TAG=bf15059 deploy/container/setup-oracle-vm.sh rebuild`. SQLite-Backup vor Deploy: `/app/data/backups/pre-deploy-bf15059.sqlite`, Integritätsprüfung `ok`, Dateimodus 0600. Volume `bewerbungen_data` und bestehende Env-Mounts erhalten; ai-provider nicht angefasst.
+
+**Prod-Verifikation:** Alle fünf Container auf `bf15059`, App/Worker ohne Restarts und auf `sqlite:////app/data/bewerbungstracker.db`; öffentliche Seite HTTP 200, Bewerbungs-API ohne Token HTTP 401. Release-Image mit synthetischem Auth/CRUD/PDF-Smoke gegen isolierte In-Memory-DB geprüft; live Service-Validierung und echtes PDF-Rendering ebenfalls geprüft, keine produktiven Bewerbungsinhalte gelesen. Gunicorn-Log: keine Tracebacks/ERRORs. Keine echten IMAP-/KI-Roundtrips ausgeführt. Rollback: im Release-Verzeichnis `IMAGE_TAG=3f79fb8 bash deploy/container/setup-oracle-vm.sh rebuild` (altes Image vorhanden).
+
+
+---
+
+
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
 ### 2026-09-17 — Root Cause 401: totes Modell hy3-free → auf Ollama umgestellt + stale_model-Mapping deployed
