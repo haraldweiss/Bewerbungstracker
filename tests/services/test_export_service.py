@@ -107,3 +107,50 @@ def test_to_pdf_with_address():
         applicant_address="Hauptstraße 1\n10115 Berlin"
     )
     assert result[:4] == b'%PDF'
+
+
+def test_export_keeps_explicit_line_breaks():
+    assert _extract_paragraphs('<p>Hello<br>World<br />Again</p>') == ['Hello\nWorld\nAgain']
+    from docx import Document
+    import io
+    content = ExportService().to_docx('<p>Hello<br>World</p>','Max','Acme','Engineer')
+    assert 'Hello\nWorld' in [p.text for p in Document(io.BytesIO(content)).paragraphs]
+
+
+def test_pdf_escapes_user_text_in_every_paragraph(monkeypatch):
+    import sys
+    from types import ModuleType
+    # Minimal reportlab stand-in captures actual renderer input without network access.
+    modules = {name: ModuleType(name) for name in ['reportlab','reportlab.lib','reportlab.lib.pagesizes','reportlab.lib.styles','reportlab.lib.units','reportlab.lib.enums','reportlab.platypus']}
+    captured = []
+    modules['reportlab.lib.pagesizes'].A4 = (595,842)
+    modules['reportlab.lib.units'].inch = 72
+    modules['reportlab.lib.enums'].TA_LEFT = 0
+    modules['reportlab.lib.enums'].TA_JUSTIFY = 4
+    modules['reportlab.lib.styles'].getSampleStyleSheet = lambda: {'Normal':object()}
+    modules['reportlab.lib.styles'].ParagraphStyle = lambda *a,**kw: object()
+    modules['reportlab.platypus'].Paragraph = lambda text,style: captured.append(text)
+    modules['reportlab.platypus'].Spacer = lambda *a: None
+    class Doc:
+        def __init__(self,*a,**kw): pass
+        def build(self,elements): pass
+    modules['reportlab.platypus'].SimpleDocTemplate = Doc
+    for name,module in modules.items(): monkeypatch.setitem(sys.modules,name,module)
+    ExportService().to_pdf('<p>&lt;img src="https://invalid.example/x"/&gt; &amp; text<br>Second</p>', 'A <B> & C','Acme','Dev <Ops>', 'Street <1>')
+    assert '<b>A &lt;B&gt; &amp; C</b>' in captured
+    assert 'Street &lt;1&gt;' in captured
+    assert '<b>Bewerbung als Dev &lt;Ops&gt;</b>' in captured
+    assert '&lt;img src="https://invalid.example/x"/&gt; &amp; text<br/>Second' in captured
+    assert 'A &lt;B&gt; &amp; C' in captured
+
+
+def test_real_pdf_preserves_literal_markup_and_line_breaks():
+    pytest.importorskip('reportlab')
+    pypdf = pytest.importorskip('pypdf')
+    import io
+    result = ExportService().to_pdf('<p>&lt;b&gt;literal&lt;/b&gt; &amp; text<br>Second line</p>','A <B> & C','Acme','Dev <Ops>','Street <1>')
+    text = '\n'.join(page.extract_text() for page in pypdf.PdfReader(io.BytesIO(result)).pages)
+    assert 'A <B> & C' in text
+    assert 'Street <1>' in text
+    assert 'Dev <Ops>' in text
+    assert '<b>literal</b> & text\nSecond line' in text
