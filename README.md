@@ -266,3 +266,9 @@ Veröffentlicht unter der [GNU AGPL v3.0](LICENSE) — © 2026 Harald Weiss.
 Die AGPL stellt sicher, dass auch netzbasierte Bereitstellungen den Quellcode
 ihrer Modifikationen weitergeben müssen. Ideen und Konzepte sind durch keine
 Lizenz schützbar.
+
+### Datenvalidierung und Anschreiben-Export
+
+Bewerbungen benötigen eine Firma und Position als nicht-leere Texte. Die API prüft Feldtypen, bestehende Statuswerte, Feldlängen und ISO-Datumswerte vor dem Speichern; ungültige Eingaben liefern HTTP 400. Leerzeichen um Firma/Position werden entfernt. Anlegen, Umbenennen und Wiederherstellen verhindern doppelte aktive Firma/Position-Paare innerhalb desselben Benutzerkontos (HTTP 409). Bei einem Wiederherstellungskonflikt bleibt der Eintrag im Papierkorb.
+
+PDF/DOCX-Anschreiben behalten explizite HTML-Zeilenumbrüche bei. Namen, Adressen und Text mit `&`, `<` oder `>` werden im PDF als Text ausgegeben und nicht als ReportLab-Markup interpretiert. Keine Migration oder neue Konfiguration erforderlich.

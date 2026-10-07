@@ -1,5 +1,16 @@
 # Changelog — Bewerbungstracker
 
+### 2026-10-07 — Review: Bewerbungsdaten und Anschreiben-Export
+
+**Behoben:** Ungültige Datums-/Status-/Feldwerte verursachten Fehler oder konnten unbrauchbare Bewerbungsdaten speichern. Gemeinsame Service-Validierung prüft den gesamten POST/PATCH vor einer Mutation, erhält alle zehn bestehenden Statuswerte und liefert HTTP 400. Firma/Position werden getrimmt; benutzerbezogene Duplikate werden bei Erstellung, Änderung und Wiederherstellung mit HTTP 409 abgefangen. Wiederherstellungskonflikte lassen den Papierkorb unverändert.
+
+PDF-Export reichte entschlüsselten Klartext an ReportLab-Markup weiter: Namen/Titel mit Winkelklammern konnten Fehler auslösen, entity-encodiertes Markup wurde erneut interpretiert. Alle Klartextfelder werden jetzt vor dem PDF-Rendering escaped. Explizite `<br>`-Zeilenumbrüche bleiben in PDF und DOCX erhalten.
+
+**Verifikation:** 50 fokussierte Tests einschließlich echtem ReportLab/PDF-Textroundtrip und DOCX-Inhaltsprüfung bestehen; zusätzliche Eigentümer-, Kompatibilitäts- und Wiederherstellungstests. Vollständige pytest-Suite: **904 bestanden, 1 xfailed** mit DNS-Zugriff (bestehende RSS-/URL-Tests benötigen echte DNS-Auflösung). Unabhängiger Python-Review ohne offene Befunde. Keine echten IMAP-/KI-Credentials, keine produktiven Bewerbungsdaten, keine Migration, nicht deployed. Branch: `codex/application-data-and-export-safety`.
+
+---
+
+
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
 ### 2026-09-17 — Root Cause 401: totes Modell hy3-free → auf Ollama umgestellt + stale_model-Mapping deployed
