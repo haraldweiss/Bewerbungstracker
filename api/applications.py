@@ -2,21 +2,14 @@
 # © 2026 Harald Weiss
 from flask import Blueprint, request, current_app
 from api.auth import token_required
-from models import Application, ApplicationStatus
+from models import Application
 from database import db
 from datetime import datetime
 from services.backup_service import BackupService, BackupKeyUnavailable
+from services.application_service import validate_application_data, find_duplicate_application
 import threading
 
 apps_bp = Blueprint('applications', __name__, url_prefix='/api/applications')
-
-
-# Felder, die durch POST/PATCH zu setzen sind. Datum/Status separat behandelt,
-# da sie eigene Parsing-Regeln haben.
-WRITABLE_FIELDS = {
-    'company', 'position', 'salary', 'location',
-    'contact_email', 'source', 'link', 'notes',
-}
 
 
 def _safe_auto_backup(user) -> None:
@@ -83,13 +76,6 @@ def _serialize(app: Application) -> dict:
     }
 
 
-def _parse_date(value):
-    """ISO-Date oder None. Akzeptiert auch leeren String aus dem Frontend."""
-    if not value:
-        return None
-    return datetime.fromisoformat(value).date()
-
-
 @apps_bp.route('', methods=['GET'])
 @token_required
 def list_applications(user):
@@ -110,34 +96,16 @@ def list_applications(user):
 @token_required
 def create_application(user):
     """Bewerbung anlegen."""
-    data = request.get_json() or {}
+    try:
+        data = validate_application_data(request.get_json())
+    except ValueError as exc:
+        return {'error': str(exc)}, 400
 
-    if not data.get('company') or not data.get('position'):
-        return {'error': 'Company and position required'}, 400
-
-    # Duplikat-Prüfung: gleiche Firma + Position (case-insensitive)
-    dup = Application.query.filter(
-        Application.user_id == user.id,
-        Application.deleted == False,
-        db.func.lower(Application.company) == db.func.lower(data['company']),
-        db.func.lower(Application.position) == db.func.lower(data['position']),
-    ).first()
+    dup = find_duplicate_application(user.id, data['company'], data['position'])
     if dup:
         return {'error': 'Bewerbung existiert bereits', 'existing_id': dup.id}, 409
 
-    app = Application(
-        user_id=user.id,
-        company=data['company'],
-        position=data['position'],
-        status=data.get('status', ApplicationStatus.BEWORBEN.value),
-        applied_date=_parse_date(data.get('applied_date')),
-        salary=data.get('salary'),
-        location=data.get('location'),
-        contact_email=data.get('contact_email'),
-        source=data.get('source'),
-        link=data.get('link'),
-        notes=data.get('notes'),
-    )
+    app = Application(user_id=user.id, **data)
     db.session.add(app)
     db.session.commit()
 
@@ -177,16 +145,20 @@ def update_application(user, app_id):
     if not app:
         return {'error': 'Application not found'}, 404
 
-    data = request.get_json() or {}
+    try:
+        data = validate_application_data(request.get_json(), partial=True)
+    except ValueError as exc:
+        return {'error': str(exc)}, 400
 
-    for field in WRITABLE_FIELDS:
-        if field in data:
-            setattr(app, field, data[field])
-
-    if 'status' in data:
-        app.status = data['status']
-    if 'applied_date' in data:
-        app.applied_date = _parse_date(data['applied_date'])
+    if 'company' in data or 'position' in data:
+        dup = find_duplicate_application(
+            user.id, data.get('company', app.company).strip(),
+            data.get('position', app.position).strip(), exclude_id=app.id,
+        )
+        if dup:
+            return {'error': 'Bewerbung existiert bereits', 'existing_id': dup.id}, 409
+    for field, value in data.items():
+        setattr(app, field, value)
 
     app.updated_at = datetime.utcnow()
     db.session.commit()
@@ -240,6 +212,10 @@ def recover_application(user, app_id):
         return {'error': 'Application not found'}, 404
     if not app.deleted:
         return {'error': 'Application is not deleted'}, 400
+
+    dup = find_duplicate_application(user.id, app.company.strip(), app.position.strip(), exclude_id=app.id)
+    if dup:
+        return {'error': 'Bewerbung existiert bereits', 'existing_id': dup.id}, 409
 
     app.deleted = False
     app.deleted_at = None

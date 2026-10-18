@@ -14,7 +14,7 @@ import io
 import re
 import logging
 from datetime import datetime
-from html import unescape
+from html import unescape, escape
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,8 @@ def _extract_paragraphs(html: str) -> list[str]:
     out = []
     for raw in paragraphs:
         # Inline-HTML stripen (z.B. <br>, <strong>)
-        text = re.sub(r'<[^>]+>', '', raw)
+        text = re.sub(r'<br\s*/?>', '\n', raw, flags=re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', '', text)
         text = unescape(text).strip()
         if text:
             out.append(text)
@@ -82,13 +83,13 @@ class ExportService:
         # Header: Absender
         name_style = ParagraphStyle('Name', parent=styles['Normal'],
             fontName=FONT_NAME, fontSize=12, spaceAfter=4, alignment=TA_LEFT)
-        elements.append(Paragraph(f"<b>{applicant_name}</b>", name_style))
+        elements.append(Paragraph(f"<b>{escape(applicant_name, quote=False)}</b>", name_style))
         if applicant_address:
             addr_style = ParagraphStyle('Addr', parent=styles['Normal'],
                 fontName=FONT_NAME, fontSize=10, spaceAfter=12, alignment=TA_LEFT)
             for line in applicant_address.splitlines():
                 if line.strip():
-                    elements.append(Paragraph(line.strip(), addr_style))
+                    elements.append(Paragraph(escape(line.strip(), quote=False), addr_style))
         elements.append(Spacer(1, 0.2*inch))
 
         # Datum
@@ -99,14 +100,14 @@ class ExportService:
         # Subject
         subj_style = ParagraphStyle('Subj', parent=styles['Normal'],
             fontName=FONT_NAME, fontSize=11, alignment=TA_LEFT, spaceAfter=18)
-        elements.append(Paragraph(f"<b>Bewerbung als {job_title}</b>", subj_style))
+        elements.append(Paragraph(f"<b>Bewerbung als {escape(job_title, quote=False)}</b>", subj_style))
 
         # Body
         body_style = ParagraphStyle('Body', parent=styles['Normal'],
             fontName=FONT_NAME, fontSize=BODY_SIZE_PT,
             spaceAfter=12, leading=14, alignment=TA_JUSTIFY)
         for para in paragraphs:
-            elements.append(Paragraph(para, body_style))
+            elements.append(Paragraph(escape(para, quote=False).replace("\n", "<br/>"), body_style))
 
         # Signatur-Platzhalter
         elements.append(Spacer(1, 0.3*inch))
@@ -114,7 +115,7 @@ class ExportService:
             fontName=FONT_NAME, fontSize=11, alignment=TA_LEFT)
         elements.append(Paragraph("Mit freundlichen Grüßen", sig_style))
         elements.append(Spacer(1, 0.4*inch))
-        elements.append(Paragraph(applicant_name, sig_style))
+        elements.append(Paragraph(escape(applicant_name, quote=False), sig_style))
 
         doc.build(elements)
         return buf.getvalue()

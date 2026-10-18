@@ -1,7 +1,5 @@
 # Changelog — Bewerbungstracker
 
-Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
-
 ### 2026-10-18 — opencode.ai: Zen tot (Breach) → `opencode_go` (Go-Abo) + User-Row umgestellt
 
 **Auslöser:** Im ai-provider-service sind mit dem OpenCode-Breach vom 2026-10-17 die Zen/Console-API-Keys invalidiert und das Zen-Free-Tier ist nicht mehr nutzbar; der Service bedient opencode.ai-Modelle nur noch über das Go-Abo als **`opencode_go/<model>`** (Details im Service-Repo, AGENTS.md §7). Der Tracker zeigte deshalb Fehlversuche im Dutzend: **163× `HTTP 410`** auf `opencode/muse-spark-1.3-contributor-free` in 3 Tagen, dazu 404er auf Free-Modell-IDs, die auf Ollama nie existierten (`north-mini-code-free`, `nemotron-3-ultra-free`, `qwen3.6-plus-free` …).
@@ -17,6 +15,25 @@ Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 we
 **Verifikation:** `pytest tests/` → **873 passed, 2 skipped, 1 xfailed**. Service-Seite per-Consumer-Test: `opencode_go/deepseek-v4.1-flash` für genau diese user_id → HTTP 200. Deploy: rsync → build `<sha>` → `IMAGE_TAG=<sha> deploy/container/setup-oracle-vm.sh rebuild`.
 
 **Beobachtung/Offen (nicht Teil dieses Fixes):** User `ba3e37ac…` (`ri-lampe@t-online.de`) hat `ai_provider='claude'` ohne eigenen Key — im Service existiert kein ANTHROPIC-Server-Key, deshalb sind **0 von 2549** Job-Matches dieses Users je bewertet worden (`match_score` null, `eval_attempts=0`). Optionen: eigener Anthropic-Key über die Einstellungen, oder Provider auf `opencode_go` umstellen (verbraucht dann Go-Abo-Kontingent). `a82be5b8…` (`sarlakk@icloud.com`) steht ebenfalls auf `claude` und hat noch keine Matches.
+
+
+### 2026-10-07 — Review: Bewerbungsdaten und Anschreiben-Export
+
+**Behoben:** Ungültige Datums-/Status-/Feldwerte verursachten Fehler oder konnten unbrauchbare Bewerbungsdaten speichern. Gemeinsame Service-Validierung prüft den gesamten POST/PATCH vor einer Mutation, erhält alle zehn bestehenden Statuswerte und liefert HTTP 400. Firma/Position werden getrimmt; benutzerbezogene Duplikate werden bei Erstellung, Änderung und Wiederherstellung mit HTTP 409 abgefangen. Wiederherstellungskonflikte lassen den Papierkorb unverändert.
+
+PDF-Export reichte entschlüsselten Klartext an ReportLab-Markup weiter: Namen/Titel mit Winkelklammern konnten Fehler auslösen, entity-encodiertes Markup wurde erneut interpretiert. Alle Klartextfelder werden jetzt vor dem PDF-Rendering escaped. Explizite `<br>`-Zeilenumbrüche bleiben in PDF und DOCX erhalten.
+
+**Verifikation:** 50 fokussierte Tests einschließlich echtem ReportLab/PDF-Textroundtrip und DOCX-Inhaltsprüfung bestehen; zusätzliche Eigentümer-, Kompatibilitäts- und Wiederherstellungstests. Vollständige pytest-Suite: **904 bestanden, 1 xfailed** mit DNS-Zugriff (bestehende RSS-/URL-Tests benötigen echte DNS-Auflösung). Unabhängiger Python-Review ohne offene Befunde. Keine echten IMAP-/KI-Credentials, keine produktiven Bewerbungsdaten, keine Migration; Deploy-Ergebnis siehe unten. Branch: `codex/application-data-and-export-safety`.
+
+**Deploy (2026-10-07, erledigt):** PR #51 (noch offen) ist als Image `localhost/bewerbungen:bf15059` deployed. Unveränderter Git-Archive-Stand über `/home/opc/bewerbungstracker-release-bf15059`; Build via `deploy/container/build.sh bf15059`, Recreate aller fünf Rollen via `IMAGE_TAG=bf15059 deploy/container/setup-oracle-vm.sh rebuild`. SQLite-Backup vor Deploy: `/app/data/backups/pre-deploy-bf15059.sqlite`, Integritätsprüfung `ok`, Dateimodus 0600. Volume `bewerbungen_data` und bestehende Env-Mounts erhalten; ai-provider nicht angefasst.
+
+**Prod-Verifikation:** Alle fünf Container auf `bf15059`, App/Worker ohne Restarts und auf `sqlite:////app/data/bewerbungstracker.db`; öffentliche Seite HTTP 200, Bewerbungs-API ohne Token HTTP 401. Release-Image mit synthetischem Auth/CRUD/PDF-Smoke gegen isolierte In-Memory-DB geprüft; live Service-Validierung und echtes PDF-Rendering ebenfalls geprüft, keine produktiven Bewerbungsinhalte gelesen. Gunicorn-Log: keine Tracebacks/ERRORs. Keine echten IMAP-/KI-Roundtrips ausgeführt. Rollback: im Release-Verzeichnis `IMAGE_TAG=3f79fb8 bash deploy/container/setup-oracle-vm.sh rebuild` (altes Image vorhanden).
+
+
+---
+
+
+Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
 ### 2026-09-17 — Root Cause 401: totes Modell hy3-free → auf Ollama umgestellt + stale_model-Mapping deployed
 
