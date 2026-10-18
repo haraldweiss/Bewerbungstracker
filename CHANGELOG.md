@@ -14,7 +14,13 @@
 
 **Verifikation:** `pytest tests/` → **873 passed, 2 skipped, 1 xfailed**. Service-Seite per-Consumer-Test: `opencode_go/deepseek-v4.1-flash` für genau diese user_id → HTTP 200. Deploy: rsync → build `<sha>` → `IMAGE_TAG=<sha> deploy/container/setup-oracle-vm.sh rebuild`.
 
-**Beobachtung/Offen (nicht Teil dieses Fixes):** User `ba3e37ac…` (`ri-lampe@t-online.de`) hat `ai_provider='claude'` ohne eigenen Key — im Service existiert kein ANTHROPIC-Server-Key, deshalb sind **0 von 2549** Job-Matches dieses Users je bewertet worden (`match_score` null, `eval_attempts=0`). Optionen: eigener Anthropic-Key über die Einstellungen, oder Provider auf `opencode_go` umstellen (verbraucht dann Go-Abo-Kontingent). `a82be5b8…` (`sarlakk@icloud.com`) steht ebenfalls auf `claude` und hat noch keine Matches.
+**Zweiter User gefixt — `ba3e37ac…` (`ri-lampe@t-online.de`) → OpenRouter-Free:** Der User stand auf `claude` ohne jeden Key (im Service existiert kein ANTHROPIC-Server-Key), dadurch waren **0 von 2549** Job-Matches je bewertet (`match_score` null, `eval_attempts=0`). Neuer Stand: `ai_provider='openrouter'`, `ai_provider_model='cohere/north-mini-code:free'`, Backup `ollama`/`mistral-nemo-cc:latest`. Damit läuft es über den Server-Key des Service im **free-only-Modus** (kein Guthaben, kein eigener Key nötig) — im Service-Usage-Log als `cost_usd=0` bestätigt. Backup vorher: `/app/data/backups/bewerbungstracker_pre_openrouter_<ts>.db`.
+
+**Warum nicht `openrouter/free` (der Free-Router):** getestet, aber für strukturierte Ausgaben unbrauchbar — 4 Aufrufe ergaben 1 gültiges JSON, 2 leere Antworten und 1× die Antwort eines Safety-Modells („User Safety: safe"). Der Router streut über alle Free-Modelle inkl. Content-Safety- und VL-Modellen, die keinen Text liefern; ein leerer Body führt beim Matching zu Score 0. Vergleich derselben Prompt: `cohere/north-mini-code:free` 2/2 gültiges JSON in 1,4–1,9 s, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` 2/2 in 3,3–5,7 s, `nvidia/nemotron-3-super-120b-a12b:free` 1/2 (eine leere Antwort). `google/*:free` liefern im Service aktuell 404 (upstream entfernt), `nvidia/nemotron-3.5-*:free` antworten leer. Wer den Router trotzdem will: `ai_provider_model='openrouter/free'` in den Einstellungen (oder per DB), dann greift derselbe Pfad.
+
+**E2E-Beweis (Prod-Container, beide User):** `POST /api/providers/chat` → 200. `harald.weiss@…`: `{via: opencode_go, model: deepseek-v4.1-flash, response: "OK"}`. `ri-lampe@…`: `{via: openrouter, model: cohere/north-mini-code:free, response: '{"score": 90, "reason": "…"}'}` — je ohne Fallback.
+
+**Weiterhin offen:** `a82be5b8…` (`sarlakk@icloud.com`) steht ebenfalls auf `claude` ohne Key, hat aber noch keine Job-Matches — dieselbe Umstellung wie oben wäre ein Einzeiler, wenn gewünscht.
 
 
 ### 2026-10-07 — Review: Bewerbungsdaten und Anschreiben-Export
