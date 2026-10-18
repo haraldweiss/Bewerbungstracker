@@ -20,7 +20,16 @@
 
 **E2E-Beweis (Prod-Container, beide User):** `POST /api/providers/chat` → 200. `harald.weiss@…`: `{via: opencode_go, model: deepseek-v4.1-flash, response: "OK"}`. `ri-lampe@…`: `{via: openrouter, model: cohere/north-mini-code:free, response: '{"score": 90, "reason": "…"}'}` — je ohne Fallback.
 
-**Weiterhin offen:** `a82be5b8…` (`sarlakk@icloud.com`) steht ebenfalls auf `claude` ohne Key, hat aber noch keine Job-Matches — dieselbe Umstellung wie oben wäre ein Einzeiler, wenn gewünscht.
+**Ebenfalls umgestellt:** `a82be5b8…` (`sarlakk@icloud.com`) stand wie `ba3e37ac…` auf `claude` ohne Key (nur noch keine Job-Matches) → gleiche Einstellung: `openrouter`/`cohere/north-mini-code:free`, Backup `ollama`/`mistral-nemo-cc:latest`. Backup vorher: `/app/data/backups/bewerbungstracker_pre_openrouter_sarlakk_<ts>.db`. E2E im Prod-Container: `POST /api/providers/chat` → 200 `{via: openrouter, response: '{"score": 85, …}'}`, kein Fallback. Damit steht **kein** Tracker-User mehr auf einem Provider ohne funktionierenden Key.
+
+**Aktueller Stand aller Tracker-User (2026-10-18):**
+
+| User | Provider | Modell | Backup |
+|---|---|---|---|
+| harald.weiss@… | `opencode_go` | deepseek-v4.1-flash | ollama/mistral-nemo-cc:latest |
+| hwe@… | `ollama` | mistral-nemo-cc:latest | – |
+| ri-lampe@… | `openrouter` | cohere/north-mini-code:free | ollama/mistral-nemo-cc:latest |
+| sarlakk@… | `openrouter` | cohere/north-mini-code:free | ollama/mistral-nemo-cc:latest |
 
 
 ### 2026-10-07 — Review: Bewerbungsdaten und Anschreiben-Export
