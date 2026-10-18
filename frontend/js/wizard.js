@@ -73,11 +73,11 @@
     }
 
     function stepProvider() {
-        var sel = state.data.provider || 'opencode';
+        var sel = state.data.provider || 'opencode_go';
         return '<h2>🤖 KI-Assistent wählen</h2>'
             + '<p>Wähle den KI-Dienst für die automatische Bewertung von Stellenanzeigen.</p>'
-            + '<div class="wizard-option-card' + (sel === 'opencode' ? ' selected' : '') + '" data-provider="opencode" onclick="selectProvider(\'opencode\')">'
-            + '<h3>⭐ opencode.ai (empfohlen)</h3><p>Kostenlose Modelle, keine Anmeldung nötig. Starte sofort durch.</p></div>'
+            + '<div class="wizard-option-card' + (sel === 'opencode_go' ? ' selected' : '') + '" data-provider="opencode_go" onclick="selectProvider(\'opencode_go\')">'
+            + '<h3>⭐ opencode.ai (empfohlen)</h3><p>Cloud-Modelle inklusive Free-Modellen, keine Anmeldung nötig. Starte sofort durch.</p></div>'
             + '<div class="wizard-option-card' + (sel === 'claude' ? ' selected' : '') + '" data-provider="claude" onclick="selectProvider(\'claude\')">'
             + '<h3>🧠 Claude (Anthropic)</h3><p>Beste Qualität, benötigt einen API-Key von console.anthropic.com</p></div>'
             + '<div class="wizard-option-card' + (sel === 'ollama' ? ' selected' : '') + '" data-provider="ollama" onclick="selectProvider(\'ollama\')">'
