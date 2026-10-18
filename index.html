@@ -10765,6 +10765,7 @@ const ALL_PROVIDERS = [
     { id: 'mammouth', name: 'Mammouth', system: false },
     { id: 'custom', name: 'Custom Endpoint (OpenAI-kompatibel)', system: false },
     { id: 'opencode', name: 'opencode.ai (Zen)', system: false },
+    { id: 'opencode_go', name: 'opencode.ai (Go)', system: false },
     { id: 'openrouter', name: 'OpenRouter', system: true },
     { id: 'zai', name: 'z.ai (GLM)', system: true }
 ];
@@ -10871,7 +10872,7 @@ function capabilityScore(provider, model) {
     }
 
     // Base score by provider (cloud-hosted > local)
-    if (provider === 'opencode') {
+    if (provider === 'opencode' || provider === 'opencode_go') {
         // All opencode models are cloud-hosted → generally capable
         // Start high, let modifiers adjust down or up
         let score = 70;
@@ -11778,6 +11779,8 @@ async function onProviderChange() {
         info.textContent = 'ℹ️ Eigener OpenAI-kompatibler Endpoint';
     } else if (provider === 'opencode') {
         info.textContent = '✓ opencode Free-Modus verfügbar — eigener API-Key schaltet Paid-Modelle frei';
+    } else if (provider === 'opencode_go') {
+        info.textContent = '✓ opencode.ai Go-Abo — alle Modelle inkl. der Free-Modelle laufen über den Service (kein eigener Key nötig)';
     } else if (provider === 'openrouter') {
         info.textContent = '✓ OpenRouter ist zentral konfiguriert — Free-Modelle werden ohne Guthaben bevorzugt';
     }

@@ -2,6 +2,22 @@
 
 Historische Session-Handoffs, ursprünglich in `AGENTS.md §7`. Ab 2026-06-19 werden neue Einträge hier statt in AGENTS.md dokumentiert.
 
+### 2026-10-18 — opencode.ai: Zen tot (Breach) → `opencode_go` (Go-Abo) + User-Row umgestellt
+
+**Auslöser:** Im ai-provider-service sind mit dem OpenCode-Breach vom 2026-10-17 die Zen/Console-API-Keys invalidiert und das Zen-Free-Tier ist nicht mehr nutzbar; der Service bedient opencode.ai-Modelle nur noch über das Go-Abo als **`opencode_go/<model>`** (Details im Service-Repo, AGENTS.md §7). Der Tracker zeigte deshalb Fehlversuche im Dutzend: **163× `HTTP 410`** auf `opencode/muse-spark-1.3-contributor-free` in 3 Tagen, dazu 404er auf Free-Modell-IDs, die auf Ollama nie existierten (`north-mini-code-free`, `nemotron-3-ultra-free`, `qwen3.6-plus-free` …).
+
+**Sofortfix (Prod-DB, reversibel — vorher: `opencode` / `muse-spark-1.3-contributor-free`):** User `harald.weiss@wolfinisoftware.de` → `ai_provider='opencode_go'`, `ai_provider_model='deepseek-v4.1-flash'` (Backup unverändert `ollama`/`mistral-nemo-cc:latest`). Online-Backup vorher via sqlite-Backup-API: `/app/data/backups/bewerbungstracker_pre_opencode_go_<ts>.db`.
+
+**Codefix:**
+- `api/providers.py` + `api/profile.py`: `opencode_go` in `VALID_PROVIDERS`/`USER_PROVIDERS` (Config-Feld `api_key`, Default-Modell `deepseek-v4.1-flash`); der „Provider konfiguriert?"-Check wird für `opencode`/`opencode_go` übersprungen (der Service nutzt seinen Server-Key). Der alte Default `opencode-deepseek-v4-flash-free` bleibt nur für Legacy-Rows stehen, ist aber als tot markiert.
+- `index.html`: `opencode.ai (Go)` in der Provider-Liste, Cloud-Capability-Score greift auch für `opencode_go`, Hinweistext ergänzt.
+- `frontend/js/wizard.js`: Wizard-Default/-Empfehlung von `opencode` auf `opencode_go`.
+- `tests/api/test_opencode_go_provider.py` (neu, 5 Tests): Provider gültig/konfigurierbar, Default ist kein totes Free-Modell, Speichern ohne eigenen Key, Modell außerhalb des Katalogs wird abgelehnt, Model-Proxy.
+
+**Verifikation:** `pytest tests/` → **873 passed, 2 skipped, 1 xfailed**. Service-Seite per-Consumer-Test: `opencode_go/deepseek-v4.1-flash` für genau diese user_id → HTTP 200. Deploy: rsync → build `<sha>` → `IMAGE_TAG=<sha> deploy/container/setup-oracle-vm.sh rebuild`.
+
+**Beobachtung/Offen (nicht Teil dieses Fixes):** User `ba3e37ac…` (`ri-lampe@t-online.de`) hat `ai_provider='claude'` ohne eigenen Key — im Service existiert kein ANTHROPIC-Server-Key, deshalb sind **0 von 2549** Job-Matches dieses Users je bewertet worden (`match_score` null, `eval_attempts=0`). Optionen: eigener Anthropic-Key über die Einstellungen, oder Provider auf `opencode_go` umstellen (verbraucht dann Go-Abo-Kontingent). `a82be5b8…` (`sarlakk@icloud.com`) steht ebenfalls auf `claude` und hat noch keine Matches.
+
 ### 2026-09-17 — Root Cause 401: totes Modell hy3-free → auf Ollama umgestellt + stale_model-Mapping deployed
 
 **Wurzelursache (live auf Prod belegt):** Das konfigurierte Modell `hy3-free` existiert nicht mehr auf opencode.ai (nicht im `/models`-Katalog; 7 andere Free-Modelle aktiv). opencode.ai antwortet auf Chat mit totem Modell mit **HTTP 401** `ModelError "Model hy3-free is not supported"` — daher der 401 trotz gültigem Service-Token UND gültigem System-Key (beide verifiziert: Token-Hash MATCH, System-Key-Probe → 400 Model-unavailable = Auth ok). Zusätzlich ist das opencode-Free-Tier derzeit praktisch down (deepseek → 400 unavailable, muse-spark → 500, mimo/ling/nemotron → 403 Cloudflare-1010).

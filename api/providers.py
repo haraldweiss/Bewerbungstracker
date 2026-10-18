@@ -23,11 +23,15 @@ logger = logging.getLogger(__name__)
 
 providers_bp = Blueprint('providers', __name__, url_prefix='/api/providers')
 
-VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom', 'opencode', 'openrouter', 'zai'}
+VALID_PROVIDERS = {'claude', 'ollama', 'openai', 'mammouth', 'custom', 'opencode',
+                   'opencode_go', 'openrouter', 'zai'}
 # Provider die User-spezifisch konfiguriert werden können (eigener API-Key etc).
 # Claude ist hier drin, weil neue User (außer dem Server-Key-Allowlist-Owner)
 # einen eigenen Anthropic-Key hinterlegen müssen, um Claude nutzen zu können.
-USER_PROVIDERS = {'claude', 'openai', 'mammouth', 'custom', 'opencode'}
+# opencode_go ist der Nachfolger von opencode: seit dem OpenCode-Breach vom
+# 2026-10-17 sind die Zen/Console-Keys invalidiert und das Zen-Free-Tier ist tot,
+# der Service bedient Modelle nur noch über das Go-Abo (`opencode_go/<model>`).
+USER_PROVIDERS = {'claude', 'openai', 'mammouth', 'custom', 'opencode', 'opencode_go'}
 
 
 def _validate_model_for_provider(user_id: str, provider: str, model: str) -> str | None:
@@ -157,8 +161,9 @@ def update_user_provider_settings(user):
             return {'error': f'Unbekannter Provider: {provider}'}, 400
         # Bei User-Providern: prüfe ob im Service konfiguriert
         if provider in USER_PROVIDERS and ai_provider_client.is_enabled():
-            # opencode: system provider mit Free-Tier, kein eigener Key nötig
-            if provider == 'opencode':
+            # opencode/opencode_go: system provider mit (Abo-/Free-)Modellen,
+            # kein eigener Key nötig — Service nutzt den Server-Key.
+            if provider in ('opencode', 'opencode_go'):
                 pass
             else:
                 try:
@@ -276,6 +281,7 @@ def save_provider_config(user, provider_id):
         'mammouth': ['api_endpoint'],
         'custom': ['api_endpoint'],
         'opencode': ['api_key'],
+        'opencode_go': ['api_key'],
     }.get(provider_id, [])
     missing = [f for f in required if not data.get(f)]
     if missing:
@@ -347,6 +353,11 @@ def test_provider_connection(user, provider_id):
 
 # Sinnvolle Default-Models, falls User keinen gesetzt hat.
 _DEFAULT_MODELS = {
+    # Go-Abo über den ai-provider-service — seit 2026-10-18 der Weg, auf dem
+    # opencode.ai-Modelle verfügbar sind (Zen ist nach dem Breach tot).
+    'opencode_go': 'deepseek-v4.1-flash',
+    # Legacy: Zen/Console-Modelle sind im Service nicht mehr nutzbar; der
+    # Eintrag bleibt nur, damit alte User-Rows weiter ein Modell auflösen.
     'opencode': 'opencode-deepseek-v4-flash-free',
     'claude': 'claude-haiku-4-5-20251001',
     'ollama': 'gemma4:12b',
