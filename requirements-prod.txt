@@ -26,4 +26,4 @@ gunicorn==23.0.0
 requests==2.33.0
 
 # Email & Notifications
-Flask-Mail==0.9.1
+Flask-Mail==0.10.0
