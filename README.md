@@ -272,3 +272,8 @@ Lizenz schützbar.
 Bewerbungen benötigen eine Firma und Position als nicht-leere Texte. Die API prüft Feldtypen, bestehende Statuswerte, Feldlängen und ISO-Datumswerte vor dem Speichern; ungültige Eingaben liefern HTTP 400. Leerzeichen um Firma/Position werden entfernt. Anlegen, Umbenennen und Wiederherstellen verhindern doppelte aktive Firma/Position-Paare innerhalb desselben Benutzerkontos (HTTP 409). Bei einem Wiederherstellungskonflikt bleibt der Eintrag im Papierkorb.
 
 PDF/DOCX-Anschreiben behalten explizite HTML-Zeilenumbrüche bei. Namen, Adressen und Text mit `&`, `<` oder `>` werden im PDF als Text ausgegeben und nicht als ReportLab-Markup interpretiert. Keine Migration oder neue Konfiguration erforderlich.
+
+
+## Community and maintenance
+
+[Security policy](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Dependency updates](.github/dependabot.yml).
