@@ -16,7 +16,7 @@ cryptography==50.0.0
 bcrypt==4.0.1
 
 # Database
-psycopg2-binary==2.9.7
+psycopg2-binary==2.9.13
 SQLAlchemy==2.0.23
 
 # Production Server
