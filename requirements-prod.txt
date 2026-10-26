@@ -20,7 +20,7 @@ psycopg2-binary==2.9.7
 SQLAlchemy==2.0.23
 
 # Production Server
-gunicorn==23.0.0
+gunicorn==26.2.0
 
 # HTTP & APIs
 requests==2.33.0
