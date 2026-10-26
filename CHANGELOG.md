@@ -1,5 +1,11 @@
 # Changelog — Bewerbungstracker
 
+### 2026-10-26 — Repository maintenance files
+
+- Imported the supplied security/community policies where applicable and added Dependabot configuration against the actual manifest paths. See README community links.
+- Validation: Dependabot JSON schema and manifest paths, actionlint for new workflows, and execution of each new workflow run step. No production deployment.
+
+
 ### 2026-10-18 — opencode.ai: Zen tot (Breach) → `opencode_go` (Go-Abo) + User-Row umgestellt
 
 **Auslöser:** Im ai-provider-service sind mit dem OpenCode-Breach vom 2026-10-17 die Zen/Console-API-Keys invalidiert und das Zen-Free-Tier ist nicht mehr nutzbar; der Service bedient opencode.ai-Modelle nur noch über das Go-Abo als **`opencode_go/<model>`** (Details im Service-Repo, AGENTS.md §7). Der Tracker zeigte deshalb Fehlversuche im Dutzend: **163× `HTTP 410`** auf `opencode/muse-spark-1.3-contributor-free` in 3 Tagen, dazu 404er auf Free-Modell-IDs, die auf Ollama nie existierten (`north-mini-code-free`, `nemotron-3-ultra-free`, `qwen3.6-plus-free` …).
