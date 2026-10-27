@@ -3,6 +3,13 @@
 
 ### 2026-10-27 — bcrypt 5 with SHA-256 pre-hash and transparent legacy migration
 
+- **Deployed to oracle-vm (2026-10-27 12:57 UTC).** Image `localhost/bewerbungen:3a9dd23` (built from merge `3a9dd23` with `deploy/container/build.sh`), all five containers recreated via `IMAGE_TAG=3a9dd23 setup-oracle-vm.sh rebuild`; no `RestartCount`, no tracebacks in app/worker/cron. Rollback: `IMAGE_TAG=da3010a setup-oracle-vm.sh rebuild`.
+- Pre-deploy SQLite snapshot: `/app/data/backups/pre-bcrypt5-20261027T125356Z.db` (82 MB, `integrity_check` ok).
+- Image proof: `bcrypt 5.0.0` inside the image, `bcrypt.hashpw(b"x"*100)` raises `ValueError` (the reason for the pre-hash), and `/app/auth_service.py` carries the `$bcrypt-sha256$` scheme.
+- End-to-end against the live API (`/api/auth/login`): legacy `$2b$` hash → **200** and re-hashed to `$bcrypt-sha256$` in place; wrong password → **401**; 260-byte passphrase → **200**; the 52-char truncated variant of that passphrase → **401** (no silent truncation).
+- Live data unchanged: 4 real users still carry legacy `$2b$` hashes and migrate individually on their next login. Temporary test users were removed after the check (users count back to 4).
+- Post-deploy: site **200**, DB `integrity_check` ok, `journal_mode=wal`, no errors in `bewerbungen-app`/`-worker`/`-cron`.
+
 - Unblocks #64. bcrypt 5 rejects inputs over 72 UTF-8 bytes with `ValueError`, while bcrypt 4 truncated silently — the reason the update was deferred twice.
 - `AuthService.hash_password()` now hashes `SHA-256(password) → base64 → bcrypt`, stored as `$bcrypt-sha256$<bcrypt hash>`. base64 is not cosmetic: bcrypt stops at the first NUL byte, so a raw 32-byte digest would silently weaken every hash. The prefix marks the scheme, so `is_legacy_hash()` distinguishes old `$2b$` hashes.
 - **No lockout:** `verify_password()` checks legacy hashes against the first 72 bytes — identical to bcrypt 4 behaviour — and `login_user()` re-hashes them into the new scheme on the next successful login (one-off, best effort; a failure there never blocks the login). Malformed hashes return `False` instead of raising a 500.

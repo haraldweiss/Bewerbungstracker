@@ -281,3 +281,15 @@ Neue Handoffs bitte dort eintragen, nicht in AGENTS.md.
 ---
 
 <!-- Append notes here with date and agent type. Use CHANGELOG.md for new entries. -->
+
+### 2026-10-27 — bcrypt 5 nach Produktion deployt (oracle-vm), Legacy-Login bewiesen
+
+- **Anlass:** User-Freigabe („can you deploy?"). Deployt wurde Merge `3a9dd23` (PR #71, bcrypt 5 + SHA-256-Pre-Hash).
+- **Ablauf wie dokumentiert:** `git archive` des Merge-Commits → `/home/opc/bewerbungstracker-release-3a9dd23` → `deploy/container/build.sh 3a9dd23` → `IMAGE_TAG=3a9dd23 deploy/container/setup-oracle-vm.sh rebuild`. Alle 5 Container laufen auf dem neuen Tag (app/worker/cron/email-service/imap-proxy), `RestartCount=0`.
+- **Vorher:** SQLite-Snapshot via Backup-API im Container → `/app/data/backups/pre-bcrypt5-20261027T125356Z.db` (82 MB, `integrity_check=ok`).
+- **Image-Beweis (vor dem Swap geprüft, nicht danach geraten):** `bcrypt 5.0.0` im Image, `bcrypt.hashpw(b"x"*100, gensalt())` → `ValueError`, `auth_service.py` enthält den `$bcrypt-sha256$`-Marker. Das `ValueError` ist genau der Grund für den Pre-Hash — der Check gehört künftig in jedes bcrypt-Bump-Verfahren.
+- **E2E gegen die echte API** (`POST https://bewerbungen.wolfinisoftware.de/api/auth/login`): Legacy-`$2b$`-Hash → **200** und der Hash wurde **in der DB in-place** auf `$bcrypt-sha256$` migriert; falsches Passwort → 401; 260-Byte-Passphrase → 200; deren 52-Zeichen-Präfix → **401** (kein stilles Truncaten mehr).
+- **Live-Daten unberührt:** 4 echte User behalten ihren `$2b$`-Hash und migrieren beim nächsten Login. Zwei temporäre `deploycheck-*@example.invalid`-User wurden nach dem Test wieder entfernt (Users wieder 4).
+- **Nachlauf:** Site 200, DB `integrity_check=ok` + `journal_mode=wal`, keine Tracebacks in app/worker/cron, Worker hat 2 Task-Worker gespawnt, Cron liest `/app/deploy/container/crontab`.
+- **Rollback:** `IMAGE_TAG=da3010a deploy/container/setup-oracle-vm.sh rebuild` (Image liegt lokal; `:latest` zeigt auf `3a9dd23`). Ein Rollback ist unkritisch: Hashes aus dem neuen Schema werden von bcrypt 4 schlicht nicht verifiziert — betroffen wären nur User, die sich **nach** dem Deploy eingeloggt haben (derzeit keiner außer den gelöschten Test-Usern).
+- **Merkregel:** Produktions-DB vor Auth-Änderungen immer per `sqlite3.backup()` (nicht `cp`) sichern — `cp` einer WAL-Datenbank ist kein konsistenter Stand.
