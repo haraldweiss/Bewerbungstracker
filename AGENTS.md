@@ -178,7 +178,7 @@ Erlaubt ist ein Hotfix **nur** zum sofortigen Service-Retten in einem Incident â
 
 - Use Python 3.11+ for the current development dependencies (validated on 3.12).
 - Keep bcrypt 4 until passwords over 72 UTF-8 bytes and legacy password hashes have a compatible login/migration policy; bcrypt 5 rejects these inputs.
-- npm dependency PRs require JavaScript test verification in addition to Python/Docker CI. The current default Jest configuration cannot run six TypeScript/ES-module suites; see CHANGELOG 2026-10-27.
+- npm dependency PRs require JavaScript test verification in addition to Python/Docker CI. `npm test` is the gate (frontend/app suites via jsdom, currently 31 tests); `npm run test:legacy` runs the retired Claude-era `lib/` suites separately. Never re-enable `lib/__tests__` in the default config to "fix" a red run â€” those 43 stale assertions predate this rule and are documented in CHANGELOG 2026-10-27. Any Babel preset must stay on v7: `babel-jest` 29/30 depends on `@babel/core` 7, while `@babel/preset-env` 8 requires core 8.
 
 ### 3.11 Application mutations and document exports
 

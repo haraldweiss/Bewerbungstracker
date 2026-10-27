@@ -5,14 +5,25 @@
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "test:legacy": "jest --config jest.legacy.config.cjs"
   },
   "devDependencies": {
-    "jest": "^29.5.0",
-    "jest-environment-jsdom": "^30.3.0"
+    "@anthropic-ai/sdk": "^1.3.0",
+    "@babel/preset-env": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
+    "jest": "^30.5.2",
+    "jest-environment-jsdom": "^30.5.2"
   },
   "jest": {
     "testEnvironment": "jsdom",
+    "setupFiles": [
+      "<rootDir>/jest.setup.cjs"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "<rootDir>/lib/__tests__/"
+    ],
     "collectCoverageFrom": [
       "frontend/**/*.js",
       "!frontend/**/*.test.js"
