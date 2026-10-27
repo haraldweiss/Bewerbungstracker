@@ -123,7 +123,7 @@ Setup-Anleitung im jeweiligen Repo.
 ### 📋 System-Anforderungen
 
 - **Browser:** Chrome, Firefox, Safari, Edge (ES6+)
-- **Server:** Python 3.9+ (Production-Setup: 3.12 empfohlen)
+- **Server:** Python 3.11+ (Production-Setup: 3.12 empfohlen)
 - **Optional:** `ai-provider-service` (separates Repo) für Multi-Provider-Routing
 
 ### 📞 Support
@@ -242,7 +242,7 @@ instructions in the corresponding repo.
 ### 📋 System Requirements
 
 - **Browser:** Chrome, Firefox, Safari, Edge (ES6+)
-- **Server:** Python 3.9+ (production: 3.12 recommended)
+- **Server:** Python 3.11+ (production: 3.12 recommended)
 - **Optional:** `ai-provider-service` (separate repo) for multi-provider routing
 
 ### 📞 Support
