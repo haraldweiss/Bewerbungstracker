@@ -62,6 +62,19 @@ git rebase HEAD~N --signoff               # die letzten N Commits
 4. Commits sauber halten und mit `-s` signieren.
 5. PR gegen die Default-Branch öffnen mit kurzer Beschreibung des "Was" und "Warum".
 
+## Tests
+
+```bash
+pytest                      # Python-Suite (requires Python 3.11+)
+npm test                    # JavaScript-Gate: frontend/app suites (jsdom)
+npm run test:legacy         # Retired Claude-era lib/ suites (known drift)
+```
+
+`npm test` is the verification required for npm dependency updates. The suites
+in `lib/__tests__` belong to the retired Anthropic integration, are not imported
+by the application, and are kept only for reference, so they do not gate a pull
+request. See `CHANGELOG.md` (2026-10-27) before changing that split.
+
 ## Bug-Reports
 
 Bitte ein GitHub-Issue mit Schritten zur Reproduktion, erwartetem vs.
