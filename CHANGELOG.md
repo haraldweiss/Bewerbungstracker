@@ -7,7 +7,7 @@
 - Validation on Python 3.12: 908 passed, 1 skipped, 1 xfailed. Network sandbox initially blocked DNS-dependent synthetic tests; the complete suite passes with DNS enabled. Production requirement pins resolve. No real IMAP/AI credentials, user data or production deployment.
 - Deferred #64: bcrypt 5 raises ValueError for passwords over 72 UTF-8 bytes; current hash/check methods have no compatible migration/validation. Synthetic 72/73-byte reproducer confirms this. Keep bcrypt 4 until legacy login and new-password handling are explicitly covered.
 - Deferred #56/#58: both Jest dependency updates and unchanged master fail the same six suites (TypeScript transform/ES-module configuration); four JavaScript suites pass with 31 tests. Python/Docker CI does not exercise these suites. Repair the frontend test harness before merging the npm updates.
-- Sibling ai-provider-service has a separate consolidated dependency maintenance branch, including real-SDK synthetic transport checks.
+- Merged maintenance: [Bewerbungstracker #68](https://github.com/haraldweiss/Bewerbungstracker/pull/68); sibling [ai-provider-service #44](https://github.com/haraldweiss/ai-provider-service/pull/44) includes real-SDK synthetic transport checks.
 
 ### 2026-10-26 — Repository maintenance files
 
