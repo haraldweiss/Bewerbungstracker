@@ -235,7 +235,7 @@ instructions in the corresponding repo.
 
 - ✅ Self-hosted — no cloud dependencies, no tracking, no analytics
 - ✅ Envelope encryption (per-user DEK + KEK from password) for sensitive data
-- ✅ Passwords encrypted with bcrypt + Fernet
+- ✅ Passwörter mit SHA-256-Pre-Hash + bcrypt (bcrypt 5), Legacy-Hashes werden beim Login migriert
 - ✅ IMAP proxy runs on localhost (Port 8765)
 - ✅ JWT tokens with configurable TTL, refresh-token flow
 
