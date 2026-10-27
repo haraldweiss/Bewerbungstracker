@@ -1,6 +1,16 @@
 # Changelog — Bewerbungstracker
 
 
+### 2026-10-27 — bcrypt 5 with SHA-256 pre-hash and transparent legacy migration
+
+- Unblocks #64. bcrypt 5 rejects inputs over 72 UTF-8 bytes with `ValueError`, while bcrypt 4 truncated silently — the reason the update was deferred twice.
+- `AuthService.hash_password()` now hashes `SHA-256(password) → base64 → bcrypt`, stored as `$bcrypt-sha256$<bcrypt hash>`. base64 is not cosmetic: bcrypt stops at the first NUL byte, so a raw 32-byte digest would silently weaken every hash. The prefix marks the scheme, so `is_legacy_hash()` distinguishes old `$2b$` hashes.
+- **No lockout:** `verify_password()` checks legacy hashes against the first 72 bytes — identical to bcrypt 4 behaviour — and `login_user()` re-hashes them into the new scheme on the next successful login (one-off, best effort; a failure there never blocks the login). Malformed hashes return `False` instead of raising a 500.
+- Long passphrases are now genuinely supported end-to-end: `"…"*8 + "äöüß-€"` (>72 bytes) hashes and verifies, and neither the truncated variant nor a suffixed variant is accepted.
+- `requirements.txt` and `requirements-prod.txt`: **bcrypt 5.0.0**. Do not downgrade — the prefixed hashes are unverifiable under bcrypt 4.
+- Verified in an isolated venv (Python 3.14, bcrypt 5.0.0): `pytest tests/` → **915 passed, 1 skipped, 1 xfailed**; 7 new tests in `tests/test_auth_service.py` (scheme marker, long-passphrase roundtrip, legacy short/long verification, malformed hash, one-off upgrade).
+- Hard rule §3.12 added: never call `bcrypt.hashpw`/`checkpw` directly, never compare hashes, never cap password length.
+
 ### 2026-10-27 — JavaScript test harness repaired; Jest 29 → 30 with the gate green
 
 - Reproduced the blocker recorded earlier the same day: no Babel configuration existed, so Jest had no TypeScript transform. `npx jest` reported 6 failed / 4 passed suites with only 31 of 88 tests discovered, and `tsc`-style parser aborts in `lib/__tests__`.

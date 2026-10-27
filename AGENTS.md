@@ -177,7 +177,7 @@ Erlaubt ist ein Hotfix **nur** zum sofortigen Service-Retten in einem Incident �
 ### Dependency maintenance caveats (2026-10-27)
 
 - Use Python 3.11+ for the current development dependencies (validated on 3.12).
-- Keep bcrypt 4 until passwords over 72 UTF-8 bytes and legacy password hashes have a compatible login/migration policy; bcrypt 5 rejects these inputs.
+- bcrypt 5 is in place with a SHA-256 pre-hash and a legacy-login path — see hard rule §3.12; never bypass `AuthService`.
 - npm dependency PRs require JavaScript test verification in addition to Python/Docker CI. `npm test` is the gate (frontend/app suites via jsdom, currently 31 tests); `npm run test:legacy` runs the retired Claude-era `lib/` suites separately. Never re-enable `lib/__tests__` in the default config to "fix" a red run — those 43 stale assertions predate this rule and are documented in CHANGELOG 2026-10-27. Any Babel preset must stay on v7: `babel-jest` 29/30 depends on `@babel/core` 7, while `@babel/preset-env` 8 requires core 8.
 
 ### 3.11 Application mutations and document exports
@@ -185,6 +185,16 @@ Erlaubt ist ein Hotfix **nur** zum sofortigen Service-Retten in einem Incident �
 - Validate application JSON in `services/application_service.py` before changing ORM fields. Required company/position must be non-empty strings; optional text accepts strings/null; status must be an existing `ApplicationStatus`; dates must parse as ISO. Preserve the existing German and English status values.
 - Company/position duplicate checks must be user-scoped, exclude the edited record, and apply the same database normalization to both operands. Check conflicts before restoring trash entries; keep them in trash on HTTP 409.
 - ReportLab `Paragraph` accepts markup. Escape every plain-text input, including applicant names, addresses, job titles, body and signature; only then turn preserved newlines into controlled `<br/>`. DOCX must preserve the same explicit HTML line breaks.
+
+### 3.12 Passwort-Hashing: immer über `AuthService` (SHA-256 + bcrypt)
+
+- **Nie `bcrypt.hashpw`/`checkpw` direkt aufrufen.** Seit bcrypt 5 wirft alles über **72 UTF-8-Bytes** `ValueError` (bcrypt 4 hat still abgeschnitten). `AuthService.hash_password()` hasht deshalb `SHA-256 → base64 → bcrypt`; der 44-Byte-ASCII-Digest macht die Länge irrelevant und enthält garantiert kein NUL-Byte (bcrypt stoppt am ersten NUL und würde einen rohen 32-Byte-Digest still schwächen — deshalb base64).
+- **Speicherformat:** `$bcrypt-sha256$<bcrypt-hash>`. Der Prefix ist die Migrationsmarkierung; `AuthService.is_legacy_hash()` erkennt Altbestände (`$2b$…` ohne Prefix).
+- **Legacy-Login bleibt möglich:** `verify_password()` prüft alte Hashes gegen die **auf 72 Bytes abgeschnittene** Eingabe — genau das Verhalten von bcrypt 4, damit bestehende Nutzer sich nicht aussperren. `login_user()` re-hasht dabei transparent in das neue Format (einmalig, best-effort; ein Fehler dort darf den Login nie verhindern).
+- **Kein eigenes Vergleichen:** nie `password_hash == hash_password(...)`, nie Hashes loggen. `verify_password()` fängt `ValueError` (kaputter Hash, zu lange Eingabe) und liefert `False` statt 500.
+- **Passwortlänge nicht künstlich begrenzen** — durch den Pre-Hash sind lange Passphrasen erlaubt; eine 200-Zeichen-Passphrase ist gewollt.
+- **Nicht rückbauen:** ein Downgrade auf bcrypt 4 würde das neue Format unbrauchbar machen (der Prefix-Hash wäre nicht verifizierbar). `requirements.txt`/`requirements-prod.txt` bleiben auf **bcrypt 5.0.0**.
+- Verifiziert 2026-10-27: `pytest tests/` → **915 passed, 1 skipped, 1 xfailed**; 7 neue Auth-Tests (lange Passphrase, Legacy kurz/lang, Einmal-Upgrade, malformed Hash).
 
 ---
 
