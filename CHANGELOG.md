@@ -1,5 +1,14 @@
 # Changelog — Bewerbungstracker
 
+
+### 2026-10-27 — Validated Dependabot Python maintenance
+
+- Consolidates compatible updates from #54, #55, #57, #59–#63, #65–#67: Actions v7, Flask-Limiter 4.1.1, Gunicorn 26.2.0, Werkzeug 3.1.9, BeautifulSoup 4.15.0, ReportLab 5.1.0, psycopg2 2.9.13, Flask-Mail 0.10.0, python-docx 1.2.0 and jsonschema 4.26.0. Production pins are updated where present.
+- Validation on Python 3.12: 908 passed, 1 skipped, 1 xfailed. Network sandbox initially blocked DNS-dependent synthetic tests; the complete suite passes with DNS enabled. Production requirement pins resolve. No real IMAP/AI credentials, user data or production deployment.
+- Deferred #64: bcrypt 5 raises ValueError for passwords over 72 UTF-8 bytes; current hash/check methods have no compatible migration/validation. Synthetic 72/73-byte reproducer confirms this. Keep bcrypt 4 until legacy login and new-password handling are explicitly covered.
+- Deferred #56/#58: both Jest dependency updates and unchanged master fail the same six suites (TypeScript transform/ES-module configuration); four JavaScript suites pass with 31 tests. Python/Docker CI does not exercise these suites. Repair the frontend test harness before merging the npm updates.
+- Sibling ai-provider-service has a separate consolidated dependency maintenance branch, including real-SDK synthetic transport checks.
+
 ### 2026-10-26 — Repository maintenance files
 
 - Imported the supplied security/community policies where applicable and added Dependabot configuration against the actual manifest paths. See README community links.

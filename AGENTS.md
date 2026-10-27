@@ -174,6 +174,12 @@ Erlaubt ist ein Hotfix **nur** zum sofortigen Service-Retten in einem Incident â
 
 ---
 
+### Dependency maintenance caveats (2026-10-27)
+
+- Use Python 3.11+ for the current development dependencies (validated on 3.12).
+- Keep bcrypt 4 until passwords over 72 UTF-8 bytes and legacy password hashes have a compatible login/migration policy; bcrypt 5 rejects these inputs.
+- npm dependency PRs require JavaScript test verification in addition to Python/Docker CI. The current default Jest configuration cannot run six TypeScript/ES-module suites; see CHANGELOG 2026-10-27.
+
 ### 3.11 Application mutations and document exports
 
 - Validate application JSON in `services/application_service.py` before changing ORM fields. Required company/position must be non-empty strings; optional text accepts strings/null; status must be an existing `ApplicationStatus`; dates must parse as ISO. Preserve the existing German and English status values.
