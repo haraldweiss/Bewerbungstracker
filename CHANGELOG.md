@@ -1,5 +1,10 @@
 # Changelog — Bewerbungstracker
 
+### 2026-10-28 — Python 3.14 UTC deprecation warnings
+
+JWT timestamps now use timezone-aware UTC. SQLAlchemy defaults preserve the existing timezone-naive UTC database format without deprecated `datetime.utcnow()` calls. Verified on the Mac mini with warning-sensitive authentication, security-header and model tests.
+
+
 
 ### 2026-10-27 — bcrypt 5 with SHA-256 pre-hash and transparent legacy migration
 
