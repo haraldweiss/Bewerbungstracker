@@ -5,7 +5,7 @@ import hashlib
 
 import bcrypt
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from config import Config
 from models import User, SessionToken
@@ -68,8 +68,8 @@ class AuthService:
         """Create JWT access token"""
         payload = {
             'user_id': user_id,
-            'exp': datetime.utcnow() + Config.JWT_ACCESS_TOKEN_EXPIRES,
-            'iat': datetime.utcnow(),
+            'exp': datetime.now(timezone.utc) + Config.JWT_ACCESS_TOKEN_EXPIRES,
+            'iat': datetime.now(timezone.utc),
             'type': 'access'
         }
         token = jwt.encode(
@@ -84,8 +84,8 @@ class AuthService:
         """Create JWT refresh token"""
         payload = {
             'user_id': user_id,
-            'exp': datetime.utcnow() + Config.JWT_REFRESH_TOKEN_EXPIRES,
-            'iat': datetime.utcnow(),
+            'exp': datetime.now(timezone.utc) + Config.JWT_REFRESH_TOKEN_EXPIRES,
+            'iat': datetime.now(timezone.utc),
             'type': 'refresh'
         }
         token = jwt.encode(

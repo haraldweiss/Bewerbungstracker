@@ -141,3 +141,24 @@ def test_login_upgrades_only_once(app):
 
         # Already-migrated hashes are not re-hashed on every login.
         assert first == second
+
+
+def test_refresh_token_has_valid_utc_timestamps():
+    from datetime import datetime, timezone
+
+    before = int(datetime.now(timezone.utc).timestamp())
+    payload = AuthService.verify_token(AuthService.create_refresh_token("test_user"))
+    assert payload["type"] == "refresh"
+    assert before <= payload["iat"] <= int(datetime.now(timezone.utc).timestamp())
+    assert payload["exp"] > payload["iat"]
+
+
+def test_database_timestamp_is_naive_utc():
+    from datetime import datetime, timezone
+    from models import utcnow_naive
+
+    before = datetime.now(timezone.utc).replace(tzinfo=None)
+    timestamp = utcnow_naive()
+    after = datetime.now(timezone.utc).replace(tzinfo=None)
+    assert timestamp.tzinfo is None
+    assert before <= timestamp <= after

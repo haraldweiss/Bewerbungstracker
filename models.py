@@ -2,11 +2,16 @@
 # © 2026 Harald Weiss
 import os
 from database import db
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import uuid
 import json as _json
 from imap_service import IMAPCredentialManager
+
+
+def utcnow_naive():
+    """Return naive UTC for existing timezone-naive database columns."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class User(db.Model):
@@ -83,8 +88,8 @@ class User(db.Model):
     ai_provider_backup = db.Column(db.String(50), nullable=True)
     ai_provider_backup_model = db.Column(db.String(255), nullable=True)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
+    updated_at = db.Column(db.DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     # Relationships
     sessions = db.relationship('SessionToken', backref='user', cascade='all, delete-orphan')
@@ -162,7 +167,7 @@ class SessionToken(db.Model):
     token = db.Column(db.String(500), primary_key=True)
     user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False, index=True)
     expires_at = db.Column(db.DateTime, nullable=False, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
 
     def __repr__(self):
         return f'<SessionToken {self.token[:20]}...>'
@@ -173,7 +178,7 @@ class EmailConfirmationToken(db.Model):
 
     token = db.Column(db.String(255), primary_key=True)
     user_id = db.Column(db.String(36), db.ForeignKey('users.id'), nullable=False, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
     expires_at = db.Column(db.DateTime, nullable=False)
 
     def __repr__(self):
@@ -220,8 +225,8 @@ class Application(db.Model):
     deleted = db.Column(db.Boolean, default=False, nullable=False, index=True)
     deleted_at = db.Column(db.DateTime, nullable=True)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
+    updated_at = db.Column(db.DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     # Relationships
     emails = db.relationship('Email', backref='application', cascade='all, delete-orphan')
@@ -253,8 +258,8 @@ class CoverLetter(db.Model):
 
     status = db.Column(db.String(50), default='draft')  # draft|generated|finalized|sent
     exported_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
+    updated_at = db.Column(db.DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     application = db.relationship('Application', backref=db.backref('cover_letter', uselist=False))
 
@@ -283,7 +288,7 @@ class BackupHistory(db.Model):
     # Summary of backup (e.g., "5 applications, 12 emails")
     summary = db.Column(db.String(255))
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=utcnow_naive, index=True)
 
     # Foreign key relationship
     user = db.relationship('User', backref='backups', foreign_keys=[user_id])
@@ -303,7 +308,7 @@ class Email(db.Model):
     body = db.Column(db.Text)  # Optional, for search
     matched_application_id = db.Column(db.String(36), db.ForeignKey('applications.id'), nullable=True)
     timestamp = db.Column(db.DateTime)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
 
     __table_args__ = (
         db.UniqueConstraint('user_id', 'message_id', name='uix_user_message_id'),
@@ -323,7 +328,7 @@ class ApiCall(db.Model):
     tokens_in = db.Column(db.Integer, default=0)
     tokens_out = db.Column(db.Integer, default=0)
     cost = db.Column(db.Float, default=0.0)  # USD
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    timestamp = db.Column(db.DateTime, default=utcnow_naive, index=True)
     key_owner = db.Column(db.String(20), default='server', nullable=False)  # server|user|custom_endpoint
 
     def __repr__(self):
@@ -348,8 +353,8 @@ class JobSource(db.Model):
     last_crawled_at = db.Column(db.DateTime, nullable=True)
     last_error = db.Column(db.Text, nullable=True)
     consecutive_failures = db.Column(db.Integer, default=0, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
+    updated_at = db.Column(db.DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     @property
     def config(self) -> dict:
@@ -395,7 +400,7 @@ class RawJob(db.Model):
     url_last_checked_at = db.Column(db.DateTime, nullable=True)
     url_check_failures = db.Column(db.Integer, nullable=False, default=0, server_default='0')
     url_check_status = db.Column(db.String(32), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
 
     @property
     def raw_payload(self) -> dict:
@@ -416,7 +421,7 @@ class JobEmbedding(db.Model):
     raw_job_id = db.Column(db.Integer, db.ForeignKey('raw_jobs.id'), primary_key=True)
     vector = db.Column(db.LargeBinary, nullable=False)
     model = db.Column(db.String(64), default='nomic-embed-text', nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
 
     raw_job = db.relationship('RawJob', backref=db.backref('embedding', uselist=False))
 
@@ -438,7 +443,7 @@ class UserLearnProfile(db.Model):
     samples_imported = db.Column(db.Integer, default=0, nullable=False)
     samples_dismissed = db.Column(db.Integer, default=0, nullable=False)
     reason_counts = db.Column(db.Text, nullable=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     user = db.relationship('User', backref=db.backref('learn_profile', uselist=False))
 
@@ -482,8 +487,8 @@ class JobMatch(db.Model):
     # und optionaler Freitext. Genutzt vom Adaptive-Learning-Modul.
     feedback_reasons = db.Column(db.Text, nullable=True)
     feedback_text = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
+    updated_at = db.Column(db.DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     raw_job = db.relationship('RawJob', backref='matches')
 
@@ -501,7 +506,7 @@ class AIWordsResearchLog(db.Model):
     __tablename__ = 'ai_words_research_logs'
 
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, nullable=False, default=utcnow_naive)
     found_total = db.Column(db.Integer, nullable=False)  # Total words found in this run
     new_count = db.Column(db.Integer, nullable=False)   # Count of newly detected words
     new_words = db.Column(db.JSON, nullable=True)        # List of new words (JSON array of strings)
@@ -526,7 +531,7 @@ class LearnedEmailPattern(db.Model):
     pattern_json = db.Column(db.Text, nullable=False)
     sample_count = db.Column(db.Integer, nullable=False)
     hit_rate = db.Column(db.Float, nullable=False)
-    trained_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    trained_at = db.Column(db.DateTime, nullable=False, default=utcnow_naive)
     trained_by_user_id = db.Column(
         db.String(36), db.ForeignKey('users.id'), nullable=False
     )
@@ -582,10 +587,10 @@ class PlatformProfileRow(db.Model):
     url_pattern_override = db.Column(db.Text, nullable=True)
     from_whitelist_override = db.Column(db.Text, nullable=True)
     # Audit
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow_naive, nullable=False)
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow,
-        onupdate=datetime.utcnow, nullable=False,
+        db.DateTime, default=utcnow_naive,
+        onupdate=utcnow_naive, nullable=False,
     )
     created_by_user_id = db.Column(
         db.String(36), db.ForeignKey('users.id'), nullable=False,
