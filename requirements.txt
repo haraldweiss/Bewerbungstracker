@@ -4,7 +4,7 @@ Flask-SQLAlchemy>=3.1.0
 Flask-Mail>=0.10.0
 Flask-Limiter>=4.1.1
 Werkzeug>=3.1.9,<4.0
-cryptography>=50.0.0
+cryptography>=50.0.2
 gunicorn>=26.2.0
 SQLAlchemy>=2.0,<3.0
 Alembic==1.12.1
