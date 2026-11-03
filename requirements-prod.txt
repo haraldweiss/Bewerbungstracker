@@ -12,7 +12,7 @@ python-dotenv==1.2.2
 
 # Authentication
 PyJWT==2.15.0
-cryptography==50.0.0
+cryptography==50.0.2
 bcrypt==5.0.0
 
 # Database
