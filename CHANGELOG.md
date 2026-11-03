@@ -1,5 +1,13 @@
 # Changelog — Bewerbungstracker
 
+### 2026-11-03 — Compatible dependency maintenance; preserve Python 3.11 and Babel 7
+
+- Combined Dependabot PRs #74, #75, #77, #79, #80, #82–#85: Feedparser >=6.0.14, Responses >=0.26.3, Cryptography 50.0.2, PyJWT 2.15.1, iCalendar >=7.3.0, Flask-CORS 6.0.5, SQLAlchemy 2.1.6, Alembic 1.20.1 and Requests 2.34.2. Matching production pins updated wherever present; bcrypt remains 5.0.0.
+- Deferred #76 / #78: Babel 8 presets conflict with the documented Babel 7 / Jest 30 setup. Deferred #81: NumPy >=2.5.4 has no distribution for supported Python 3.11; applying it would raise the effective minimum runtime. Existing NumPy requirement retained.
+- GitHub reported zero open Dependabot security alerts. All nine source PRs had green Python/Docker CI. Fresh isolated Python 3.11 full suite: **917 passed, 1 skipped, 1 xfailed** (1378 existing ORM/API warnings); production requirements resolve and `pip check` is clean. Combined Python/Docker CI remains mandatory before merge/deploy.
+- Branch `codex/dependabot-compatible-20261103`; no production changes during preparation. Sibling AI gateway maintenance: `haraldweiss/ai-provider-service`, branch `codex/dependabot-20261103`. Live-data/IMAP/provider checks were not performed; tests use their existing mock fixtures.
+
+
 ### 2026-10-28 — Python 3.14 UTC deprecation warnings
 
 JWT timestamps now use timezone-aware UTC. SQLAlchemy defaults preserve the existing timezone-naive UTC database format without deprecated `datetime.utcnow()` calls. Verified on the Mac mini with warning-sensitive authentication, security-header and model tests.
