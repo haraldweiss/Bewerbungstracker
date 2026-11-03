@@ -293,3 +293,11 @@ Neue Handoffs bitte dort eintragen, nicht in AGENTS.md.
 - **Nachlauf:** Site 200, DB `integrity_check=ok` + `journal_mode=wal`, keine Tracebacks in app/worker/cron, Worker hat 2 Task-Worker gespawnt, Cron liest `/app/deploy/container/crontab`.
 - **Rollback:** `IMAGE_TAG=da3010a deploy/container/setup-oracle-vm.sh rebuild` (Image liegt lokal; `:latest` zeigt auf `3a9dd23`). Ein Rollback ist unkritisch: Hashes aus dem neuen Schema werden von bcrypt 4 schlicht nicht verifiziert — betroffen wären nur User, die sich **nach** dem Deploy eingeloggt haben (derzeit keiner außer den gelöschten Test-Usern).
 - **Merkregel:** Produktions-DB vor Auth-Änderungen immer per `sqlite3.backup()` (nicht `cp`) sichern — `cp` einer WAL-Datenbank ist kein konsistenter Stand.
+
+### 2026-11-03 — Blockierte Dependabot-Majors belegt geschlossen
+
+- #98 (ESLint 10) und #48 (@eslint/js 10) geschlossen: `eslint-plugin-react@7.37.5` deklariert `eslint ^3 … ^9.7`; `Frontend (vitest)` scheiterte nach ~6 s in `npm ci`, nicht in den Tests.
+- #91 (TypeScript 7, Backend) geschlossen: `ts-jest@29.4.15` peer `typescript >=4.3 <7`.
+- #71 (Babel 8, Backend) geschlossen: `@babel/preset-env@8.0.7` verlangt `@babel/core ^8`, der Jest-Transform läuft über `babel-jest@30` auf Babel 7.
+- #59 (TypeScript 7, Server-Scraper) geschlossen: `typescript@7.0.2` exportiert `createSourceFile`, `ScriptTarget` und `forEachChild` nicht mehr (gegen das veröffentlichte Paket geprüft), die `src/browser-evaluation.test.ts` nutzt. Der grüne CI-Lauf auf diesem PR ist älter als der Test.
+- Unverändert: Backend TypeScript 5.9.3, Frontend ESLint 9.39.5 + @eslint/js 9.x, Babel 7. Jede dieser Aktualisierungen nur zusammen mit ihrer koordinierten Migration wieder öffnen.
