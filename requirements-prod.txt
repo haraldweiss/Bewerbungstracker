@@ -23,7 +23,7 @@ SQLAlchemy==2.1.6
 gunicorn==26.2.0
 
 # HTTP & APIs
-requests==2.33.0
+requests==2.34.2
 
 # Email & Notifications
 Flask-Mail==0.10.0
