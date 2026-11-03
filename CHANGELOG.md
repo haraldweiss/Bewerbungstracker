@@ -1,5 +1,12 @@
 # Changelog — Bewerbungstracker
 
+### 2026-11-03 (2) — NumPy >=2.5.4 übernommen (Korrektur der Python-3.11-Annahme)
+
+- **Dependabot #81 gemergt (`84f0919`):** `requirements.txt` verlangt jetzt `numpy>=2.5.4`.
+- **Die Begründung im Eintrag unten war falsch.** „NumPy >=2.5.4 has no distribution for supported Python 3.11" trifft nicht zu: `Dockerfile` baut auf `python:3.12-slim`, CI nutzt Python 3.12, die laufenden Container melden **Python 3.12.16**, und `bewerbungen-app` importiert bereits **numpy 2.5.4**. Die Anhebung dokumentiert damit nur den Ist-Zustand; `numpy 2.5.4` selbst deklariert `requires_python >=3.12`.
+- **Kein Deploy nötig:** nur die Deklaration ändert sich, der nächste reguläre Image-Build zieht dieselbe Version. PR-CI `test` + `docker-smoke` waren grün.
+- #76/#78 (Babel 8) bleiben zu Recht geschlossen: `@babel/preset-env`/`@babel/preset-typescript` 8 verlangen `@babel/core ^8`, der Jest-Transform läuft über `babel-jest@30` auf Babel 7. Babel 8 nur als eine koordinierte Migration.
+
 ### 2026-11-03 — Compatible dependency maintenance; preserve Python 3.11 and Babel 7
 
 - Combined Dependabot PRs #74, #75, #77, #79, #80, #82–#85: Feedparser >=6.0.14, Responses >=0.26.3, Cryptography 50.0.2, PyJWT 2.15.1, iCalendar >=7.3.0, Flask-CORS 6.0.5, SQLAlchemy 2.1.6, Alembic 1.20.1 and Requests 2.34.2. Matching production pins updated wherever present; bcrypt remains 5.0.0.
