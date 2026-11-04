@@ -277,3 +277,7 @@ PDF/DOCX-Anschreiben behalten explizite HTML-Zeilenumbrüche bei. Namen, Adresse
 ## Community and maintenance
 
 [Security policy](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Dependency updates](.github/dependabot.yml).
+
+### Development dependency security (2026-11-04)
+
+Use the current Node 22 or 24 toolchain for JavaScript tests. Scoped glob/minimatch overrides patch Jest's filesystem matching dependencies. Run `npm ci` and `npm test -- --runInBand`; 31 tests pass. The production audit is clean. The full audit retains only the upstream low-severity deepmerge advisory in Jest; keep it visible until a compatible upstream fix is released.
