@@ -274,6 +274,13 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `ai-provider
 
 ## 7. Handoff zone
 
+### 2026-11-04 — Development dependency security follow-up
+
+- Scoped `glob@>=9` to `^14.0.3` and `minimatch@>=9` to `^11.0.4`, covering Jest/test-exclude without changing application dependencies. This fixes the glob cancellation and minimatch amplification advisories (GHSA-3g3m-2fjr-6pw4 / GHSA-g3hv-75wg-m249).
+- Verified clean install, all 31 JavaScript tests, npm 10.9.4 lockfile validation and independent dependency review. Full npm audit now has zero moderate/high/critical findings; five propagated low findings remain from unpatched `deepmerge@4.3.1` in Jest. Production audit has zero findings. Do not force npm's proposed Jest downgrade.
+- Uses the current Node 22/24 development toolchain; no Python/runtime change or production deployment is required.
+
+
 Session-Protokolle und Übergaben sind in [`CHANGELOG.md`](./CHANGELOG.md) dokumentiert.
 
 Neue Handoffs bitte dort eintragen, nicht in AGENTS.md.
