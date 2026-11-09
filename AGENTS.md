@@ -308,3 +308,16 @@ Neue Handoffs bitte dort eintragen, nicht in AGENTS.md.
 - #71 (Babel 8, Backend) geschlossen: `@babel/preset-env@8.0.7` verlangt `@babel/core ^8`, der Jest-Transform läuft über `babel-jest@30` auf Babel 7.
 - #59 (TypeScript 7, Server-Scraper) geschlossen: `typescript@7.0.2` exportiert `createSourceFile`, `ScriptTarget` und `forEachChild` nicht mehr (gegen das veröffentlichte Paket geprüft), die `src/browser-evaluation.test.ts` nutzt. Der grüne CI-Lauf auf diesem PR ist älter als der Test.
 - Unverändert: Backend TypeScript 5.9.3, Frontend ESLint 9.39.5 + @eslint/js 9.x, Babel 7. Jede dieser Aktualisierungen nur zusammen mit ihrer koordinierten Migration wieder öffnen.
+
+### Coding-agent credential safety (2026-11-09)
+
+Local Claude permission rules and saved agent transcripts may contain literal
+credentials. Keep them outside Git; shared `.claude/settings.json` must use
+variable references rather than secrets. `Secret safety` CI rejects tracked local
+agent state and scans introduced commits with Gitleaks, including documentation,
+example files, and password-bearing commands. Existing history was audited
+separately; this CI job is not a claim that historical credentials are safe.
+If a credential was committed, revoke or rotate it before considering the leak
+resolved. Do not print secret values in scan logs, reviews, or handoffs.
+
+Related secret-safety CI changes: [wolfini_de_web](https://github.com/haraldweiss/wolfini_de_web/pull/258), [Claude-KI-Usage-Tracker](https://github.com/haraldweiss/Claude-KI-Usage-Tracker/pull/101), [ai-provider-service](https://github.com/haraldweiss/ai-provider-service/pull/55), [Bewerbungstracker](https://github.com/haraldweiss/Bewerbungstracker/pull/94).
