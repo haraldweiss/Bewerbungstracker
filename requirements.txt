@@ -10,7 +10,7 @@ SQLAlchemy>=2.1.8,<3.0
 Alembic==1.20.1
 bcrypt==5.0.0
 PyJWT==2.15.1
-python-dotenv==1.2.2
+python-dotenv==1.2.4
 feedparser>=6.0.14
 responses>=0.26.3
 anthropic>=0.40
