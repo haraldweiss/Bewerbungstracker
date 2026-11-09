@@ -1,5 +1,12 @@
 # Changelog — Bewerbungstracker
 
+### 2026-11-09 — Dependabot maintenance across all owned repositories
+
+- Merged [#89](https://github.com/haraldweiss/Bewerbungstracker/pull/89) (`@anthropic-ai/sdk` 1.6.0), [#90](https://github.com/haraldweiss/Bewerbungstracker/pull/90) (SQLAlchemy 2.1.8), [#91](https://github.com/haraldweiss/Bewerbungstracker/pull/91) (python-dotenv 1.2.4), and [#92](https://github.com/haraldweiss/Bewerbungstracker/pull/92) (`anthropic>=2.6.0`). Matching production pins were updated where present. The existing unbounded Anthropic requirement already admitted 2.6.0; direct SDK calls use no removed sampling parameters or custom HTTP clients.
+- Each exact PR head passed CI: **917 passed, 1 skipped, 1 xfailed**, plus Docker build/boot/health checks. The python-dotenv PR already tested the complete Python combination (SQLAlchemy 2.1.8, anthropic 2.6.0, python-dotenv 1.2.4). Fresh isolated `npm ci --ignore-scripts` and `npm test -- --runInBand`: **31 passed**; production `npm audit --omit=dev`: zero findings. Independent dependency review approved all four updates. Tests use mocks; no real Anthropic or IMAP credentials/calls and no production deployment were performed.
+- Audited all **11** owned repositories with exhaustive repository pagination and open-alert queries. No open high/critical/moderate alerts. Three low, development-only `deepmerge@4.3.1` alerts remain open: [Bewerbungstracker #96](https://github.com/haraldweiss/Bewerbungstracker/security/dependabot/96), [mail-client #32](https://github.com/haraldweiss/mail-client/security/dependabot/32), and [Claude-KI-Usage-Tracker #156](https://github.com/haraldweiss/Claude-KI-Usage-Tracker/security/dependabot/156). Their chains are Jest configuration (Bewerbungstracker/tracker) and Rollup's node resolver (mail-client).
+- [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) still lists no patched version; npm's latest deepmerge remains 4.3.1. Keep these alerts visible until a compatible upstream fix is available. Do not force a Jest downgrade or treat a closed upstream issue as a fix. Previously recorded minimatch and IMAP alerts are no longer open on GitHub.
+
 ### 2026-11-04 — Development dependency security follow-up
 
 - Scoped `glob@>=9` to `^14.0.3` and `minimatch@>=9` to `^11.0.4`, covering Jest/test-exclude without changing application dependencies. This fixes the glob cancellation and minimatch amplification advisories (GHSA-3g3m-2fjr-6pw4 / GHSA-g3hv-75wg-m249).
