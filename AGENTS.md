@@ -321,3 +321,8 @@ If a credential was committed, revoke or rotate it before considering the leak
 resolved. Do not print secret values in scan logs, reviews, or handoffs.
 
 Related secret-safety CI changes: [wolfini_de_web](https://github.com/haraldweiss/wolfini_de_web/pull/258), [Claude-KI-Usage-Tracker](https://github.com/haraldweiss/Claude-KI-Usage-Tracker/pull/101), [ai-provider-service](https://github.com/haraldweiss/ai-provider-service/pull/55), [Bewerbungstracker](https://github.com/haraldweiss/Bewerbungstracker/pull/94).
+
+### 2026-11-16 — Dependency deployment and native daily profile
+
+- Source b7a3b99b deployed on native Oracle ARM64 through the committed build/setup scripts. All five roles running; Gunicorn27.0.1 / Anthropic2.8.0 verified, public200, config hash/shared data preserved. Previous image retained as localhost/bewerbungen:pre-dependabot-20261116.
+- Owner approved the root-owned native daily dependency job at06:40Europe/Berlin, coordinated in wolfini_de_web scripts/maintenance/daily_apps.py. Only official compatible bot manifest histories with exact-head CI, pinned build/setup, isolated canaries and unchanged runtime contract deploy. Failed attempts remain pending for manual inspection; never restore a production DB automatically. See that repository's docs/daily-dependabot-maintenance.md.
