@@ -1,5 +1,12 @@
 # Changelog — Bewerbungstracker
 
+## 2026-11-16 — Verified dependency deployment and daily maintenance
+
+- Reviewed/merged Dependabot #95/#97/#98; included previously merged JavaScript SDK #96. Native ARM64 source b7a3b99b built via deploy/container/build.sh and deployed through setup-oracle-vm.sh. All five roles use the new image; Gunicorn 27.0.1 and Anthropic 2.8.0 verified live.
+- Synthetic app/worker/email/IMAP canaries and ARM64 cron binary passed; combined CI passed 917 Python tests (1 skipped, 1 expected failure) and Docker smoke. Existing configuration hash and shared data mounts retained; public HTTPS 200. Rollback image and protected inspection retained under /root/dependabot-deploy-20261116/.
+- Oracle now evaluates all repositories hourly and runs reviewed native dependency deployments daily at 06:40 Europe/Berlin. This app is an initial supported profile; incompatible/major/source changes require review. No database restore or alert dismissal. Cross-repository details: https://github.com/haraldweiss/wolfini_de_web/blob/main/docs/security-review-2026-11-16.md
+
+
 ### 2026-11-09 — Dependabot maintenance across all owned repositories
 
 - Merged [#89](https://github.com/haraldweiss/Bewerbungstracker/pull/89) (`@anthropic-ai/sdk` 1.6.0), [#90](https://github.com/haraldweiss/Bewerbungstracker/pull/90) (SQLAlchemy 2.1.8), [#91](https://github.com/haraldweiss/Bewerbungstracker/pull/91) (python-dotenv 1.2.4), and [#92](https://github.com/haraldweiss/Bewerbungstracker/pull/92) (`anthropic>=2.6.0`). Matching production pins were updated where present. The existing unbounded Anthropic requirement already admitted 2.6.0; direct SDK calls use no removed sampling parameters or custom HTTP clients.
