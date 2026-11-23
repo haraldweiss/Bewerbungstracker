@@ -27,6 +27,8 @@ jobs:
           cache: pip
       - name: Install deps
         run: pip install -r requirements.txt pytest
+      - name: Verify crypto build gates
+        run: python security/cryptography/test-gates.py
       - name: pytest
         run: pytest tests/ -q
 
@@ -37,6 +39,9 @@ jobs:
 
       - name: Build image
         run: docker build -t bewerbungen:ci .
+
+      - name: Verify bundled OpenSSL and runtime image contract
+        run: python3 security/cryptography/smoke-image.py bewerbungen:ci
 
       - name: Generate valid Fernet ENCRYPTION_KEY
         id: fernet

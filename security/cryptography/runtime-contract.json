@@ -1,0 +1,15 @@
+{
+  "User": "",
+  "WorkingDir": "/app",
+  "Entrypoint": [
+    "/app/docker-entrypoint.sh"
+  ],
+  "Cmd": [
+    "app"
+  ],
+  "ExposedPorts": {
+    "5000/tcp": {},
+    "8765/tcp": {},
+    "8766/tcp": {}
+  }
+}

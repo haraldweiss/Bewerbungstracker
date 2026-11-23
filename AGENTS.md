@@ -326,3 +326,16 @@ Related secret-safety CI changes: [wolfini_de_web](https://github.com/haraldweis
 
 - Source b7a3b99b deployed on native Oracle ARM64 through the committed build/setup scripts. All five roles running; Gunicorn27.0.1 / Anthropic2.8.0 verified, public200, config hash/shared data preserved. Previous image retained as localhost/bewerbungen:pre-dependabot-20261116.
 - Owner approved the root-owned native daily dependency job at06:40Europe/Berlin, coordinated in wolfini_de_web scripts/maintenance/daily_apps.py. Only official compatible bot manifest histories with exact-head CI, pinned build/setup, isolated canaries and unchanged runtime contract deploy. Failed attempts remain pending for manual inspection; never restore a production DB automatically. See that repository's docs/daily-dependabot-maintenance.md.
+
+
+### Container crypto build preservation (2026-11-23)
+
+The Dockerfile builds the pinned cryptography 50.0.2 / static OpenSSL 3.5.9 wheel
+in a disposable native builder. Preserve its pip constraint, source SHA checks,
+final package/backend verification and `pip check`; the stock 50.0.2 wheel has
+OpenSSL 4.0.3. A cryptography bump requires coordinated source/hash/gate review.
+Run `python3 security/cryptography/smoke-image.py <sha-tagged-image>` after the
+normal build helper and before container recreation. Preserve the runtime image
+contract, all data mounts and existing Compose image-selection overrides until
+explicitly switching them to the verified release. Full procedure:
+[security/cryptography/README.md](security/cryptography/README.md).
