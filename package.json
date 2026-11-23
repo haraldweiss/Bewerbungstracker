@@ -9,7 +9,7 @@
     "test:legacy": "jest --config jest.legacy.config.cjs"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^1.8.0",
+    "@anthropic-ai/sdk": "^1.11.0",
     "@babel/preset-env": "^7.29.7",
     "@babel/preset-typescript": "^7.29.7",
     "jest": "^30.5.2",
