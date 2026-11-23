@@ -1,5 +1,21 @@
 # Changelog — Bewerbungstracker
 
+## 2026-11-23 — Preserve the reviewed OpenSSL build in future images
+
+- Added a native compiler stage producing cryptography 50.0.2 with static OpenSSL
+  3.5.9 from SHA-256-pinned source archives. Normal dependency installation is
+  constrained to that reviewed package version; incompatible future bounds fail.
+- The final image reinstalls only the generated wheel, verifies its manifest,
+  checks both versions and disposable-key operations, then runs `pip check`.
+  CI retains app/role boot checks and adds image-contract/crypto smoke checks.
+- Local verification: 4 crypto gate tests; full suite 917 passed, 1 skipped,
+  1 xfailed with DNS access (mocked HTTP/AI/email calls). Native image build and
+  image smoke remain release gates; no Docker engine was available locally.
+- Runtime entrypoint, default user/command, ports and production-data paths are
+  retained. This source change alone performs no deployment or data migration.
+  Native build and release procedure: `security/cryptography/README.md`.
+
+
 ## 2026-11-16 — Verified dependency deployment and daily maintenance
 
 - Reviewed/merged Dependabot #95/#97/#98; included previously merged JavaScript SDK #96. Native ARM64 source b7a3b99b built via deploy/container/build.sh and deployed through setup-oracle-vm.sh. All five roles use the new image; Gunicorn 27.0.1 and Anthropic 2.8.0 verified live.
